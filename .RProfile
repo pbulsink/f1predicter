@@ -1,0 +1,2 @@
+options("f1dataR.cache" = "~/Documents/f1dataR/cache")
+options("f1predicter.cache" = "~/Documents/f1predicter/cache")
