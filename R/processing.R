@@ -78,7 +78,7 @@ clean_data <- function(input=load_all_data()){
     dplyr::arrange('season', 'race') %>%
     dplyr::filter(.data$deleted != TRUE) %>%
     dplyr::group_by(.data$season, .data$race, .data$sessionType, .data$driverId) %>%
-    dplyr::mutate('best_time' = min(.data$lapTime, na.rm = T),
+    dplyr::mutate('best_time' = dplyr::if_else(is.infinite(min(.data$lapTime, na.rm = T)), NA_real_, min(.data$lapTime, na.rm = T)),
                   'num_laps' = dplyr::n()) %>%
     dplyr::ungroup() %>%
     dplyr::group_by(.data$season, .data$race, .data$sessionType) %>%
@@ -121,7 +121,7 @@ clean_data <- function(input=load_all_data()){
                   'Q3_perc' = .data$Q3_sec/min(.data$Q3_sec, na.rm = T),
                   'Q_min_perc' = NA_real_) %>%
     dplyr::rowwise() %>%
-    dplyr::mutate('Q_min_perc' = min(dplyr::c_across(c('Q1_perc','Q2_perc', 'Q3_perc')), na.rm = T),
+    dplyr::mutate('Q_min_perc' = dplyr::if_else(is.infinite(min(dplyr::c_across(c('Q1_perc','Q2_perc', 'Q3_perc')), na.rm = T)), NA_real_, min(dplyr::c_across(c('Q1_perc','Q2_perc', 'Q3_perc')))),
                   'Q_avg_perc' = mean(dplyr::c_across(c('Q1_perc', 'Q2_perc', 'Q3_perc')), na.rm = T)) %>%
     dplyr::ungroup() %>%
     unique()
@@ -154,14 +154,19 @@ clean_data <- function(input=load_all_data()){
   constructor_results <- results %>%
     dplyr::left_join(pitstops, by = c('race', 'season', 'driverId')) %>%
     dplyr::group_by(.data$season, .data$race, .data$constructorId) %>%
-    dplyr::summarise('constructor_failure_race' = mean(.data$constructor_failure, na.rm = T),
+    dplyr::summarise('constructor_best_grid' = min(.data$grid, na.rm = T),
+                     'constructor_best_finish' = min(.data$position, na.rm = T),
+                     'constructor_failure_race' = mean(.data$constructor_failure, na.rm = T),
                      'constructor_pit_duration_perc' = mean(.data$pit_duration_perc, na.rm = T),
                      'constructor_pit_num_perc' = mean(.data$pit_num_perc)) %>%
-    dplyr::mutate('constructor_failure_avg' = as.numeric(slider::slide(.data$constructor_failure_race, s_lagged_cumwmean_expanded, ln = 20, val = 0.1512, .before = 20)),
+    dplyr::mutate('constructor_grid_avg' = as.numeric(slider::slide(.data$constructor_best_grid, s_lagged_cumwmean_expanded, ln = 20, val = 18, .before = 20)),
+                  'constructor_finish_avg' = as.numeric(slider::slide(.data$constructor_best_finish, s_lagged_cumwmean_expanded, ln = 20, val = 18, .before = 20)),
+                  'constructor_failure_avg' = as.numeric(slider::slide(.data$constructor_failure_race, s_lagged_cumwmean_expanded, ln = 20, val = 0.1512, .before = 20)),
                   'constructor_pit_duration_avg' = as.numeric(slider::slide(.data$constructor_pit_duration_perc, s_lagged_cumwmean_expanded, ln = 20, val = 101, .before = 20)),
                   'constructor_pit_num_avg' = as.numeric(slider::slide(.data$constructor_pit_num_perc, s_lagged_cumwmean_expanded, ln = 20, val = 101, .before = 20))) %>%
-    dplyr::select('constructorId', 'season', 'race', 'constructor_failure_race', 'constructor_failure_avg',
-                  'constructor_pit_duration_perc', 'constructor_pit_num_perc', 'constructor_pit_duration_avg', 'constructor_pit_num_avg') %>%
+    dplyr::select('constructorId', 'season', 'race', 'constructor_grid_avg', 'constructor_finish_avg',
+                  'constructor_failure_race', 'constructor_failure_avg', 'constructor_pit_duration_perc',
+                  'constructor_pit_num_perc', 'constructor_pit_duration_avg', 'constructor_pit_num_avg') %>%
     unique()
 
   results <- results %>%

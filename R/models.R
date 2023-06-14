@@ -22,6 +22,7 @@ model_quali_late <- function(driver_list = get_last_drivers(), data = clean_data
 model_results <- function(grid, data = clean_data()){
   # ---- Common Data ----
   data <- data[data$season >= 2000,]
+  p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- ifelse(data$position == 1, 1, 0)
   data$podium <- ifelse(data$position <= 3, 1, 0)
@@ -32,15 +33,17 @@ model_results <- function(grid, data = clean_data()){
   data$t10 <- as.factor(data$t10)
   data$finished <- as.factor(data$finished)
   data$position <- as.factor(data$position)
+  data$raceId <- as.factor(paste0(data$season, "-", data$race))
 
   data<-data %>%
     dplyr::select('driverId', 'constructorId', 'position', 'grid', 'quali_position', 'driver_experience',
-                  'driver_failure_avg', 'constructor_failure_avg', 'driver_grid_avg', 'driver_position_avg',
-                  'driver_finish_avg', 'win', 'podium', 't10', 'finished', 'season', 'race') %>%
+                  'driver_failure_avg', 'constructor_grid_avg', 'constructor_finish_avg', 'constructor_failure_avg',
+                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'win', 'podium', 't10', 'finished',
+                  'season', 'race', 'raceId') %>%
     dplyr::mutate_if(is.character, as.factor)
 
   # Put 4/5 of the data into the training set
-  data_split <- rsample::initial_split(data, prop = 4/5, strata = 'position')
+  data_split <- rsample::group_initial_split(data, prop = 4/5, group = 'raceId')
 
   # Create data frames for the two sets:
   train_data <- rsample::training(data_split)
@@ -49,12 +52,12 @@ model_results <- function(grid, data = clean_data()){
   glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(),
                             levels = 5)
 
-  data_folds <- rsample::vfold_cv(train_data)
+  data_folds <- rsample::group_vfold_cv(data = train_data, group = 'raceId')
 
   # ---- Winner Model ----
   win_recipe <- recipes::recipe(win ~ ., data = train_data) %>%
-    recipes::update_role('season', 'race', new_role = "ID") %>%
-    recipes::step_rm('podium', 't10', 'finished', 'position') %>%
+    recipes::update_role('season', 'race', 'raceId', 'driverId', 'constructorId', new_role = "ID") %>%
+    recipes::step_rm('podium', 't10', 'finished', 'position', 'constructorId') %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -67,6 +70,7 @@ model_results <- function(grid, data = clean_data()){
     workflows::add_model(win_mod) %>%
     workflows::add_recipe(win_recipe)
 
+  tictoc::tic('Trained Win Model')
   win_res <-
     win_wflow %>%
     tune::tune_grid(
@@ -76,13 +80,20 @@ model_results <- function(grid, data = clean_data()){
 
   win_best <- win_res %>%
     tune::select_best("accuracy")
+  tictoc::toc()
 
   win_final <- win_wflow %>% tune::finalize_workflow(win_best)
   win_final_fit <- win_final %>% tune::last_fit(data_split)
 
+  message('Win Model with ',
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == 'accuracy') %>% dplyr::pull('.estimate'), 4),
+          '% accuracy and ',
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
+          ' auc.')
+
   # ---- Podium Model ----
   podium_recipe <- recipes::recipe(podium ~ ., data = train_data) %>%
-    recipes::update_role('season', 'race', new_role = "ID") %>%
+    recipes::update_role('season', 'race', 'raceId', 'driverId', 'constructorId', new_role = "ID") %>%
     recipes::step_rm('win', 't10', 'finished', 'position') %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
@@ -96,6 +107,7 @@ model_results <- function(grid, data = clean_data()){
     workflows::add_model(podium_mod) %>%
     workflows::add_recipe(podium_recipe)
 
+  tictoc::tic('Trained Podium Model')
   podium_res <-
     podium_wflow %>%
     tune::tune_grid(
@@ -105,12 +117,20 @@ model_results <- function(grid, data = clean_data()){
 
   podium_best <- podium_res %>%
     tune::select_best("accuracy")
+  tictoc::toc()
 
   podium_final <- podium_wflow %>% tune::finalize_workflow(podium_best)
   podium_final_fit <- podium_final %>% tune::last_fit(data_split)
+
+  message('Podium Model with ',
+          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == 'accuracy') %>% dplyr::pull('.estimate'), 4),
+          '% accuracy and ',
+          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
+          ' auc.')
+
   # ---- T10 Model ----
   t10_recipe <- recipes::recipe(t10 ~ ., data = train_data) %>%
-    recipes::update_role('season', 'race', new_role = "ID") %>%
+    recipes::update_role('season', 'race', 'raceId', 'driverId', 'constructorId', new_role = "ID") %>%
     recipes::step_rm('podium', 'win', 'finished', 'position') %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
@@ -119,11 +139,12 @@ model_results <- function(grid, data = clean_data()){
   t10_mod <- parsnip::logistic_reg(penalty = tune::tune(),mixture = tune::tune()) %>%
     parsnip::set_engine("glmnet")
 
-  wt10_wflow <-
+  t10_wflow <-
     workflows::workflow() %>%
     workflows::add_model(t10_mod) %>%
     workflows::add_recipe(t10_recipe)
 
+  tictoc::tic('Trained T10 Model')
   t10_res <-
     t10_wflow %>%
     tune::tune_grid(
@@ -133,13 +154,20 @@ model_results <- function(grid, data = clean_data()){
 
   t10_best <- t10_res %>%
     tune::select_best("accuracy")
+  tictoc::toc()
 
   t10_final <- t10_wflow %>% tune::finalize_workflow(t10_best)
   t10_final_fit <- t10_final %>% tune::last_fit(data_split)
 
+  message('T10 Model with ',
+          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == 'accuracy') %>% dplyr::pull('.estimate'), 4),
+          '% accuracy and ',
+          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
+          ' auc.')
+
   # ---- Finish Model ----
   finish_recipe <- recipes::recipe(t10 ~ ., data = train_data) %>%
-    recipes::update_role('season', 'race', new_role = "ID") %>%
+    recipes::update_role('season', 'race', 'raceId', 'driverId', 'constructorId', new_role = "ID") %>%
     recipes::step_rm('podium', 'win', 't10', 'position') %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
@@ -153,6 +181,7 @@ model_results <- function(grid, data = clean_data()){
     workflows::add_model(finish_mod) %>%
     workflows::add_recipe(finish_recipe)
 
+  tictoc::tic('Trained Finishing Model')
   finish_res <-
     finish_wflow %>%
     tune::tune_grid(
@@ -162,13 +191,41 @@ model_results <- function(grid, data = clean_data()){
 
   finish_best <- finish_res %>%
     tune::select_best("accuracy")
+  tictoc::toc()
 
   finish_final <- finish_wflow %>% tune::finalize_workflow(finish_best)
   finish_final_fit <- finish_final %>% tune::last_fit(data_split)
+
+  message('Finishing Model with ',
+          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == 'accuracy') %>% dplyr::pull('.estimate'), 4),
+          '% accuracy and ',
+          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
+          ' auc.')
+
   # ---- Position Model ----
+  data <- p_mod_data %>%
+    dplyr::filter(.data$position <= 20) %>%
+    dplyr::mutate('position' = as.factor(.data$position),
+                  'raceId' = as.factor(paste0(.data$season, "-", .data$race))) %>%
+    dplyr::select('driverId', 'constructorId', 'position', 'grid', 'quali_position', 'driver_experience',
+                  'driver_failure_avg', 'constructor_grid_avg', 'constructor_finish_avg', 'constructor_failure_avg',
+                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'season', 'race', 'raceId') %>%
+    dplyr::mutate_if(is.character, as.factor)
+
+  # Put 4/5 of the data into the training set
+  data_split <- rsample::group_initial_split(data, prop = 4/5, group = 'raceId')
+
+  # Create data frames for the two sets:
+  train_data <- rsample::training(data_split)
+  test_data  <- rsample::testing(data_split)
+
+  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(),
+                                     levels = 5)
+
+  data_folds <- rsample::group_vfold_cv(data = train_data, group = 'raceId')
+
   position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role('season', 'race', new_role = "ID") %>%
-    recipes::step_rm('podium', 't10', 'finished', 'win') %>%
+    recipes::update_role('season', 'race', 'raceId', 'driverId', 'constructorId', new_role = "ID") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -182,6 +239,7 @@ model_results <- function(grid, data = clean_data()){
     workflows::add_model(position_mod) %>%
     workflows::add_recipe(position_recipe)
 
+  tictoc::tic('Trained Position Model')
   position_res <-
     position_wflow %>%
     tune::tune_grid(
@@ -191,7 +249,14 @@ model_results <- function(grid, data = clean_data()){
 
   position_best <- position_res %>%
     tune::select_best("accuracy")
+  tictoc::toc(log = T)
 
   position_final <- position_wflow %>% tune::finalize_workflow(position_best)
   position_final_fit <- position_final %>% tune::last_fit(data_split)
+
+  message('Position Model with ',
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == 'accuracy') %>% dplyr::pull('.estimate'), 4),
+          '% accuracy and ',
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
+          ' auc.')
 }
