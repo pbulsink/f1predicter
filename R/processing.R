@@ -105,10 +105,11 @@ clean_data <- function(input=load_all_data()){
                   'practice_best_rank' = min(.data$rank, na.rm = T),
                   'practice_num_laps' = sum(.data$num_laps, na.rm = T),
                   'practice_avg_gap' = mean(.data$gap_to_best, na.rm = T),
-                  'practice_best_gap' = min(.data$gap_to_best, na.rm = T)) %>%
+                  'practice_best_gap' = min(.data$gap_to_best, na.rm = T),
+                  'practice_optimal_rank' = mean(.data$optimal_rank, na.rm = T)) %>%
     dplyr::ungroup() %>%
     dplyr::select('driverId', 'season', 'race', 'practice_avg_rank', 'practice_best_rank',
-                  'practice_num_laps', 'practice_avg_gap', 'practice_best_gap') %>%
+                  'practice_num_laps', 'practice_avg_gap', 'practice_best_gap', 'practice_optimal_rank') %>%
     unique()
 
   # qualis ----
@@ -169,21 +170,42 @@ clean_data <- function(input=load_all_data()){
                   'constructor_pit_num_perc', 'constructor_pit_duration_avg', 'constructor_pit_num_avg') %>%
     unique()
 
+  schedule <- f1predicter::schedule %>%
+    dplyr::mutate('race' = as.numeric(.data$round),
+                  'season' = as.numeric(.data$season)) %>%
+    dplyr::select('circuit_id', 'season', 'race')
+
   results <- results %>%
     dplyr::arrange('season', 'race', 'position') %>%
     dplyr::left_join(qualis, by = c('race', 'season', 'driverId')) %>%
     dplyr::left_join(practices, by = c('race', 'season', 'driverId')) %>%
     dplyr::left_join(pitstops, by = c('race', 'season', 'driverId')) %>%
     dplyr::left_join(constructor_results, by = c('race', 'season', 'constructorId')) %>%
+    dplyr::left_join(schedule, by = c('race', 'season')) %>%
     dplyr::group_by(.data$driverId) %>%
     dplyr::mutate('driver_pos_change_avg' = as.numeric(slider::slide(.data$pos_change, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
                   'driver_points_change_avg' = as.numeric(slider::slide(.data$pos_change_points, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
                   'driver_failure_avg' = as.numeric(slider::slide(.data$driver_failure, s_lagged_cumwmean_expanded, val = 0.0555, ln = 20, .before = 20)),
                   'driver_grid_avg' = as.numeric(slider::slide(.data$grid, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10)),
                   'driver_position_avg' = as.numeric(slider::slide(.data$position, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10)),
-                  'driver_finish_avg' = as.numeric(slider::slide(.data$finished, s_lagged_cumwmean_expanded, val = 0.8689, ln = 10, .before = 10))) %>%
+                  'driver_finish_avg' = as.numeric(slider::slide(.data$finished, s_lagged_cumwmean_expanded, val = 0.8689, ln = 10, .before = 10)),
+                  'driver_practice_optimal_rank_avg' = as.numeric(slider::slide(.data$practice_optimal_rank, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10))) %>%
     dplyr::ungroup() %>%
     dplyr::mutate('quali_position' = dplyr::if_else(is.na(.data$quali_position), .data$grid, .data$quali_position))
+
+  results <- results %>%
+    dplyr::select('race', 'season', 'circuit_id', 'driver_failure', 'constructor_failure', 'grid', 'position') %>%
+    dplyr::group_by(.data$race, .data$season, .data$circuit_id) %>%
+    dplyr::summarise('driver_failure_circuit' = mean(.data$driver_failure, na.rm = T),
+                     'constructor_failure_circuit' = mean(.data$constructor_failure, na.rm = T),
+                     'grid_pos_corr' = cor(.data$grid, .data$position))%>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(.data$circuit_id) %>%
+    dplyr::mutate('driver_failure_circuit_avg' = as.numeric(slider::slide(.data$driver_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = 0.0555, .before = 5)),
+                  'constructor_failure_circuit_avg' = as.numeric(slider::slide(.data$constructor_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = 0.1512, .before = 5)),
+                  'grid_pos_corr_avg' = as.numeric(slider::slide(.data$grid_pos_corr, s_lagged_cumwmean_expanded, ln = 5, val = 0.5, .before = 5))) %>%
+    dplyr::ungroup() %>%
+    dplyr::right_join(results, by = c('race', 'season', 'circuit_id'))
 
   return(results)
 }

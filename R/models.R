@@ -21,8 +21,8 @@ model_quali_late <- function(driver_list = get_last_drivers(), data = clean_data
 
 model_results <- function(grid, data = clean_data()){
   # ---- Common Data ----
-  data <- data[data$season >= 2000,]
-  p_mod_data <- data  # Used later
+  data <- data[data$season >= 2018,]
+  #p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- ifelse(data$position == 1, 1, 0)
   data$podium <- ifelse(data$position <= 3, 1, 0)
@@ -38,8 +38,10 @@ model_results <- function(grid, data = clean_data()){
   data<-data %>%
     dplyr::select('driverId', 'constructorId', 'position', 'grid', 'quali_position', 'driver_experience',
                   'driver_failure_avg', 'constructor_grid_avg', 'constructor_finish_avg', 'constructor_failure_avg',
-                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'win', 'podium', 't10', 'finished',
-                  'season', 'race', 'raceId') %>%
+                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'grid_pos_corr_avg',
+                  'driver_failure_circuit_avg', 'constructor_failure_circuit_avg', 'driver_practice_optimal_rank_avg',
+                  'practice_avg_rank', 'practice_best_rank', 'practice_optimal_rank',
+                  'win', 'podium', 't10', 'finished', 'season', 'race', 'raceId') %>%
     dplyr::mutate_if(is.character, as.factor)
 
   # Put 4/5 of the data into the training set
@@ -62,8 +64,25 @@ model_results <- function(grid, data = clean_data()){
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  win_mod <- parsnip::logistic_reg(penalty = tune::tune(),mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
+  win_mod <- parsnip::boost_tree(
+    trees = 1000,
+    tree_depth = tune::tune(), min_n = tune::tune(),
+    loss_reduction = tune::tune(),                     ## first three: model complexity
+    sample_size = tune::tune(), mtry = tune::tune(),         ## randomness
+    learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
+    parsnip::set_mode('classification') %>%
+    parsnip::set_engine('xgboost', nthread = 4)
+
+  xgb_grid <- dials::grid_latin_hypercube(
+    dials::tree_depth(),
+    dials::min_n(),
+    dials::loss_reduction(),
+    sample_size = dials::sample_prop(),
+    dials::finalize(dials::mtry(), train_data),
+    dials::learn_rate(),
+    dials::stop_iter(),
+    size = 30
+  )
 
   win_wflow <-
     workflows::workflow() %>%
@@ -75,14 +94,14 @@ model_results <- function(grid, data = clean_data()){
     win_wflow %>%
     tune::tune_grid(
       resamples = data_folds,
-      grid = glmnet_grid
+      grid = xgb_grid
     )
 
   win_best <- win_res %>%
     tune::select_best("accuracy")
   tictoc::toc()
 
-  win_final <- win_wflow %>% tune::finalize_workflow(win_best)
+  win_final <- win_wflow %>% tune::finalize_workflow(win_best) %>% parsnip::fit(train_data)
   win_final_fit <- win_final %>% tune::last_fit(data_split)
 
   message('Win Model with ',
@@ -119,7 +138,7 @@ model_results <- function(grid, data = clean_data()){
     tune::select_best("accuracy")
   tictoc::toc()
 
-  podium_final <- podium_wflow %>% tune::finalize_workflow(podium_best)
+  podium_final <- podium_wflow %>% tune::finalize_workflow(podium_best) %>% parsnip::fit(train_data)
   podium_final_fit <- podium_final %>% tune::last_fit(data_split)
 
   message('Podium Model with ',
@@ -156,7 +175,7 @@ model_results <- function(grid, data = clean_data()){
     tune::select_best("accuracy")
   tictoc::toc()
 
-  t10_final <- t10_wflow %>% tune::finalize_workflow(t10_best)
+  t10_final <- t10_wflow %>% tune::finalize_workflow(t10_best)  %>% parsnip::fit(train_data)
   t10_final_fit <- t10_final %>% tune::last_fit(data_split)
 
   message('T10 Model with ',
@@ -193,7 +212,7 @@ model_results <- function(grid, data = clean_data()){
     tune::select_best("accuracy")
   tictoc::toc()
 
-  finish_final <- finish_wflow %>% tune::finalize_workflow(finish_best)
+  finish_final <- finish_wflow %>% tune::finalize_workflow(finish_best)  %>% parsnip::fit(train_data)
   finish_final_fit <- finish_final %>% tune::last_fit(data_split)
 
   message('Finishing Model with ',
@@ -209,7 +228,9 @@ model_results <- function(grid, data = clean_data()){
                   'raceId' = as.factor(paste0(.data$season, "-", .data$race))) %>%
     dplyr::select('driverId', 'constructorId', 'position', 'grid', 'quali_position', 'driver_experience',
                   'driver_failure_avg', 'constructor_grid_avg', 'constructor_finish_avg', 'constructor_failure_avg',
-                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'season', 'race', 'raceId') %>%
+                  'driver_grid_avg', 'driver_position_avg', 'driver_finish_avg', 'grid_pos_corr_avg',
+                  'driver_failure_circuit_avg', 'constructor_failure_circuit_avg', 'driver_practice_optimal_rank_avg',
+                  'practice_avg_rank', 'practice_best_rank', 'practice_optimal_rank', 'season', 'race', 'raceId') %>%
     dplyr::mutate_if(is.character, as.factor)
 
   # Put 4/5 of the data into the training set
@@ -231,8 +252,14 @@ model_results <- function(grid, data = clean_data()){
     recipes::step_normalize(recipes::all_predictors())
 
   #Note multinomial regression
-  position_mod <- parsnip::multinom_reg(penalty = tune::tune(),mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
+  position_mod <- parsnip::boost_tree(
+    trees = 1000,
+    tree_depth = tune::tune(), min_n = tune::tune(),
+    loss_reduction = tune::tune(),                     ## first three: model complexity
+    sample_size = tune::tune(), mtry = tune::tune(),         ## randomness
+    learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
+    parsnip::set_mode('classification') %>%
+    parsnip::set_engine('xgboost', nthread = 4)
 
   position_wflow <-
     workflows::workflow() %>%
@@ -244,14 +271,14 @@ model_results <- function(grid, data = clean_data()){
     position_wflow %>%
     tune::tune_grid(
       resamples = data_folds,
-      grid = glmnet_grid
+      grid = xgb_grid
     )
 
   position_best <- position_res %>%
     tune::select_best("accuracy")
   tictoc::toc(log = T)
 
-  position_final <- position_wflow %>% tune::finalize_workflow(position_best)
+  position_final <- position_wflow %>% tune::finalize_workflow(position_best) %>% parsnip::fit(train_data)
   position_final_fit <- position_final %>% tune::last_fit(data_split)
 
   message('Position Model with ',
@@ -259,4 +286,6 @@ model_results <- function(grid, data = clean_data()){
           '% accuracy and ',
           round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == 'roc_auc') %>% dplyr::pull('.estimate'), 4),
           ' auc.')
+
+
 }
