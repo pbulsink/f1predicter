@@ -4,12 +4,12 @@
 \alias{get_grids}
 \title{Get Quali position, starting grid, and finishing position}
 \usage{
-get_grids(season, race, session)
+get_grids(season, round, session)
 }
 \arguments{
 \item{season}{season}
 
-\item{race}{race}
+\item{round}{round}
 
 \item{session}{Usually 'R', but also available is 'S'}
 }

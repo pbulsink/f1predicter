@@ -2,16 +2,16 @@
 % Please edit documentation in R/data.R
 \name{getWeather}
 \alias{getWeather}
-\title{getRaceWeather}
+\title{getWeather}
 \usage{
-getWeather(race_url)
+getWeather(round_url)
 }
 \arguments{
-\item{race_url}{a wikipedia url for a grand prix (in english)}
+\item{round_url}{a wikipedia url for a grand prix (in english)}
 }
 \value{
 a weather, as character (one of `warm`, `cold`, `dry`, `wet`, or `cloudy`)
 }
 \description{
-given a race url from ergast (to wikipedia) get the weather
+given a round url from ergast (to wikipedia) get the weather
 }

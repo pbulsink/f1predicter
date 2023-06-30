@@ -4,12 +4,12 @@
 \alias{get_weekend_data}
 \title{Get weekend's Data}
 \usage{
-get_weekend_data(season, race, force = FALSE)
+get_weekend_data(season, round, force = FALSE)
 }
 \arguments{
 \item{season}{season from 2018 onward}
 
-\item{race}{race number}
+\item{round}{round number}
 
 \item{force}{whether to force getting new data}
 }
@@ -17,5 +17,5 @@ get_weekend_data(season, race, force = FALSE)
 a list of data frames
 }
 \description{
-Downloads and saves all data for a race weekend
+Downloads and saves all data for a round weekend
 }

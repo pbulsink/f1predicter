@@ -4,12 +4,12 @@
 \alias{get_laps}
 \title{Get Weekend's laps}
 \usage{
-get_laps(season, race)
+get_laps(season, round)
 }
 \arguments{
 \item{season}{season, from 2018 onward}
 
-\item{race}{race, compatable with fastf1 race selector}
+\item{round}{round, compatable with fastf1 round selector}
 }
 \value{
 a data.frame with all lap information
