@@ -10,10 +10,12 @@ cumwmean <- function(x) {
   return(cumsum(x * log(1:length(x)))/cumsum(log(1:length(x))))
 }
 
+# get the cube root
 cubert <- function(x) {
   return(nroot(x, 3))
 }
 
+#get a nth root
 nroot <- function(x, n) {
   nr <- function(x, n) {
     return(x^(1/n))
@@ -61,4 +63,11 @@ ensure_tidy <- function(data) {
       dplyr::rename('round' = 'race')
   }
   return(data)
+}
+
+wmean_two <- function(newval, x, ln){
+  x <- c(rep(x, ln-1), newval)
+  cwm <- cumwmean(x)
+
+  return(cwm[length(cwm)])
 }
