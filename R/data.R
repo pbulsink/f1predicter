@@ -223,7 +223,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
     if (!any(!is.na(laps))) {
       drivers <- f1dataR::load_drivers(season = season) %>%
         dplyr::select("driver_id", "code")
-      laps <- load_laps(season = season, round = round)
+      laps <- get_laps(season = season, round = round)
       if (!is.null(laps)) {
         laps <- laps %>%
           dplyr::left_join(drivers, by = c(driver = "code")) %>%
@@ -502,32 +502,32 @@ janitor_data <- function(){
     if(!is.null(rg)){
       rg %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_rgrid.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_rgrid.csv")), quote = F, row.names = F)
     }
     if(!is.null(sg)){
       sg %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_sgrid.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_sgrid.csv")), quote = F, row.names = F)
     }
     if(!is.null(res)){
       res %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_results.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_results.csv")), quote = F, row.names = F)
     }
     if(!is.null(q)){
       q %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_qualis.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_qualis.csv")), quote = F, row.names = F)
     }
     if(!is.null(pt)){
       pt %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_pitstops.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_pitstops.csv")), quote = F, row.names = F)
     }
     if(!is.null(lp)){
       lp %>%
         janitor::clean_names() %>%
-        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_laps.csv")), quote = F, row.names = F)
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_laps.csv")), quote = F, row.names = F)
     }
     closeAllConnections()
   }

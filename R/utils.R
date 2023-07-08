@@ -66,8 +66,12 @@ ensure_tidy <- function(data) {
 }
 
 wmean_two <- function(newval, x, ln){
-  x <- c(rep(x, ln-1), newval)
-  cwm <- cumwmean(x)
+  wt <- function(newval, x, ln){
+    x <- c(rep(x, ln-1), newval)
+    cwm <- cumwmean(x)
 
-  return(cwm[length(cwm)])
+    return(cwm[length(cwm)])
+  }
+  wt_v <- Vectorize(wt, vectorize.args = c('newval', 'x'))
+  return(wt_v(newval, x, ln))
 }

@@ -1,5 +1,19 @@
-# Data Processing Functions
+#' default parameters
+#' Just a list of default parameters
+#' @keywords internal
+default_params<-list('grid' = 16.9,
+                     'position' = 14.9,
+                     'driver_finish_avg' = 1-(0.09253282+0.1461158/2),
+                     'driver_failure_avg' = 0.09253282,
+                     'constructor_failure_avg' = 0.1461158/2,
+                     'grid_pos_corr_avg' = 0.5682137,
+                     'constructor_pit_duration_perc' = 100,
+                     'constructor_pit_duration_perc' = 150,
+                     'fastest_pit' = 2.5,
+                     'pos_change' = 1.56621)
 
+
+# Data Processing Functions
 
 #' Clean Data
 #'
@@ -122,9 +136,9 @@ clean_data <- function(input = load_all_data()) {
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
     dplyr::mutate(stops = dplyr::n()) %>%
     dplyr::ungroup(.data$driver_id) %>%
-    # Set the fastest stop to 2.0 s to get a better est of team comparisons
+    # Set the fastest stop to a fastest pit default value to get a better est of team comparisons
     # Unless a fastest stop time can be found online
-    dplyr::mutate(adj_duration = .data$duration - (min(.data$duration, na.rm = T)) + 2,
+    dplyr::mutate(adj_duration = .data$duration - (min(.data$duration, na.rm = T)) + default_params$fastest_pit,
                   pit_duration_perc = .data$adj_duration/min(.data$adj_duration, na.rm = T)) %>%
     dplyr::select("driver_id", pit_stops = "stops", pit_duration = "adj_duration", "pit_duration_perc", "season", "round") %>%
     dplyr::ungroup() %>%
@@ -150,11 +164,11 @@ clean_data <- function(input = load_all_data()) {
                      constructor_failure_race = mean(.data$constructor_failure, na.rm = T),
                      constructor_pit_duration_perc = mean(.data$pit_duration_perc, na.rm = T),
                      constructor_pit_num_perc = mean(.data$pit_num_perc)) %>%
-    dplyr::mutate(constructor_grid_avg = as.numeric(slider::slide(.data$constructor_best_grid, s_lagged_cumwmean_expanded, ln = 20, val = 18, .before = 20)),
-                  constructor_finish_avg = as.numeric(slider::slide(.data$constructor_best_finish, s_lagged_cumwmean_expanded, ln = 20, val = 18, .before = 20)),
-                  constructor_failure_avg = as.numeric(slider::slide(.data$constructor_failure_race, s_lagged_cumwmean_expanded, ln = 20, val = 0.1512, .before = 20)),
-                  constructor_pit_duration_avg = as.numeric(slider::slide(.data$constructor_pit_duration_perc, s_lagged_cumwmean_expanded, ln = 20, val = 101, .before = 20)),
-                  constructor_pit_num_avg = as.numeric(slider::slide(.data$constructor_pit_num_perc, s_lagged_cumwmean_expanded, ln = 20, val = 101, .before = 20))) %>%
+    dplyr::mutate(constructor_grid_avg = as.numeric(slider::slide(.data$constructor_best_grid, s_lagged_cumwmean_expanded, ln = 20, val = default_params$grid, .before = 10)),
+                  constructor_finish_avg = as.numeric(slider::slide(.data$constructor_best_finish, s_lagged_cumwmean_expanded, ln = 20, val = default_params$position, .before = 10)),
+                  constructor_failure_avg = as.numeric(slider::slide(.data$constructor_failure_race, s_lagged_cumwmean_expanded, ln = 20, val = default_params$constructor_failure_avg*2, .before = 20)),
+                  constructor_pit_duration_avg = as.numeric(slider::slide(.data$constructor_pit_duration_perc, s_lagged_cumwmean_expanded, ln = 20, val = default_params$constructor_pit_duration_perc, .before = 20)),
+                  constructor_pit_num_avg = as.numeric(slider::slide(.data$constructor_pit_num_perc, s_lagged_cumwmean_expanded, ln = 20, val = default_params$constructor_pit_num_perc, .before = 20))) %>%
     dplyr::select("constructor_id", "season", "round", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_race", "constructor_failure_avg",
       "constructor_pit_duration_perc", "constructor_pit_num_perc", "constructor_pit_duration_avg", "constructor_pit_num_avg") %>%
     unique() %>%
@@ -172,13 +186,15 @@ clean_data <- function(input = load_all_data()) {
     dplyr::left_join(constructor_results, by = c("round", "season", "constructor_id")) %>%
     dplyr::left_join(schedule, by = c("round", "season")) %>%
     dplyr::group_by(.data$driver_id) %>%
-    dplyr::mutate(driver_pos_change_avg = as.numeric(slider::slide(.data$pos_change, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
+    dplyr::mutate(driver_pos_change_avg = as.numeric(slider::slide(.data$pos_change, s_lagged_cumwmean_expanded, ln = 5, val = default_params$pos_change, .before = 5)),
                   driver_points_change_avg = as.numeric(slider::slide(.data$pos_change_points, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
-                  driver_failure_avg = as.numeric(slider::slide(.data$driver_failure, s_lagged_cumwmean_expanded, val = 0.0555, ln = 20, .before = 20)),
-                  driver_grid_avg = as.numeric(slider::slide(.data$grid, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10)),
-                  driver_position_avg = as.numeric(slider::slide(.data$position, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10)),
-                  driver_finish_avg = as.numeric(slider::slide(.data$finished, s_lagged_cumwmean_expanded, val = 0.8689, ln = 10, .before = 10)),
-                  driver_practice_optimal_rank_avg = as.numeric(slider::slide(.data$practice_optimal_rank, s_lagged_cumwmean_expanded, val = 18, ln = 10, .before = 10))) %>%
+                  driver_failure = tidyr::replace_na(.data$driver_failure, 0),
+                  driver_failure_avg = as.numeric(slider::slide(.data$driver_failure, s_lagged_cumwmean_expanded, val = default_params$driver_failure_avg, ln = 20, .before = 20)),
+                  driver_grid_avg = as.numeric(slider::slide(.data$grid, s_lagged_cumwmean_expanded, val = default_params$grid, ln = 10, .before = 10)),
+                  driver_position_avg = as.numeric(slider::slide(.data$position, s_lagged_cumwmean_expanded, val = default_params$position, ln = 10, .before = 10)),
+                  driver_finish_avg = as.numeric(slider::slide(.data$finished, s_lagged_cumwmean_expanded, val = default_params$driver_finish_avg, ln = 10, .before = 10)),
+                  practice_optimal_rank = tidyr::replace_na(.data$practice_optimal_rank, default_params$position),
+                  driver_practice_optimal_rank_avg = as.numeric(slider::slide(.data$practice_optimal_rank, s_lagged_cumwmean_expanded, val = default_params$position, ln = 10, .before = 10))) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(quali_position = dplyr::if_else(is.na(.data$quali_position), .data$grid, .data$quali_position)) %>%
     janitor::clean_names()
@@ -191,9 +207,9 @@ clean_data <- function(input = load_all_data()) {
                      grid_pos_corr = stats::cor(.data$grid, .data$position)) %>%
     dplyr::ungroup() %>%
     dplyr::group_by(.data$circuit_id) %>%
-    dplyr::mutate(driver_failure_circuit_avg = as.numeric(slider::slide(.data$driver_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = 0.0555, .before = 5)),
-                  constructor_failure_circuit_avg = as.numeric(slider::slide(.data$constructor_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = 0.1512, .before = 5)),
-                  grid_pos_corr_avg = as.numeric(slider::slide(.data$grid_pos_corr, s_lagged_cumwmean_expanded, ln = 5, val = 0.5, .before = 5))) %>%
+    dplyr::mutate(driver_failure_circuit_avg = as.numeric(slider::slide(.data$driver_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = default_params$driver_failure_avg, .before = 5)),
+                  constructor_failure_circuit_avg = as.numeric(slider::slide(.data$constructor_failure_circuit, s_lagged_cumwmean_expanded, ln = 5, val = default_params$constructor_failure_avg*2, .before = 5)),
+                  grid_pos_corr_avg = as.numeric(slider::slide(.data$grid_pos_corr, s_lagged_cumwmean_expanded, ln = 5, val = default_params$grid_pos_corr_avg, .before = 5))) %>%
     dplyr::ungroup() %>%
     dplyr::right_join(results, by = c("round", "season", "circuit_id")) %>%
     dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%

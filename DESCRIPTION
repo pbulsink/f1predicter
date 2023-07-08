@@ -14,6 +14,7 @@ Imports:
     dplyr,
     f1dataR,
     glue,
+    janitor,
     magrittr,
     parsnip,
     RCurl,
@@ -22,10 +23,13 @@ Imports:
     rsample,
     rvest,
     slider,
+    tibble,
     tictoc,
+    tidyr,
     tune,
     usethis,
-    workflows
+    workflows,
+    yardstick
 RoxygenNote: 7.2.3
 Depends: 
     R (>= 2.10)

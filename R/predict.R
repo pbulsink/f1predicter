@@ -1,15 +1,11 @@
 
-
 generate_new_data <- function(season, round, drivers=NULL, historical_data = clean_data()) {
-  globals<-list('grid' = 18,
-                'position' = 18,
-                'driver_finish_avg' = .86,
-                'driver_failure_avg' = 0.0555,
-                'constructor_failure_avg' = 0.0756,
-                'grid_pos_corr' = 0.5284)
+
   # drivers should be a data.frame or tibble with: driver_id, constructor_id, (optional any of: quali_position, grid, practice_optimal_rank, practice_best_rank,
   # practice_avg_rank) Any missing round-specific values will be given as current moved averages Any other values will be calculated from historical data,
   # presuming this is next round
+
+  schedule <- f1predicter::schedule
 
   stopifnot(nrow(schedule[schedule$season==season & schedule$round == round, ])>0)
 
@@ -39,12 +35,12 @@ generate_new_data <- function(season, round, drivers=NULL, historical_data = cle
     dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~mean(.x, na.rm=TRUE))) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(
-      constructor_grid_avg = tidyr::replace_na(.data$constructor_grid_avg, globals$grid),
-      grid = tidyr::replace(.data$grid, globals$grid),
-      constructor_finish_avg = tidyr::replace_na(.data$constructor_finish_avg, 1-globals$constructor_failure_avg),
-      finished = tidyr::replace_na(.data$finished, 1-globals$constructor_failure_avg),
-      constructor_failure_avg = tidyr::replace_na(.data$constructor_failure_avg, globals$constructor_failure_avg),
-      constructor_failure_race = tidyr::replace_na(.data$constructor_failure_race, globals$constructor_failure_avg),
+      constructor_grid_avg = tidyr::replace_na(.data$constructor_grid_avg, default_params$grid),
+      grid = tidyr::replace_na(.data$grid, default_params$grid),
+      constructor_finish_avg = tidyr::replace_na(.data$constructor_finish_avg, 1-default_params$constructor_failure_avg*2),
+      finished = tidyr::replace_na(.data$finished, 1-default_params$constructor_failure_avg),
+      constructor_failure_avg = tidyr::replace_na(.data$constructor_failure_avg, default_params$constructor_failure_avg*2),
+      constructor_failure_race = tidyr::replace_na(.data$constructor_failure_race, default_params$constructor_failure_avg*2),
       constructor_grid_avg = wmean_two(.data$grid, .data$constructor_grid_avg, 20),
       constructor_failure_avg = wmean_two(.data$constructor_failure_race, .data$constructor_failure_avg, 20),
       constructor_finish_avg = wmean_two(.data$finished, .data$constructor_finish_avg, 20)
@@ -60,55 +56,43 @@ generate_new_data <- function(season, round, drivers=NULL, historical_data = cle
       dplyr::filter(.data$round == max(.data$round)) %>%
       dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~mean(.x, na.rm=TRUE))) %>%
       dplyr::ungroup() %>%
-      dplyr::mutate(grid_pos_corr_avg = tidyr::replace_na(.data$grid_pos_corr_avg, globals$grid_pos_corr_avg),
-                    grid_pos_corr = tidyr::replace_na(.data$grid_pos_corr, globals$grid_pos_corr_avg),
-                    driver_failure_circuit_avg = tidyr::replace_na(.data$driver_failure_circuit_avg, globals$driver_failure_avg),
-                    driver_failure_circuit = tidyr::replace_na(.data$driver_failure_circuit, globals$driver_failure_avg),
-                    constructor_failure_circuit_avg = tidyr::replace_na(.data$constructor_failure_circuit_avg, globals$constructor_failure_avg),
-                    constructor_failure_circuit = tidyr::replace_na(.data$constructor_failure_circuit, globals$constructor_failure_avg),
+      dplyr::mutate(grid_pos_corr_avg = tidyr::replace_na(.data$grid_pos_corr_avg, default_params$grid_pos_corr_avg),
+                    grid_pos_corr = tidyr::replace_na(.data$grid_pos_corr, default_params$grid_pos_corr_avg),
+                    driver_failure_circuit_avg = tidyr::replace_na(.data$driver_failure_circuit_avg, default_params$driver_failure_avg),
+                    driver_failure_circuit = tidyr::replace_na(.data$driver_failure_circuit, default_params$driver_failure_avg),
+                    constructor_failure_circuit_avg = tidyr::replace_na(.data$constructor_failure_circuit_avg, default_params$constructor_failure_avg),
+                    constructor_failure_circuit = tidyr::replace_na(.data$constructor_failure_circuit, default_params$constructor_failure_avg),
                     grid_pos_corr_avg = wmean_two(.data$grid_pos_corr, .data$grid_pos_corr_avg, 5),
                     driver_failure_circuit_avg = wmean_two(.data$driver_failure_circuit, .data$driver_failure_circuit_avg, 5),
                     constructor_failure_circuit_avg = wmean_two(.data$constructor_failure_circuit, .data$constructor_failure_circuit_avg, 5)) %>%
       unique()
 
-      new_data$grid_pos_corr_avg + corr
-      new_data$driver_failure_circuit_avg
-      new_data$constructor_failure_circuit_avg
   } else {
     #Need to make a new version - use defaults
     hd_circuit <- tibble::tibble('circuit_id' = new_data$circuit_id,
-                                 'grid_pos_corr_avg' = globals$grid_pos_corr_avg,
-                                 'driver_failure_circuit_avg' = globals$driver_failure_avg,
-                                 'constructor_failure_circuit_avg' = globals$constructor_failure_avg
+                                 'grid_pos_corr_avg' = default_params$grid_pos_corr_avg,
+                                 'driver_failure_circuit_avg' = default_params$driver_failure_avg,
+                                 'constructor_failure_circuit_avg' = default_params$constructor_failure_avg
     )
   }
 
   # Fill in missing columns
-  if(!('season' %in% colnames(new_data))){
-    new_data$season<-season
-  }
-  if(!('round' %in% colnames(new_data))){
-    new_data$round<-round
-  }
-  if(!('round_id' %in% colnames(new_data))){
-    new_data$round_id<-paste0(new_data$season, "-", new_data$round)
-  }
   if(!('grid' %in% colnames(new_data))){
     # sort drivers by their average grid for an estimate
-    new_data <- newdata %>%
-      dplyr::left_bind(new_data, hd_driver[,c('driver_id', 'driver_grid_avg', 'grid'), by = 'driver_id']) %>%
-      dplyr::rename('last_grid' = 'grid') %>%
-      dplyr::mutate(driver_grid_avg = tidyr::replace_na(.data$driver_grid_avg, globals$grid),
-                    last_grid = tidyr::replace_na(.data$grid, globals$grid),
-                    driver_grid_avg = wmean_two(.data$driver_grid_avg, .data$last_grid, 10),
+    new_data <- new_data %>%
+      dplyr::left_join(hd_driver[, c('driver_id', 'driver_grid_avg', 'grid')], by = 'driver_id') %>%
+      dplyr::rename('last_grid' = .data$grid) %>%
+      dplyr::mutate(driver_grid_avg = tidyr::replace_na(.data$driver_grid_avg, default_params$grid),
+                    last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
+                    driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
                     grid = order(order(.data$driver_grid_avg)))
   } else {
-    new_data <- newdata %>%
-      dplyr::left_bind(new_data, hd_driver[,c('driver_id', 'driver_grid_avg', 'grid'), by = 'driver_id']) %>%
+    new_data <- new_data %>%
+      dplyr::left_join(hd_driver[,c('driver_id', 'driver_grid_avg', 'grid')], by = 'driver_id') %>%
       dplyr::rename('grid' = 'grid.x', 'last_grid' = 'grid.y') %>%
-      dplyr::mutate(driver_grid_avg = tidyr::replace_na(.data$driver_grid_avg, globals$grid),
-                    last_grid = tidyr::replace_na(.data$last_grid, globals$grid),
-                    driver_grid_avg = wmean_two(.data$driver_grid_avg, .data$last_grid, 10))
+      dplyr::mutate(driver_grid_avg = tidyr::replace_na(.data$driver_grid_avg, default_params$grid),
+                    last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
+                    driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10))
   }
 
   if(!('quali_position' %in% colnames(new_data))){
@@ -119,21 +103,21 @@ generate_new_data <- function(season, round, drivers=NULL, historical_data = cle
   new_data <- new_data %>%
     dplyr::left_join(hd_driver[,c('driver_id', 'driver_experience', 'driver_failure', 'driver_failure_avg',
                                   'position', 'driver_position_avg', 'finished', 'driver_finish_avg')], by = 'driver_id') %>%
-    dplyr::mutate(driver_experience = tidyr::replace_na(.driver_experience, -1),
+    dplyr::mutate(driver_experience = tidyr::replace_na(.data$driver_experience, -1),
                   driver_experience = .data$driver_experience + 1,
-                  driver_failure_avg = tidyr::replace_na(.data$driver_failure_avg, globals$driver_failure_avg),
-                  driver_failure = tidyr::replace_na(.data$driver_failure, globals$driver_failure_avg),
-                  driver_failure_avg = wmean_two(.data$driver_failure_avg, .data$driver_Failure, 20),
-                  position = tidyr::replace_na(.data$position, globals$position),
-                  driver_position_avg = tidyr::replace_na(.data$driver_position_avg, globals$position),
+                  driver_failure_avg = tidyr::replace_na(.data$driver_failure_avg, default_params$driver_failure_avg),
+                  driver_failure = tidyr::replace_na(.data$driver_failure, default_params$driver_failure_avg),
+                  driver_failure_avg = wmean_two(.data$driver_failure, .data$driver_failure_avg, 20),
+                  position = tidyr::replace_na(.data$position, default_params$position),
+                  driver_position_avg = tidyr::replace_na(.data$driver_position_avg, default_params$position),
                   driver_position_avg = wmean_two(.data$position, .data$driver_position_avg, 10),
-                  driver_finish_avg = tidyr::replace_na(.data$driver_finish_avg, globals$driver_finish_avg),
-                  finished = tidyr::replace_na(.data$finished, globals$driver_finish_avg, 10),
+                  driver_finish_avg = tidyr::replace_na(.data$driver_finish_avg, default_params$driver_finish_avg),
+                  finished = tidyr::replace_na(.data$finished, default_params$driver_finish_avg),
                   driver_finish_avg = wmean_two(.data$finished, .data$driver_finish_avg, 10)) %>%
     dplyr::left_join(hd_constructor[,c('constructor_id', 'constructor_grid_avg', 'constructor_finish_avg',
                                        'constructor_failure_avg')], by = 'constructor_id') %>%
     dplyr::left_join(hd_circuit[,c('circuit_id', 'grid_pos_corr_avg', 'driver_failure_circuit_avg',
-                                   'constructor_failure_circuit_avg')], by = circuit_id)
+                                   'constructor_failure_circuit_avg')], by = 'circuit_id')
 
 
   #Optionally included practice data
