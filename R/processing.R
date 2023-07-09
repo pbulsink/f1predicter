@@ -84,6 +84,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::group_by(.data$season, .data$round, .data$session_type, .data$driver_id) %>%
     dplyr::mutate(best_time = dplyr::if_else(is.infinite(min(.data$lap_time, na.rm = T)), NA_real_, min(.data$lap_time, na.rm = T)), num_laps = dplyr::n()) %>%
     dplyr::ungroup() %>%
+    suppressWarnings() %>%
     dplyr::group_by(.data$season, .data$round, .data$session_type) %>%
     dplyr::mutate(gap_to_best = .data$best_time - min(.data$best_time, na.rm = T),
                   perc_to_best = .data$best_time/min(.data$best_time, na.rm = T),
@@ -105,9 +106,12 @@ clean_data <- function(input = load_all_data()) {
     dplyr::arrange("season", "round") %>%
     dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3")) %>%
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
-    dplyr::mutate(practice_avg_rank = mean(.data$rank, na.rm = T), practice_best_rank = min(.data$rank, na.rm = T), practice_num_laps = sum(.data$num_laps, na.rm = T),
-      practice_avg_gap = mean(.data$gap_to_best, na.rm = T), practice_best_gap = min(.data$gap_to_best, na.rm = T), practice_optimal_rank = mean(.data$optimal_rank,
-        na.rm = T)) %>%
+    dplyr::mutate(practice_avg_rank = mean(.data$rank, na.rm = T),
+                  practice_best_rank = min(.data$rank, na.rm = T),
+                  practice_num_laps = sum(.data$num_laps, na.rm = T),
+                  practice_avg_gap = mean(.data$gap_to_best, na.rm = T),
+                  practice_best_gap = min(.data$gap_to_best, na.rm = T),
+                  practice_optimal_rank = mean(.data$optimal_rank, na.rm = T)) %>%
     dplyr::ungroup() %>%
     dplyr::select("driver_id", "season", "round", "practice_avg_rank", "practice_best_rank", "practice_num_laps", "practice_avg_gap", "practice_best_gap", "practice_optimal_rank") %>%
     unique() %>%
@@ -124,8 +128,10 @@ clean_data <- function(input = load_all_data()) {
                   q_min_perc = NA_real_) %>%
     dplyr::rowwise() %>%
     dplyr::mutate(q_min_perc = dplyr::if_else(is.infinite(min(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T)), NA_real_, min(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")))),
-                  q_avg_perc = mean(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T)) %>%
+                  q_avg_perc = mean(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T),
+                  q_avg_perc = tidyr::replace_na(.data$q_avg_perc, default_params$position)) %>%
     dplyr::ungroup() %>%
+    suppressWarnings() %>%
     unique() %>%
     janitor::clean_names()
 

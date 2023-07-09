@@ -4,12 +4,13 @@
 
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
-model_qual_early <- function(data = clean_data()) {
+model_quali_early <- function(data = clean_data()) {
   # Model quali early in the week - before practices are done grid => step_dummy
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$pole <- ifelse(data$quali_position == 1, 1, 0)
+  data$pole <- as.factor(data$pole)
 
   data$round_id <- as.factor(data$round_id)
 
@@ -34,10 +35,10 @@ model_qual_early <- function(data = clean_data()) {
                                          yardstick::roc_auc)
   metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
 
-  # ---- Winner Model ----
+  # ---- Pole Model ----
   pole_recipe <- recipes::recipe(pole ~ ., data = train_data) %>%
     recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("constructor_id") %>%
+    recipes::step_rm("quali_position") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -66,7 +67,7 @@ model_qual_early <- function(data = clean_data()) {
     tune::finalize_workflow(pole_best) %>%
     parsnip::fit(train_data)
   pole_final_fit <- pole_final %>%
-    tune::last_fit(data_split)
+    tune::last_fit(data_split, metrics = metrics_binary)
 
   message("Pole Quali Model with ",
           round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
@@ -94,7 +95,7 @@ model_qual_early <- function(data = clean_data()) {
   data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
 
   position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "race", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -121,7 +122,7 @@ model_qual_early <- function(data = clean_data()) {
     tune::finalize_workflow(position_best) %>%
     parsnip::fit(train_data)
   position_final_fit <- position_final %>%
-    tune::last_fit(data_split)
+    tune::last_fit(data_split, metrics = metrics_multi)
 
   message("Quali Position Model with ",
           round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
@@ -348,7 +349,7 @@ model_results_early <- function(grid, data = clean_data()) {
   data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
 
   position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "race", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -384,5 +385,6 @@ model_results_early <- function(grid, data = clean_data()) {
           round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
           round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
 
+  return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
 
 }
