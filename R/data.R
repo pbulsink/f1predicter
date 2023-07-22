@@ -8,7 +8,7 @@
 #' Get all laps (timing) from a weekend and return as one data.frame
 #'
 #' @param season season, from 2018 onward
-#' @param round round, compatable with fastf1 round selector
+#' @param round round, compatible with fastf1 round selector
 #'
 #' @return a data.frame with all lap information
 get_laps <- function(season, round) {
@@ -67,7 +67,21 @@ get_grids <- function(season, round, session) {
     if (season < 2021) {
       return(NULL)
     }
-    results <- f1dataR::load_sprint(season = season, round = round)
+    schedule <- f1predicter::schedule %>%
+      dplyr::mutate(date = as.Date(.data$date),
+                    season = as.numeric(.data$season),
+                    round = as.numeric(.data$round),
+                    lat = as.numeric(.data$round),
+                    long = as.numeric(.data$long),
+                    sprint_date = as.Date(.data$sprint_date)) %>%
+      tibble::as_tibble()
+
+    if (!is.na(schedule[schedule$season == season & schedule$round == round,]$sprint_date)){
+      results <- f1dataR::load_sprint(season = season, round = round)
+    } else {
+      results <- NULL
+    }
+
     if (is.null(results)) {
       return(NULL)
     }
@@ -97,11 +111,23 @@ get_grids <- function(season, round, session) {
 #' @param round round number
 #' @param force whether to force getting new data
 #'
+#' @export
+#'
 #' @return a list of data frames
 get_weekend_data <- function(season, round, force = FALSE) {
+  schedule <- f1predicter::schedule %>%
+      dplyr::mutate(date = as.Date(.data$date),
+                    season = as.numeric(.data$season),
+                    round = as.numeric(.data$round),
+                    lat = as.numeric(.data$round),
+                    long = as.numeric(.data$long),
+                    sprint_date = as.Date(.data$sprint_date)) %>%
+      tibble::as_tibble()
+
   rgrid <- NA
   sgrid <- NA
   results <- NA
+  sprint_results <- NA
   pitstops <- NA
   quali <- NA
   laps <- NA
@@ -112,6 +138,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
     sgrid <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(season, "_", round, "_sgrid.csv"))), error = function(e) return(NA), warning = function(w) return(NA)) %>%
       ensure_tidy()
     results <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(season, "_", round, "_results.csv"))), error = function(e) return(NA), warning = function(w) return(NA)) %>%
+      ensure_tidy()
+    sprint_results <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(season, "_", round, "_results.csv"))), error = function(e) return(NA), warning = function(w) return(NA)) %>%
       ensure_tidy()
     pitstops <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(season, "_", round, "_pitstops.csv"))), error = function(e) return(NA), warning = function(w) return(NA)) %>%
       ensure_tidy()
@@ -150,6 +178,25 @@ get_weekend_data <- function(season, round, force = FALSE) {
       utils::write.csv(x = results, file = file.path(options("f1predicter.cache"), paste0(season, "_", round, "_results.csv")), quote = F, row.names = F)
     }
     Sys.sleep(1)
+  }
+
+  if (season >= 2021) {
+    if (!any(!is.na(sprint_results))) {
+      if(!is.null(schedule[schedule$season == season & schedule$round == round,]$sprint_date)) {
+        sprint_results <- f1dataR::load_sprint(season = season, round = round)
+        if(!is.null(sprint_results)) {
+           sprint_results <- sprint_results%>%
+            dplyr::mutate(points = as.numeric(.data$points),
+                          position = as.numeric(.data$position),
+                          grid = as.numeric(.data$grid),
+                          laps = as.numeric(.data$laps),
+                          lap = as.numeric(.data$lap)) %>%
+            janitor::clean_names()
+          utils::write.csv(x = sprint_results, file = file.path(options("f1predicter.cache"), paste0(season, "_", round, "_sprint_results.csv")), quote = F, row.names = F)
+        }
+        Sys.sleep(1)
+      }
+    }
   }
 
   if (season >= 2011) {
@@ -206,7 +253,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
         } else {
           quali <- quali %>%
             dplyr::mutate(position = as.numeric(.data$position), season = season, round = round) %>%
-            janitor::clean_names() %>%
+            dplyr::mutate(q1_sec = expand_val(unlist(.data$q1_sec), dplyr::n())) %>%
+            janitor::clean_names()
           utils::write.csv(x = quali, file = file.path(options("f1predicter.cache"), paste0(season, "_", round, "_quali.csv")), quote = F, row.names = F)
         }
       }
@@ -227,7 +275,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       if (!is.null(laps)) {
         laps <- laps %>%
           dplyr::left_join(drivers, by = c(driver = "code")) %>%
-          dplyr::left_join(results[, c("driverId", "constructorId")], by = c("driverId")) %>%
+          dplyr::left_join(results[, c("driver_id", "constructor_id")], by = c("driver_id")) %>%
           dplyr::mutate(season = season, round = round) %>%
           dplyr::select("driver_id", "constructor_id", "lap_time", "lap_number", "stint", "sector1time", "sector2time",
             "sector3time", "speed_i1", "speed_i2", "speed_fl", "speed_st",  "is_personal_best", "compound", "tyre_life",
@@ -240,7 +288,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
     laps = NULL
   }
   closeAllConnections()
-  return(list(rgrid = rgrid, sgrid = sgrid, results = results, pitstops = pitstops, laps = laps, quali = quali))
+  return(list(rgrid = rgrid, sgrid = sgrid, results = results, sprint_results = sprint_results, pitstops = pitstops, laps = laps, quali = quali))
 }
 
 #' Get the schedule
@@ -254,11 +302,9 @@ get_schedule <- function(save_data = FALSE) {
   for (y in c(1990:f1dataR::get_current_season())) {
     schedule <- dplyr::bind_rows(schedule, f1dataR::load_schedule(season = y))
   }
-  schedule %>%
-    dplyr::mutate(date = as.Date(.data$date))
 
   if (save_data) {
-    usethis::use_data(schedule, overwrite = T)
+    usethis::use_data(schedule, overwrite = TRUE)
   }
 
   invisible(schedule)
@@ -284,16 +330,18 @@ get_season_data <- function(season, force = FALSE) {
   rgrid <- NULL
   sgrid <- NULL
   results <- NULL
+  sprint_results <- NULL
   pitstops <- NULL
   laps <- NULL
   qualis <- NULL
 
-  for (round in schedule[schedule$season == season & schedule$date <= Sys.Date() + 3, ]$round) {
+  for (round in schedule[schedule$season == season & schedule$date <= Sys.Date(), ]$round) {
     cat("Getting data for round", round, "of", length(schedule[schedule$season == season & schedule$date <= Sys.Date(), ]$round), "\n")
     r <- get_weekend_data(season = season, round = as.numeric(round), force = force)
     rgrid <- dplyr::bind_rows(rgrid, r$rgrid)
     sgrid <- dplyr::bind_rows(sgrid, r$sgrid)
     results <- dplyr::bind_rows(results, r$results)
+    sprint_results <- dplyr::bind_rows(results, r$sprint_results)
     laps <- dplyr::bind_rows(laps, r$laps)
     pitstops <- dplyr::bind_rows(pitstops, r$pitstops)
     qualis <- dplyr::bind_rows(qualis, r$quali)
@@ -311,16 +359,27 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_laps.csv")), quote = F, row.names = F)
   }
+
+  if (season >= 2021){
+    sprint_results %>%
+      janitor::clean_names() %>%
+      utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_sprint_results.csv")), quote = F, row.names = F)
+  }
+
   results %>%
     janitor::clean_names() %>%
     utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_results.csv")), quote = F, row.names = F)
+
   pitstops %>%
     janitor::clean_names() %>%
     utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_pitstops.csv")), quote = F, row.names = F)
+
   qualis %>%
     janitor::clean_names() %>%
     utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(season, "_season_qualis.csv")), quote = F, row.names = F)
+
   closeAllConnections()
+  cat("Success\n")
 }
 
 
@@ -335,6 +394,7 @@ load_all_data <- function() {
   rgrid <- NULL
   sgrid <- NULL
   results <- NULL
+  sprint_results <- NULL
   pitstops <- NULL
   laps <- NULL
   qualis <- NULL
@@ -358,6 +418,11 @@ load_all_data <- function() {
         ensure_tidy()
       pitstops <- dplyr::bind_rows(pitstops, pt)
     }
+    if (y >= 2021) {
+      sr <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(y, "_season_sprint_results.csv"))), error = function(e) return(NULL)) %>%
+        ensure_tidy()
+      sprint_results <- dplyr::bind_rows(sprint_results, sr)
+    }
     if (y >= 2018) {
       lp <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(y, "_season_laps.csv")), colClasses = c("character", "character", "numeric",
         "integer", "integer", "numeric", "numeric", "numeric", "integer", "integer", "integer", "integer", "logical", "character", "integer", "logical",
@@ -369,7 +434,7 @@ load_all_data <- function() {
     closeAllConnections()
   }
 
-  return(list(results = results, laps = laps, pitstops = pitstops, sgrid = sgrid, rgrid = rgrid, qualis = qualis))
+  return(list(results = results, sprint_results = sprint_results, laps = laps, pitstops = pitstops, sgrid = sgrid, rgrid = rgrid, qualis = qualis))
 }
 
 get_last_drivers <- function() {
@@ -476,6 +541,7 @@ janitor_data <- function(){
   rgrid <- NULL
   sgrid <- NULL
   results <- NULL
+  sprint_results <- NULL
   pitstops <- NULL
   laps <- NULL
   qualis <- NULL
@@ -496,6 +562,10 @@ janitor_data <- function(){
     }
     if (y >= 2018) {
       lp <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(y, "_season_laps.csv")), colClasses = c("character", "character", "numeric",                                                                                                   "integer", "integer")), error = function(e) return(NULL)) %>%
+        ensure_tidy()
+    }
+    if (y >= 2021) {
+      sr <- tryCatch(utils::read.csv(file.path(options("f1predicter.cache"), paste0(y, "_season_sprint_results.csv")), colClasses = c("character", "character", "numeric",                                                                                                   "integer", "integer")), error = function(e) return(NULL)) %>%
         ensure_tidy()
     }
     closeAllConnections()
@@ -528,6 +598,11 @@ janitor_data <- function(){
       lp %>%
         janitor::clean_names() %>%
         utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_laps.csv")), quote = F, row.names = F)
+    }
+    if(!is.null(sr)) {
+      sr %>%
+        janitor::clean_names() %>%
+        utils::write.csv(file = file.path(options("f1predicter.cache"), paste0(y, "_season_sprint_results.csv")), quote = F, row.names = F)
     }
     closeAllConnections()
   }

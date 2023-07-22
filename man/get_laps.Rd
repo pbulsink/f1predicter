@@ -9,7 +9,7 @@ get_laps(season, round)
 \arguments{
 \item{season}{season, from 2018 onward}
 
-\item{round}{round, compatable with fastf1 round selector}
+\item{round}{round, compatible with fastf1 round selector}
 }
 \value{
 a data.frame with all lap information
