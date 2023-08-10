@@ -5,7 +5,7 @@
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
 model_quali_early <- function(data = clean_data()) {
-  # Model quali late in the week - after practice sessions grid => step_dummy
+  # Model quali early in the week - after practice sessions grid => step_dummy
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
@@ -17,7 +17,7 @@ model_quali_early <- function(data = clean_data()) {
   data <- data %>%
     dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
                   "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg",
+                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
                   "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "pole", "season",
                   "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
@@ -136,7 +136,7 @@ model_quali_early <- function(data = clean_data()) {
 
 model_quali_late <- function(data = clean_data()) {
 
-  # Model quali early in the week - before practices are done grid => step_dummy
+  # Model quali late in the week - after practices are done. grid => step_dummy
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
@@ -148,7 +148,7 @@ model_quali_late <- function(data = clean_data()) {
   data <- data %>%
     dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
                   "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg",
+                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
                   "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "practice_avg_rank",
                   "practice_best_rank", "practice_optimal_rank", "pole", "season", "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
@@ -285,7 +285,7 @@ model_results_after_quali <- function(data = clean_data()){
   data <- data %>%
     dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
                   "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
+                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
                   "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
                   "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "practice_avg_gap", "practice_best_gap",
                   "q_min_perc", "q_avg_perc", "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
@@ -532,7 +532,7 @@ model_results_late <- function(data = clean_data()){
   data <- data %>%
     dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
                   "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
+                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
                   "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
                   "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "practice_avg_gap", "practice_best_gap",
                   "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
@@ -778,7 +778,7 @@ model_results_early <- function(data = clean_data()) {
   data <- data %>%
     dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
                   "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
+                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
                   "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
                   "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
@@ -1001,4 +1001,64 @@ model_results_early <- function(data = clean_data()) {
 
   return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
 
+}
+
+model_quali_gap_early <- function(data = clean_data()) {
+  # Model quali early in the week - before practice sessions - use quali gap to sort grid
+  data <- data[data$season >= 2018, ]
+
+  # ---- Quali Gap Model ----
+  data <- data %>%
+    dplyr::mutate(round_id = as.factor(.data$round_id)) %>%
+    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
+                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
+                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
+                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
+                  "season", "round", "round_id") %>%
+    dplyr::mutate_if(is.character, as.factor)
+
+  # Put 4/5 of the data into the training set
+  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
+
+  # Create data frames for the two sets:
+  train_data <- rsample::training(data_split)
+  test_data <- rsample::testing(data_split)
+
+  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
+
+  qgap_recipe <- recipes::recipe(qgap ~ ., data = train_data) %>%
+    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_predictors())
+
+  qgap_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
+                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
+    parsnip::set_mode("regression") %>%
+    parsnip::set_engine("xgboost", nthread = 2)
+
+  qgap_wflow <- workflows::workflow() %>%
+    workflows::add_model(position_mod) %>%
+    workflows::add_recipe(position_recipe)
+
+  tictoc::tic("Trained Quali Gap Model")
+  qgap_res <- qgap_wflow %>%
+    tune::tune_grid(resamples = data_folds, grid = xgb_grid)
+
+  qgap_best <- qgap_res %>%
+    tune::select_best("rmse")
+  tictoc::toc(log = T)
+
+  qgap_final <- qgap_wflow %>%
+    tune::finalize_workflow(qgap_best) %>%
+    parsnip::fit(train_data)
+  qgap_final_fit <- qgap_final %>%
+    tune::last_fit(data_split)
+
+  message("Quali Gap Model with ",
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rmse") %>% dplyr::pull(".estimate"), 4), " rmse, ",
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rsq") %>% dplyr::pull(".estimate"), 4), " rsq, ",
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mae") %>% dplyr::pull(".estimate"), 4), " mae.")
+
+  return(list('quali_qgap' = position_final))
 }

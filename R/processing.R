@@ -7,10 +7,11 @@ default_params<-list('grid' = 16.9,
                      'driver_failure_avg' = 0.09253282,
                      'constructor_failure_avg' = 0.1461158/2,
                      'grid_pos_corr_avg' = 0.5682137,
-                     'constructor_pit_duration_perc' = 100,
-                     'constructor_pit_duration_perc' = 150,
+                     'constructor_pit_duration_perc' = 1.50,
+                     'quali_avg_perc' = 1.014262,
                      'fastest_pit' = 2.5,
-                     'pos_change' = 1.56621)
+                     'pos_change' = 1.56621,
+                     'qgap' = 1.5)
 
 
 # Data Processing Functions
@@ -29,7 +30,7 @@ clean_data <- function(input = load_all_data()) {
   rg2$quali_position <- rg2$position
   rg2$driver_id <- rg2$quali_results
   results <- input$results %>%
-    dplyr::arrange("season", "round", "position") %>%
+    dplyr::arrange(.data$season, .data$round, .data$position) %>%
     dplyr::filter(!(.data$status == "Did not qualify" | .data$status == "Did not prequalify")) %>%
     # Update Team Names:
     dplyr::mutate(constructor_id = dplyr::case_match(.data$constructor_id,
@@ -79,7 +80,7 @@ clean_data <- function(input = load_all_data()) {
 
   # laps ----
   laps <- input$laps %>%
-    dplyr::arrange("season", "round") %>%
+    dplyr::arrange(.data$season, .data$round) %>%
     dplyr::filter(.data$deleted != TRUE) %>%
     dplyr::group_by(.data$season, .data$round, .data$session_type, .data$driver_id) %>%
     dplyr::mutate(best_time = dplyr::if_else(is.infinite(min(.data$lap_time, na.rm = T)), NA_real_, min(.data$lap_time, na.rm = T)), num_laps = dplyr::n()) %>%
@@ -103,7 +104,7 @@ clean_data <- function(input = load_all_data()) {
 
   # practices ----
   practices <- laps %>%
-    dplyr::arrange("season", "round") %>%
+    dplyr::arrange(.data$season, .data$round) %>%
     dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3")) %>%
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
     dplyr::mutate(practice_avg_rank = mean(.data$rank, na.rm = T),
@@ -119,17 +120,27 @@ clean_data <- function(input = load_all_data()) {
 
   # qualis ----
   qualis <- input$qualis %>%
-    dplyr::arrange("season", "round") %>%
+    dplyr::arrange(.data$season, .data$round) %>%
     dplyr::select("driver_id", "q1_sec", "q2_sec", "q3_sec", "season", "round") %>%
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(q1_perc = .data$q1_sec/min(.data$q1_sec, na.rm = T),
                   q2_perc = .data$q2_sec/min(.data$q2_sec, na.rm = T),
                   q3_perc = .data$q3_sec/min(.data$q3_sec, na.rm = T),
-                  q_min_perc = NA_real_) %>%
+                  q_min_perc = pmin(.data$q1_perc, .data$q2_perc, .data$q3_perc, na.rm = T),
+                  q1gap = .data$q1_sec - min(.data$q1_sec, na.rm = T),
+                  q2gap = .data$q2_sec - min(.data$q2_sec, na.rm = T),
+                  q3gap = .data$q3_sec - min(.data$q3_sec, na.rm = T),
+                  qgap = dplyr::case_when(!is.na(.data$q3_sec) ~ .data$q3gap,
+                                          !is.na(.data$q2_sec) ~ .data$q2gap,
+                                          !is.na(.data$q1_sec) ~ .data$q1gap,
+                                          TRUE ~ max(q1gap, na.rm = T) + 0.1),
+                  qgap = dplyr::if_else(.data$qgap > 5, max(.data$qgap[.data$qgap < 5], na.rm = T)+0.1, .data$qgap)) %>%
     dplyr::rowwise() %>%
-    dplyr::mutate(q_min_perc = dplyr::if_else(is.infinite(min(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T)), NA_real_, min(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")))),
-                  q_avg_perc = mean(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T),
-                  q_avg_perc = tidyr::replace_na(.data$q_avg_perc, default_params$position)) %>%
+    dplyr::mutate(q_avg_perc = mean(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T),
+                  q_avg_perc = tidyr::replace_na(.data$q_avg_perc, default_params$quali_avg_perc)) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(.data$driver_id) %>%
+    dplyr::mutate(driver_avg_qgap = as.numeric(slider::slide(.data$qgap, s_lagged_cumwmean_expanded, ln = 5, val = default_params$qgap, .before = 5))) %>%
     dplyr::ungroup() %>%
     suppressWarnings() %>%
     unique() %>%
@@ -137,7 +148,7 @@ clean_data <- function(input = load_all_data()) {
 
   # pitstops ----
   pitstops <- input$pitstops %>%
-    dplyr::arrange("season", "round") %>%
+    dplyr::arrange(.data$season, .data$round) %>%
     dplyr::select("driver_id", "stop", "duration", "season", "round") %>%
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
     dplyr::mutate(stops = dplyr::n()) %>%
@@ -185,7 +196,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::select("circuit_id", "season", "round")
 
   results <- results %>%
-    dplyr::arrange("season", "round", "position") %>%
+    dplyr::arrange(.data$season, .data$round, .data$position) %>%
     dplyr::left_join(qualis, by = c("round", "season", "driver_id")) %>%
     dplyr::left_join(practices, by = c("round", "season", "driver_id")) %>%
     dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
@@ -219,6 +230,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::ungroup() %>%
     dplyr::right_join(results, by = c("round", "season", "circuit_id")) %>%
     dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%
+    dplyr::arrange(.data$season, .data$round, .data$position) %>%
     janitor::clean_names()
 
   return(results)
