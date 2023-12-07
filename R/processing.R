@@ -57,6 +57,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::ungroup() %>%
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(pos_change_perc = dplyr::if_else(.data$pos_change >= 0, .data$pos_change/.data$grid, .data$pos_change/(dplyr::n() - .data$grid)),
+                  weighted_passes = (.data$grid - .data$position) / .data$grid,
                   grid = dplyr::if_else(.data$grid != 0, .data$grid, dplyr::n()),
                   modern_points = expand_val(c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1), dplyr::n(), 0),
                   grid_points = expand_val(c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1), dplyr::n(), 0)[.data$grid],
@@ -73,7 +74,7 @@ clean_data <- function(input = load_all_data()) {
       "Physical", "Distributor", "Chassis", "Wheel bearing", "Halfshaft", "Ignition", "Injection", "Safety belt", "Oil pump", "Underweight", "Safety concerns",
       "Not restarted", "Stalled", "Crankshaft", "Safety"), 1, 0)) %>%
     dplyr::left_join(rg2[, c("quali_position", "driver_id", "season", "round")], by = c("driver_id", "season", "round")) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "pos_change", "pos_change_perc", "pos_change_points", "fastest_rank", fastest_time = "time_sec",
+    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "pos_change", "pos_change_perc", "weighted_passes", "pos_change_points", "fastest_rank", fastest_time = "time_sec",
       "points", "points_before", "status", "points_after", "driver_experience", "season", "round", "driver_failure", "constructor_failure", "finished") %>%
     janitor::clean_names()
 
@@ -204,6 +205,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::left_join(schedule, by = c("round", "season")) %>%
     dplyr::group_by(.data$driver_id) %>%
     dplyr::mutate(driver_pos_change_avg = as.numeric(slider::slide(.data$pos_change, s_lagged_cumwmean_expanded, ln = 5, val = default_params$pos_change, .before = 5)),
+                  driver_weighted_pass_avg = as.numeric(slider::slide(.data$weighted_passes, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
                   driver_points_change_avg = as.numeric(slider::slide(.data$pos_change_points, s_lagged_cumwmean_expanded, ln = 5, val = 0, .before = 5)),
                   driver_failure = tidyr::replace_na(.data$driver_failure, 0),
                   driver_failure_avg = as.numeric(slider::slide(.data$driver_failure, s_lagged_cumwmean_expanded, val = default_params$driver_failure_avg, ln = 20, .before = 20)),

@@ -1,11 +1,14 @@
+# Return a weighted mean, filling the supplied vector to length `ln` with value `val` before calculating it.
+# Weighted mean is weighted on cubed root of 1:`ln`
 wmean <- function(x, ln = 20, val = 0) {
   ln_origin <- length(x)
   if (length(x) < ln) {
-    x <- c(x, rep(val, ln - length(x)))
+    x <- c(rep(val, ln - length(x)), x)
   }
   return(stats::weighted.mean(x, w = cubert(1:length(x))))
 }
 
+#return the cumulative weighted mean (with weights as log(1:ln(x)))
 cumwmean <- function(x) {
   return(cumsum(x * log(1:length(x)))/cumsum(log(1:length(x))))
 }

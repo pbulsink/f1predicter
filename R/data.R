@@ -32,6 +32,9 @@ get_laps_or_null <- function(season, round, session) {
   })
 
   if (!is.null(laps)) {
+    if(!('deleted_reason' %in% colnames(laps))) {
+      laps$deleted_reason <- NA_character_
+    }
     laps <- laps %>%
       dplyr::mutate(is_personal_best = as.logical(unlist(.data$is_personal_best)),
                     track_status = as.numeric(unlist(.data$track_status)),
@@ -42,7 +45,9 @@ get_laps_or_null <- function(season, round, session) {
                     rainfall = as.logical(unlist(.data$rainfall)),
                     track_temp = unlist(.data$track_temp),
                     wind_direction = unlist(.data$wind_direction),
-                    wind_speed = unlist(.data$wind_speed)) %>%
+                    wind_speed = unlist(.data$wind_speed),
+                    fresh_tyre = unlist(.data$fresh_tyre),
+                    is_accurate = unlist(.data$is_accurate)) %>%
       janitor::clean_names()
   }
 
