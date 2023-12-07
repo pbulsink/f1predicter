@@ -23,5 +23,5 @@ PackageRoxygenize: rd,collate,namespace
 QuitChildProcessesOnExit: Yes
 
 PythonType: virtualenv
-PythonVersion: 3.9.6
-PythonPath: ~/.virtualenvs/f1dataRenv/bin/python
+PythonVersion: 3.11.6
+PythonPath: ~/.virtualenvs/f1dataRp311/bin/python
