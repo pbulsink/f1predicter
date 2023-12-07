@@ -1,10 +1,10 @@
-# Models
+# Models (regression/xgboost)
 
 # 1: Who will get Pole - Expected position of each person
 
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
-model_quali_early <- function(data = clean_data()) {
+model_quali_early_r <- function(data = clean_data()) {
   # Model quali early in the week - after practice sessions grid => step_dummy
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
@@ -134,7 +134,7 @@ model_quali_early <- function(data = clean_data()) {
   return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
 }
 
-model_quali_late <- function(data = clean_data()) {
+model_quali_late_r <- function(data = clean_data()) {
 
   # Model quali late in the week - after practices are done. grid => step_dummy
   data <- data[data$season >= 2018, ]
@@ -265,7 +265,7 @@ model_quali_late <- function(data = clean_data()) {
   return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
 }
 
-model_results_after_quali <- function(data = clean_data()){
+model_results_after_quali_r <- function(data = clean_data()){
   #As model_results_early - but with practice data
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
@@ -316,7 +316,7 @@ model_results_after_quali <- function(data = clean_data()){
 
   win_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
                                  learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
+    parsnip::set_mode("regression") %>%
     parsnip::set_engine("xgboost", nthread = 4)
 
   xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
@@ -480,7 +480,7 @@ model_results_after_quali <- function(data = clean_data()){
   # Note: multinomial regression
   position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
                                       mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
+    parsnip::set_mode("regression") %>%
     parsnip::set_engine("xgboost", nthread = 4)
 
   position_wflow <- workflows::workflow() %>%
@@ -512,7 +512,7 @@ model_results_after_quali <- function(data = clean_data()){
 
 }
 
-model_results_late <- function(data = clean_data()){
+model_results_late_r <- function(data = clean_data()){
   #As model_results_early - but with practice data
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
@@ -758,7 +758,7 @@ model_results_late <- function(data = clean_data()){
 
 }
 
-model_results_early <- function(data = clean_data()) {
+model_results_early_r <- function(data = clean_data()) {
   #Doesn't include practice data - predictions could be with grid predicted (early in week) or actual
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
@@ -1003,7 +1003,7 @@ model_results_early <- function(data = clean_data()) {
 
 }
 
-model_quali_gap_early <- function(data = clean_data()) {
+model_quali_gap_early_r <- function(data = clean_data()) {
   # Model quali early in the week - before practice sessions - use quali gap to sort grid
   data <- data[data$season >= 2018, ]
 
