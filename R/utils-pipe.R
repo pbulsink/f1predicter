@@ -12,3 +12,13 @@
 #' @param rhs A function call using the magrittr semantics.
 #' @return The result of calling `rhs(lhs)`.
 NULL
+
+#' Rlang operators
+#'
+#' @name !!
+#' @rdname rlang
+#' @keywords internal
+#' @export
+#' @importFrom rlang !!
+#' @importFrom rlang enquo
+NULL
