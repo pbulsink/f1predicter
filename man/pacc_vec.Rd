@@ -4,7 +4,15 @@
 \alias{pacc_vec}
 \title{Positive Accuracy metric}
 \usage{
-pacc_vec(truth, estimate, na_rm = TRUE, case_weights = NULL, ...)
+pacc_vec(
+  truth,
+  estimate,
+  estimator = NULL,
+  na_rm = TRUE,
+  case_weights = NULL,
+  event_level = "first",
+  ...
+)
 }
 \arguments{
 \item{truth}{truth value (0 or 1)}
@@ -14,6 +22,8 @@ pacc_vec(truth, estimate, na_rm = TRUE, case_weights = NULL, ...)
 \item{na_rm}{whether to remove NA cases - not used}
 
 \item{case_weights}{ignored, required for yardstick metrics}
+
+\item{event_level}{Event level = normally th first level in truth is assumed to be the event case, can change here.}
 
 \item{...}{unused}
 }

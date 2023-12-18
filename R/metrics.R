@@ -1,26 +1,23 @@
 # Metric for win accuracy
 
-pacc_impl <- function(truth, estimate, case_weights = NULL){
-  if(is.factor(truth)){
-    truth <- as.numeric(as.character(truth))
+event_col <- function(xtab, event_level) {
+  if (identical(event_level, "first")) {
+    colnames(xtab)[[1]]
+  } else {
+    colnames(xtab)[[2]]
   }
-  if(is.factor(estimate)){
-    estimate <- as.numeric(as.character(estimate))
-  }
+}
 
-  #make sure both estimates and truths are just between
-  stopifnot(max(truth) != 1 & min(truth) != 0)
-  stopifnot(max(estimate) <= 1 & min(estimate) >= 0)
-  stopifnot(length(truth) == length(estimate))
 
-  #optional: binary-code estimate
-  estimate <- round(estimate)
+pacc_impl <- function(truth, estimate, event_level){
+  xtab <- table(estimate, truth)
+  col <- event_col(xtab, event_level)
+  col2 <- setdiff(colnames(xtab), col)
 
-  #Determine matches
-  winners<-truth[truth == 1]
-  estimated_winners<-estimate[truth == 1]
-  pacc <- sum(winners == estimated_winners)/length(winners)
-  return(pacc)
+  tp <- xtab[col, col]
+  fn <- xtab[col2, col]
+
+  tp / (fn + tp)
 }
 
 #' Positive Accuracy metric
@@ -35,19 +32,34 @@ pacc_impl <- function(truth, estimate, case_weights = NULL){
 #' @param estimate estimates (note that they're limited to 0..1 and are rounded in the function to either 0 or 1)
 #' @param na_rm whether to remove NA cases - not used
 #' @param case_weights ignored, required for yardstick metrics
+#' @param event_level Event level = normally th first level in truth is assumed to be the event case, can change here.
 #' @param ... unused
 #'
 #' @return a numeric value between 0 and 1 (higher is better)
 #' @export
 #' @seealso [pacc()] for data.frame version
-pacc_vec <- function(truth, estimate, na_rm = TRUE, case_weights = NULL, ...) {
-  yardstick::check_numeric_metric(truth, estimate, case_weights)
+pacc_vec <- function(truth,
+                     estimate,
+                     estimator = NULL,
+                     na_rm = TRUE,
+                     case_weights = NULL,
+                     event_level = "first",
+                     ...) {
+  estimator <- yardstick::finalize_estimator(truth, estimator, metric_class = "pacc")
 
-  if (yardstick::yardstick_any_missing(truth, estimate, case_weights)) {
+  yardstick::check_class_metric(truth, estimate, case_weights, estimator)
+
+  if (na_rm) {
+    result <- yardstick::yardstick_remove_missing(truth, estimate, case_weights)
+
+    truth <- result$truth
+    estimate <- result$estimate
+    case_weights <- result$case_weights
+  } else if (yardstick::yardstick_any_missing(truth, estimate, case_weights)) {
     return(NA_real_)
   }
 
-  pacc_impl(truth = truth, estimate = estimate, case_weights = case_weights)
+  pacc_impl(truth = truth, estimate = estimate, event_level = event_level)
 }
 
 
@@ -57,7 +69,7 @@ pacc <- function(data, ...) {
 }
 
 
-pacc <- yardstick::new_numeric_metric(pacc, direction = "maximize")
+pacc <- yardstick::new_class_metric(pacc, direction = "maximize")
 
 #' Positive Accuracy metric
 #'
@@ -80,7 +92,7 @@ pacc <- yardstick::new_numeric_metric(pacc, direction = "maximize")
 #' @seealso [pacc_vec()] for vector version
 pacc.data.frame <- function(data, truth, estimate, na_rm = TRUE,  case_weights = NULL, ...) {
 
-  yardstick::numeric_metric_summarizer(
+  yardstick::class_metric_summarizer(
     name = "pacc",
     fn = pacc_vec,
     data = data,
@@ -92,3 +104,16 @@ pacc.data.frame <- function(data, truth, estimate, na_rm = TRUE,  case_weights =
   )
 }
 
+finalize_estimator_internal.pacc <- function(metric_dispatcher, x, estimator, call) {
+
+  yardstick::validate_estimator(estimator, estimator_override = "binary")
+  if (!is.null(estimator)) {
+    return(estimator)
+  }
+
+  lvls <- levels(x)
+  if (length(lvls) > 2) {
+    stop("A multiclass `truth` input was provided, but only `binary` is supported.")
+  }
+  "binary"
+}
