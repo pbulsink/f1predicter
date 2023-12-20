@@ -20,24 +20,8 @@ pacc_impl <- function(truth, estimate, event_level){
   tp / (fn + tp)
 }
 
-#' Positive Accuracy metric
-#'
-#' Subsets the normal accuracy metric to only count the target/positive position(s). For example, picking all 0 for win
-#' chance would normally give a 95% accuracy (1 in 20 is wrong - 1 in 20 wins). This function only looks at the accuracy
-#' relative to the truth == 1 case (i.e. correctly or not pick the winner). Works for win or for podium or points models.
-#'
-#' Idea inspired by https://towardsdatascience.com/formula-1-race-predictor-5d4bfae887da
-#'
-#' @param truth truth value (0 or 1)
-#' @param estimate estimates (note that they're limited to 0..1 and are rounded in the function to either 0 or 1)
-#' @param na_rm whether to remove NA cases - not used
-#' @param case_weights ignored, required for yardstick metrics
-#' @param event_level Event level = normally th first level in truth is assumed to be the event case, can change here.
-#' @param ... unused
-#'
-#' @return a numeric value between 0 and 1 (higher is better)
+#' @rdname pacc
 #' @export
-#' @seealso [pacc()] for data.frame version
 pacc_vec <- function(truth,
                      estimate,
                      estimator = NULL,
@@ -63,14 +47,6 @@ pacc_vec <- function(truth,
 }
 
 
-#' @export
-pacc <- function(data, ...) {
-  UseMethod("pacc")
-}
-
-
-pacc <- yardstick::new_class_metric(pacc, direction = "maximize")
-
 #' Positive Accuracy metric
 #'
 #' Subsets the normal accuracy metric to only count the target position(s) (i.e. truth == 1). For example, picking all
@@ -85,23 +61,66 @@ pacc <- yardstick::new_class_metric(pacc, direction = "maximize")
 #' @param estimate name of the data.frame column containing the estimates.
 #' @param na_rm whether to remove NA values
 #' @param case_weights Not used, required for yardstick metrics
-#' @param ... other elements, passed to yardstick::numeric_metric_summarizer
+#' @param ... other elements, passed to yardstick::prob_metric_summarizer()
 #'
 #' @return a numeric value between 0 and 1 (higher is better)
 #' @export
 #' @seealso [pacc_vec()] for vector version
-pacc.data.frame <- function(data, truth, estimate, na_rm = TRUE,  case_weights = NULL, ...) {
+pacc <- function(data, ...) {
+  UseMethod("pacc")
+}
 
-  yardstick::class_metric_summarizer(
-    name = "pacc",
-    fn = pacc_vec,
-    data = data,
-    truth = !! enquo(truth),
-    estimate = !! enquo(estimate),
-    na_rm = na_rm,
-    case_weights = !! enquo(case_weights),
-    ...
-  )
+pacc <- yardstick::new_prob_metric(pacc, direction = "maximize")
+
+#' @rdname pacc
+#' @export
+pacc.data.frame <- function(data, truth, estimate, ..., event_level = yardstick::yardstick_event_level(),
+                            na_rm = TRUE, case_weights = NULL) {
+
+  #replace numeric estimates with 1/0 "class-like" estimates to match the truth class.
+  # All this shit should be in impl
+  # elucidate truth as win/podium/10 from the number of truths.
+  #
+
+  if (truth == 'win') {
+    data <- data %>%
+      dplyr::group_by(.data$round_id) %>%
+      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) == max(!!rlang::sym(estimate), na.rm = T), 1, 0)) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
+      as.data.frame()
+  } else if (truth == 'podium') {
+    data <- data %>%
+      dplyr::group_by(.data$round_id) %>%
+      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) >= dplyr::nth(!!rlang::sym(estimate), n = 3, order_by = order(!!rlang::sym(estimate))), 1, 0)) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
+      as.data.frame()
+  } else if (truth == 't10') {
+    data <- data %>%
+      dplyr::group_by(.data$round_id) %>%
+      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) >= dplyr::nth(!!rlang::sym(estimate), n = 3, order_by = order(!!rlang::sym(estimate))), 1, 0)) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
+      as.data.frame()
+  } else {
+    data <- data %>%
+      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) > 0.5, 1, 0)) %>%
+      dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
+      as.data.frame()
+  }
+
+  round_ids<-unique(data$round_id)
+
+  if(length(round_ids) > 1){
+    pacc<-sapply(round_ids, function(x){pacc_vec(truth = data[data$round_id == x,truth],
+                                                 estimate = data[data$round_id == x, estimate])})
+    pacc<-mean(pacc, na.rm = T)
+  } else {
+    pacc<-pacc_vec(truth = data[,truth],
+                   estimate = data[, estimate])
+  }
+  return(dplyr::tibble(.metric = 'pacc', .estimator = 'binary', .estimate = pacc))
 }
 
 finalize_estimator_internal.pacc <- function(metric_dispatcher, x, estimator, call) {
