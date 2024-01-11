@@ -82,24 +82,25 @@ pacc.data.frame <- function(data, truth, estimate, ..., event_level = yardstick:
   # elucidate truth as win/podium/10 from the number of truths.
   #
 
-  if (truth == 'win') {
+  truths<-sum(as.numeric(as.character(data[,truth])))
+  if (truths == 1) {
     data <- data %>%
       dplyr::group_by(.data$round_id) %>%
       dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) == max(!!rlang::sym(estimate), na.rm = T), 1, 0)) %>%
       dplyr::ungroup() %>%
       dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
       as.data.frame()
-  } else if (truth == 'podium') {
+  } else if (truths == 3) {
     data <- data %>%
       dplyr::group_by(.data$round_id) %>%
       dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) >= dplyr::nth(!!rlang::sym(estimate), n = 3, order_by = order(!!rlang::sym(estimate))), 1, 0)) %>%
       dplyr::ungroup() %>%
       dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
       as.data.frame()
-  } else if (truth == 't10') {
+  } else if (truths == 10) {
     data <- data %>%
       dplyr::group_by(.data$round_id) %>%
-      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) >= dplyr::nth(!!rlang::sym(estimate), n = 3, order_by = order(!!rlang::sym(estimate))), 1, 0)) %>%
+      dplyr::mutate(!!rlang::sym(estimate) := ifelse(!!rlang::sym(estimate) >= dplyr::nth(!!rlang::sym(estimate), n = 10, order_by = order(!!rlang::sym(estimate))), 1, 0)) %>%
       dplyr::ungroup() %>%
       dplyr::mutate(!!rlang::sym(estimate) := factor(!!rlang::sym(estimate), levels = c(1,0))) %>%
       as.data.frame()

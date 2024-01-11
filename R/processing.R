@@ -96,6 +96,8 @@ clean_data <- function(input = load_all_data()) {
                   best_s2 = min(.data$sector2time, na.rm = T),
                   best_s3 = min(.data$sector3time, na.rm = T),
                   optimal_time = .data$best_s1 + .data$best_s2 + .data$best_s3,
+                  optimal_time = dplyr::if_else(is.infinite(.data$optimal_time), NA, .data$optimal_time),
+                  optimal_time = tidyr::replace_na(.data$optimal_time, max(.data$optimal_time, na.rm = TRUE)+0.1),
                   optimal_rank = dplyr::dense_rank(.data$optimal_time)) %>%
     dplyr::ungroup() %>%
     dplyr::select("driver_id", "season", "round", "session_type", "best_time", "rank", "num_laps", "gap_to_best",
@@ -115,6 +117,14 @@ clean_data <- function(input = load_all_data()) {
                   practice_best_gap = min(.data$gap_to_best, na.rm = T),
                   practice_optimal_rank = mean(.data$optimal_rank, na.rm = T)) %>%
     dplyr::ungroup() %>%
+    dplyr::group_by(.data$season, .data$round) %>%
+    dplyr::mutate(practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, 20),
+                  practice_best_rank = tidyr::replace_na(.data$practice_best_rank, 20),
+                  practice_num_laps = tidyr::replace_na(.data$practice_num_laps, 0),
+                  practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, max(.data$practice_avg_gap, na.rm = TRUE) + 0.1),
+                  practice_best_gap = tidyr::replace_na(.data$practice_best_gap, max(.data$practice_avg_gap, na.rm = TRUE) + 0.1),
+                  practice_optimal_rank = tidyr::replace_na(.data$practice_optimal_rank, 20)) %>%
+    dplyr::ungroup() %>%
     dplyr::select("driver_id", "season", "round", "practice_avg_rank", "practice_best_rank", "practice_num_laps", "practice_avg_gap", "practice_best_gap", "practice_optimal_rank") %>%
     unique() %>%
     janitor::clean_names()
@@ -126,8 +136,10 @@ clean_data <- function(input = load_all_data()) {
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(q1_perc = .data$q1_sec/min(.data$q1_sec, na.rm = T),
                   q2_perc = .data$q2_sec/min(.data$q2_sec, na.rm = T),
-                  q3_perc = .data$q3_sec/min(.data$q3_sec, na.rm = T),
-                  q_min_perc = pmin(.data$q1_perc, .data$q2_perc, .data$q3_perc, na.rm = T),
+                  q3_perc = .data$q3_sec/min(.data$q3_sec, na.rm = T)) %>%
+    dplyr::mutate(q1_perc = tidyr::replace_na(.data$q1_perc, 1.07),
+                  q_min_perc = pmin(.data$q1_perc, .data$q2_perc, .data$q3_perc, na.rm = T)) %>%
+    dplyr::mutate(q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.07),
                   q1gap = .data$q1_sec - min(.data$q1_sec, na.rm = T),
                   q2gap = .data$q2_sec - min(.data$q2_sec, na.rm = T),
                   q3gap = .data$q3_sec - min(.data$q3_sec, na.rm = T),
@@ -136,6 +148,7 @@ clean_data <- function(input = load_all_data()) {
                                           !is.na(.data$q1_sec) ~ .data$q1gap,
                                           TRUE ~ max(q1gap, na.rm = T) + 0.1),
                   qgap = dplyr::if_else(.data$qgap > 5, max(.data$qgap[.data$qgap < 5], na.rm = T)+0.1, .data$qgap)) %>%
+    dplyr::mutate(qgap = tidyr::replace_na(.data$qgap, max(.data$qgap, na.rm = T) + 0.1)) %>%
     dplyr::rowwise() %>%
     dplyr::mutate(q_avg_perc = mean(dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")), na.rm = T),
                   q_avg_perc = tidyr::replace_na(.data$q_avg_perc, default_params$quali_avg_perc)) %>%
@@ -233,6 +246,15 @@ clean_data <- function(input = load_all_data()) {
     dplyr::right_join(results, by = c("round", "season", "circuit_id")) %>%
     dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%
     dplyr::arrange(.data$season, .data$round, .data$position) %>%
+    dplyr::mutate(q_min_perc = tidyr::replace_na(.data$q_min_perc, mean(.data$q_min_perc, na.rm = TRUE)),
+                  q_avg_perc = tidyr::replace_na(.data$q_avg_perc, mean(.data$q_avg_perc, na.rm = TRUE)),
+                  driver_avg_qgap = tidyr::replace_na(.data$driver_avg_qgap, mean(.data$driver_avg_qgap, na.rm = TRUE)),
+                  practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, 20),
+                  practice_best_rank = tidyr::replace_na(.data$practice_best_rank, 20),
+                  practice_best_rank = dplyr::if_else(is.infinite(.data$practice_best_rank), 20, .data$practice_best_rank),
+                  practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, mean(.data$practice_avg_gap, na.rm = TRUE)),
+                  practice_best_gap = dplyr::if_else(is.infinite(.data$practice_best_gap), NA_real_, .data$practice_best_gap),
+                  practice_best_gap = tidyr::replace_na(.data$practice_best_gap, mean(.data$practice_best_gap, na.rm = TRUE))) %>%
     janitor::clean_names()
 
   return(results)
