@@ -262,11 +262,12 @@ model_quali_late_glm <- function(data = clean_data()) {
   return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
 }
 
+#' @export
 model_results_after_quali_glm <- function(data = clean_data()){
   #As model_results_early - but with practice data
+  p_mod_data <- data  # Used later
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
   data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1,0))
@@ -460,7 +461,7 @@ model_results_after_quali_glm <- function(data = clean_data()){
   # ---- Position Model ----
   data <- p_mod_data %>%
     dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
+    dplyr::mutate(round_id = as.factor(.data$round_id)) %>%
     dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
                   "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
                   "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
@@ -486,11 +487,9 @@ model_results_after_quali_glm <- function(data = clean_data()){
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  # Note: multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
+  position_mod <- parsnip::linear_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
+    parsnip::set_mode("regression") %>%
+    parsnip::set_engine("glmnet")
 
   position_wflow <- workflows::workflow() %>%
     workflows::add_model(position_mod) %>%
@@ -498,24 +497,22 @@ model_results_after_quali_glm <- function(data = clean_data()){
 
   tictoc::tic("Trained Position Model")
   position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
+    tune::tune_grid(resamples = data_folds, grid = glmnet_grid,
+                    metrics = yardstick::metric_set(yardstick::rmse, yardstick::rsq))
 
   position_best <- position_res %>%
-    tune::select_best("kappa")
+    tune::select_best("rmse")
   tictoc::toc(log = T)
 
   position_final <- position_wflow %>%
     tune::finalize_workflow(position_best) %>%
     parsnip::fit(train_data)
   position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_multi)
+    tune::last_fit(data_split, metrics = yardstick::metric_set(yardstick::rmse, yardstick::rsq))
 
   message("Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rmse") %>% dplyr::pull(".estimate"), 4), " rmse, ",
+          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rsq") %>% dplyr::pull(".estimate"), 4), " rsq.")
 
   return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
 
@@ -607,6 +604,7 @@ model_results_late_glm <- function(data = clean_data()){
     recipes::step_normalize(recipes::all_predictors())
 
   podium_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
+    parsnip::set_mode("regression") %>%
     parsnip::set_engine("glmnet")
 
   podium_wflow <- workflows::workflow() %>%
