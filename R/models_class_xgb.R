@@ -4,8 +4,8 @@
 
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
-model_quali_early <- function(data = clean_data()) {
-  # Model quali early in the week - after practice sessions grid => step_dummy
+model_quali_early_xgb <- function(data = clean_data()) {
+  # Model quali early in the week - before practices. Grid => step_dummy
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
@@ -14,10 +14,8 @@ model_quali_early <- function(data = clean_data()) {
   data$round_id <- as.factor(data$round_id)
 
   data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
-                  "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
-                  "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "pole", "season",
+    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
+                  "driver_position_avg", 'driver_avg_qgap', "driver_practice_optimal_rank_avg", "pole", "season",
                   "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
 
@@ -32,7 +30,8 @@ model_quali_early <- function(data = clean_data()) {
 
   metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
                                          yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
+  metrics_binary <- yardstick::metric_set(yardstick::ppv, yardstick::npv, yardstick::spec, yardstick::sens,
+                                       yardstick::mn_log_loss, yardstick::roc_auc, yardstick::accuracy)
 
   # ---- Pole Model ----
   pole_recipe <- recipes::recipe(pole ~ ., data = train_data) %>%
@@ -59,7 +58,7 @@ model_quali_early <- function(data = clean_data()) {
     tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_binary)
 
   pole_best <- pole_res %>%
-    tune::select_best("mn_log_loss")
+    tune::select_best("ppv")
   tictoc::toc()
 
   pole_final <- pole_wflow %>%
@@ -69,19 +68,21 @@ model_quali_early <- function(data = clean_data()) {
     tune::last_fit(data_split, metrics = metrics_binary)
 
   message("Pole Quali Model with ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "ppv") %>% dplyr::pull(".estimate"), 4), " ppv, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "sens") %>% dplyr::pull(".estimate"), 4), " sens, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "spec") %>% dplyr::pull(".estimate"), 4), " spec, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "npv") %>% dplyr::pull(".estimate"), 4), " npv, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
+    round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
 
   # ---- Quali Position Model ----
   data <- p_mod_data %>%
     dplyr::filter(.data$position <= 20) %>%
     dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "season", "round", "round_id") %>%
+    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
+                  "driver_position_avg", 'driver_avg_qgap', "driver_practice_optimal_rank_avg", "pole", "season",
+                  "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
 
   # Put 4/5 of the data into the training set
@@ -95,6 +96,7 @@ model_quali_early <- function(data = clean_data()) {
 
   position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
     recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+    recipes::step_rm("pole") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -124,16 +126,16 @@ model_quali_early <- function(data = clean_data()) {
     tune::last_fit(data_split, metrics = metrics_multi)
 
   message("Quali Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
+      round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
+      round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
+      round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
+      round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
+      round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
 
   return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
 }
 
-model_quali_late <- function(data = clean_data()) {
+model_quali_late_xgb <- function(data = clean_data()) {
 
   # Model quali late in the week - after practices are done. grid => step_dummy
   data <- data[data$season >= 2018, ]
@@ -144,10 +146,9 @@ model_quali_late <- function(data = clean_data()) {
   data$round_id <- as.factor(data$round_id)
 
   data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
-                  "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
-                  "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "practice_avg_rank",
+    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience",
+                  "constructor_grid_avg", "driver_grid_avg", "driver_position_avg", 'driver_avg_qgap',
+                  "driver_practice_optimal_rank_avg", "practice_avg_rank",
                   "practice_best_rank", "practice_optimal_rank", "pole", "season", "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
 
@@ -162,7 +163,8 @@ model_quali_late <- function(data = clean_data()) {
 
   metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
                                          yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
+  metrics_binary <- yardstick::metric_set(yardstick::ppv, yardstick::npv, yardstick::spec, yardstick::sens,
+                                          yardstick::mn_log_loss, yardstick::roc_auc, yardstick::accuracy)
 
   # ---- Pole Model ----
   pole_recipe <- recipes::recipe(pole ~ ., data = train_data) %>%
@@ -189,7 +191,7 @@ model_quali_late <- function(data = clean_data()) {
     tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_binary)
 
   pole_best <- pole_res %>%
-    tune::select_best("mn_log_loss")
+    tune::select_best("ppv")
   tictoc::toc()
 
   pole_final <- pole_wflow %>%
@@ -199,19 +201,22 @@ model_quali_late <- function(data = clean_data()) {
     tune::last_fit(data_split, metrics = metrics_binary)
 
   message("Pole Quali Model with ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "ppv") %>% dplyr::pull(".estimate"), 4), " ppv, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "sens") %>% dplyr::pull(".estimate"), 4), " sens, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "spec") %>% dplyr::pull(".estimate"), 4), " spec, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "npv") %>% dplyr::pull(".estimate"), 4), " npv, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
+          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
 
   # ---- Quali Position Model ----
   data <- p_mod_data %>%
     dplyr::filter(.data$position <= 20) %>%
     dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "season", "round", "round_id") %>%
+    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience",
+                  "constructor_grid_avg", "driver_grid_avg", "driver_position_avg", 'driver_avg_qgap',
+                  "driver_practice_optimal_rank_avg", "practice_avg_rank",
+                  "practice_best_rank", "practice_optimal_rank", "pole", "season", "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
 
   # Put 4/5 of the data into the training set
@@ -225,6 +230,7 @@ model_quali_late <- function(data = clean_data()) {
 
   position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
     recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+    recipes::step_rm("pole") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -263,8 +269,8 @@ model_quali_late <- function(data = clean_data()) {
   return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
 }
 
-model_results_after_quali <- function(data = clean_data()){
-  #As model_results_early - but with practice data
+model_results_after_quali_xgb <- function(data = clean_data()){
+  #As model_results_late - but with quali data
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
   p_mod_data <- data  # Used later
@@ -520,7 +526,7 @@ model_results_after_quali <- function(data = clean_data()){
 
 }
 
-model_results_late <- function(data = clean_data()){
+model_results_late_xgb <- function(data = clean_data()){
   #As model_results_early - but with practice data
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
@@ -763,7 +769,7 @@ model_results_late <- function(data = clean_data()){
 
 }
 
-model_results_early <- function(data = clean_data()) {
+model_results_early_xgb <- function(data = clean_data()) {
   #Doesn't include practice data - predictions could be with grid predicted (early in week) or actual
   # ---- Common Data ----
   data <- data[data$season >= 2018, ]
