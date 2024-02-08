@@ -54,3 +54,23 @@ Position Models:
 | glmnet lin_reg           | 4.4636 | 0.401  | 101s |
 | xgboost                  |        |        |      |
 | svm                      |        |        |      |
+
+Model train results glm >= 2018
+| Model                       | LL     | PPV    | sens   | spec   | npv    | ACC    | AUC    | Kappa  | mcc    | mae    | rmse   | rsq    | Time   |
+| ---                         | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    |
+| Quali Pole Model (early)    | 0.1187 | 0.2500 | 0.0435 | 0.9931 | 0.9518 | 0.9457 | 0.9382 | 0.0602 | --     | --     | --     | --     | 41   s |
+| Quali Pos Model (early)     | 2.6405 | --     | --     | --     | --     | 0.1565 | 0.7107 | 0.1121 | 0.1138 | --     | --     | --     | 305  s |
+| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.9376 | 3.8398 | 0.5576 | 22.5 s |   
+| Quali Pole Model (late)     | 0.1186 | 0.5000 | 0.1739 | 0.9908 | 0.9580 | 0.9500 | 0.9374 | 0.2384 | --     | --     | --     | --     | 53   s |
+| Quali Pos Model (late)      | 2.6161 | --     | --     | --     | --     | 0.1304 | 0.7254 | 0.0847 | 0.0852 | --     | --     | --     | 381  s |
+| Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.5366 | 3.3560 | 0.6619 | 23   s |
+
+Model train results xgb >= 2018
+| Model                       | LL     | PPV    | sens   | spec   | npv    | ACC    | AUC    | Kappa  | mcc    | mae    | rmse   | rsq    | Time   |
+| ---                         | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    |
+| Quali Pole Model (early)    | 0.1594 | 0.2143 | 0.1304 | 0.9748 | 0.9552 | 0.9326 | 0.8857 | 0.1292 | --     | --     | --     | --     |      s |
+| Quali Pos Model (early)     |        | --     | --     | --     | --     |        |        |        |        | --     | --     | --     |      s |
+| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     |        |        |        |      s |   
+| Quali Pole Model (late)     |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
+| Quali Pos Model (late)      |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
+| Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     |        |        |        |      s |
