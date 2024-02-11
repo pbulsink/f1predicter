@@ -4,13 +4,19 @@
 
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
-# TODO: position is a FINISH position, not a quali thing.
-
+#' Model Qualification Results Using GLM
+#' @description Build a model for quali using GLM
+#'
+#' Use `model_quali_early_glm` or `model_quali_late_glm` depending on if you have practice data included for that weekend.
+#'
+#' @param data should be clean_data() but modified data of the same structure can be used.
+#' @param cutoff_year The cutoff year for building the model (i.e. supplied year to current)
+#'
 #' @export
-model_quali_early_glm <- function(data = clean_data()) {
+model_quali_early_glm <- function(data = clean_data(), cutoff_year = 2018) {
   set.seed(1)
   # Model quali early in the week - before practice sessions grid => step_dummy
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
 
   message ("configuring data for model")
   # Model results given a grid - predicted or actual
@@ -198,11 +204,12 @@ model_quali_early_glm <- function(data = clean_data()) {
 }
 
 #' @export
-model_quali_late_glm <- function(data = clean_data()) {
+#' @inherit model_quali_early_glm
+model_quali_late_glm <- function(data = clean_data(), cutoff_year = 2018) {
   set.seed(1)
 
   # Model quali late in the week - after practices are done. grid => step_dummy
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
 
   message ("configuring data for model")
   # Model results given a grid - predicted or actual
@@ -395,11 +402,11 @@ model_quali_late_glm <- function(data = clean_data()) {
 }
 
 #' @export
-model_results_after_quali_glm <- function(data = clean_data()){
+model_results_after_quali_glm <- function(data = clean_data(), cutoff_year = 2018){
   #As model_results_early - but with practice data
   p_mod_data <- data  # Used later
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
   data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1,0))
@@ -651,10 +658,10 @@ model_results_after_quali_glm <- function(data = clean_data()){
 }
 
 #' @export
-model_results_late_glm <- function(data = clean_data()){
+model_results_late_glm <- function(data = clean_data(), cutoff_year = 2018){
   #As model_results_early - but with practice data
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
@@ -896,10 +903,10 @@ model_results_late_glm <- function(data = clean_data()){
 }
 
 #' @export
-model_results_early_glm <- function(data = clean_data()) {
+model_results_early_glm <- function(data = clean_data(), cutoff_year = 2018) {
   #Doesn't include practice data - predictions could be with grid predicted (early in week) or actual
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))

@@ -4,11 +4,19 @@
 
 # 2: Finish Position: - 1st, top 3, top 10 (points), finish
 
+#' Model Qualification Results Using XGB
+#' @description Build a model for quali using XGBoost.
+#'
+#' Use `model_quali_early_xgb` or `model_quali_late_xgb` depending on if you have practice data included for that weekend.
+#'
+#' @param data should be clean_data() but modified data of the same structure can be used.
+#' @param cutoff_year The cutoff year for building the model (i.e. supplied year to current)
+#'
 #' @export
-model_quali_early_xgb <- function(data = clean_data()) {
+model_quali_early_xgb <- function(data = clean_data(), cutoff_year = 2018) {
   set.seed(1)
   # Model quali early in the week - before practice sessions grid => step_dummy
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
 
   message ("configuring data for model")
   # Model results given a grid - predicted or actual
@@ -199,12 +207,13 @@ model_quali_early_xgb <- function(data = clean_data()) {
 }
 
 #' @export
-model_quali_late_xgb <- function(data = clean_data()) {
+#' @inherit model_quali_early_xgb
+model_quali_late_xgb <- function(data = clean_data(), cutoff_year = 2018) {
 
   set.seed(1)
 
   # Model quali late in the week - after practices are done. grid => step_dummy
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
 
   message ("configuring data for model")
   # Model results given a grid - predicted or actual
@@ -343,7 +352,7 @@ model_quali_late_xgb <- function(data = clean_data()) {
 
   # ---- Quali Regression Model ----
   data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
+    dplyr::filter(.data$quali_position <= 20) %>%
     dplyr::mutate(round_id = as.factor(.data$round_id)) %>%
     dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
                   "driver_position_avg", 'driver_avg_qgap', "driver_practice_optimal_rank_avg", "season",
@@ -399,10 +408,10 @@ model_quali_late_xgb <- function(data = clean_data()) {
 }
 
 #' @export
-model_results_after_quali_xgb <- function(data = clean_data()){
+model_results_after_quali_xgb <- function(data = clean_data(), cutoff_year = 2018){
   #As model_results_late - but with quali data
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
@@ -657,10 +666,10 @@ model_results_after_quali_xgb <- function(data = clean_data()){
 }
 
 #' @export
-model_results_late_xgb <- function(data = clean_data()){
+model_results_late_xgb <- function(data = clean_data(), cutoff_year = 2018){
   #As model_results_early - but with practice data
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
@@ -901,10 +910,10 @@ model_results_late_xgb <- function(data = clean_data()){
 }
 
 #' @export
-model_results_early_xgb <- function(data = clean_data()) {
+model_results_early_xgb <- function(data = clean_data(), cutoff_year = 2018) {
   #Doesn't include practice data - predictions could be with grid predicted (early in week) or actual
   # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
+  data <- data[data$season >= cutoff_year, ]
   p_mod_data <- data  # Used later
   # Model results given a grid - predicted or actual
   data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
