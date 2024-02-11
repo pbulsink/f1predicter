@@ -68,9 +68,9 @@ Model train results glm >= 2018
 Model train results xgb >= 2018
 | Model                       | LL     | PPV    | sens   | spec   | npv    | ACC    | AUC    | Kappa  | mcc    | mae    | rmse   | rsq    | Time   |
 | ---                         | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    |
-| Quali Pole Model (early)    | 0.1594 | 0.2143 | 0.1304 | 0.9748 | 0.9552 | 0.9326 | 0.8857 | 0.1292 | --     | --     | --     | --     |      s |
-| Quali Pos Model (early)     |        | --     | --     | --     | --     |        |        |        |        | --     | --     | --     |      s |
-| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     |        |        |        |      s |   
+| Quali Pole Model (early)    | 0.1594 | 0.2143 | 0.1304 | 0.9748 | 0.9552 | 0.9326 | 0.8857 | 0.1292 | --     | --     | --     | --     | 1936 s |
+| Quali Pos Model (early)     | 2.6952 | --     | --     | --     | --     | 0.1174 | 0.6997 | 0.0709 | 0.0715 | --     | --     | --     | 22575s |
+| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     | 3.0987 | 4.0342 | 0.5163 | 3714 s |   
 | Quali Pole Model (late)     |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
 | Quali Pos Model (late)      |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
 | Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     |        |        |        |      s |
