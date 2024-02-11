@@ -87,9 +87,9 @@ model_quali_early_xgb <- function(data = clean_data()) {
 
   # ---- Quali Position Model Classification ----
   data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
+    dplyr::filter(.data$quali_position <= 20) %>%
+    dplyr::mutate(quali_position = as.factor(.data$quali_position), round_id = as.factor(.data$round_id)) %>%
+    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
                   "driver_position_avg", 'driver_avg_qgap', "driver_practice_optimal_rank_avg", "season",
                   "round", "round_id") %>%
     dplyr::mutate_if(is.character, as.factor)
@@ -103,7 +103,7 @@ model_quali_early_xgb <- function(data = clean_data()) {
 
   data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
 
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
+  position_recipe <- recipes::recipe(quali_position ~ ., data = train_data) %>%
     recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
@@ -143,7 +143,7 @@ model_quali_early_xgb <- function(data = clean_data()) {
 
   # ---- Quali Regression Model ----
   data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
+    dplyr::filter(.data$quali_position <= 20) %>%
     dplyr::mutate(round_id = as.factor(.data$round_id)) %>%
     dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "constructor_grid_avg", "driver_grid_avg",
                   "driver_position_avg", 'driver_avg_qgap', "driver_practice_optimal_rank_avg", "season",
@@ -275,8 +275,8 @@ model_quali_late_xgb <- function(data = clean_data()) {
 
   # ---- Quali Position Model ----
   data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
+    dplyr::filter(.data$quali_position <= 20) %>%
+    dplyr::mutate(quali_position = as.factor(.data$quali_position), round_id = as.factor(.data$round_id)) %>%
     dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience",
                   "constructor_grid_avg", "driver_grid_avg", "driver_position_avg", 'driver_avg_qgap',
                   "driver_practice_optimal_rank_avg", "practice_avg_rank",
@@ -292,7 +292,7 @@ model_quali_late_xgb <- function(data = clean_data()) {
 
   data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
 
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
+  position_recipe <- recipes::recipe(quali_position ~ ., data = train_data) %>%
     recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
     recipes::step_rm("pole") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
