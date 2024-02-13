@@ -4,7 +4,7 @@ For both - each race could be 1/10 of average toward truth? e.g. driver race 1 -
 
 or use an adj-mean (weighted to most recent races?) weighted.mean(c(1,0,0,1,0,0,1,0,0,0), w = sqrt(10:1)) fill with global rate \< 20
 
-Win Model Performance (from \>=2018):
+Win Model Performance (from from 2018 and on):
 
 | Type            | Accuracy | PPV    | NPV    | Sens | Spec   | AUC     | LogLoss | Time    |
 |-----------------|----------|--------|--------|------|--------|---------|---------|---------|
@@ -14,7 +14,7 @@ Win Model Performance (from \>=2018):
 | xgboost         | 0.9523?  |        |        |      |        | 0.9478? |         | 1250 s? |
 | svm             |          |        |        |      |        |         |         | \>24 h? |
 
-Podium Model Performance (from \>=2018):
+Podium Model Performance (from from 2018 and on):
 
 | Type            | Accuracy | PPV    | NPV    | Sens   | Spec   | AUC    | LogLoss | Time |
 |-----------------|----------|--------|--------|--------|--------|--------|---------|------|
@@ -24,7 +24,7 @@ Podium Model Performance (from \>=2018):
 | xgboost         |          |        |        |        |        |        |         |      |
 | svm             |          |        |        |        |        |        |         |      |
 
-: Top 10 Model Performance (from \>=2018):
+Top 10 Model Performance (from from 2018 and on):
 
 | Type            | Accuracy | PPV    | NPV    | Sens   | Spec   | AUC    | LogLoss | Time |
 |-----------------|----------|--------|--------|--------|--------|--------|---------|------|
@@ -34,7 +34,7 @@ Podium Model Performance (from \>=2018):
 | xgboost         |          |        |        |        |        |        |         |      |
 | svm             |          |        |        |        |        |        |         |      |
 
-: Finish Model Performance (from \>=2018):
+Finish Model Performance (from 2018 and on):
 
 | Type            | Accuracy | PPV    | NPV | Sens | Spec | AUC    | LogLoss | Time |
 |-----------------|----------|--------|-----|------|------|--------|---------|------|
@@ -55,22 +55,22 @@ Position Models:
 | xgboost                  |        |        |      |
 | svm                      |        |        |      |
 
-Model train results glm >= 2018
+Model train results glm from 2018 and on
 | Model                       | LL     | PPV    | sens   | spec   | npv    | ACC    | AUC    | Kappa  | mcc    | mae    | rmse   | rsq    | Time   |
-| ---                         | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    |
+|-----------------------------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
 | Quali Pole Model (early)    | 0.1187 | 0.2500 | 0.0435 | 0.9931 | 0.9518 | 0.9457 | 0.9382 | 0.0602 | --     | --     | --     | --     | 41   s |
-| Quali Pos Model (early)     | 2.6405 | --     | --     | --     | --     | 0.1565 | 0.7107 | 0.1121 | 0.1138 | --     | --     | --     | 305  s |
+| Quali Pos Model (early)     | 2.6083 | --     | --     | --     | --     | 0.1174 | 0.7336 | 0.0709 | 0.0713 | --     | --     | --     | 317  s |
 | Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.9376 | 3.8398 | 0.5576 | 22.5 s |   
-| Quali Pole Model (late)     | 0.1186 | 0.5000 | 0.1739 | 0.9908 | 0.9580 | 0.9500 | 0.9374 | 0.2384 | --     | --     | --     | --     | 53   s |
-| Quali Pos Model (late)      | 2.6161 | --     | --     | --     | --     | 0.1304 | 0.7254 | 0.0847 | 0.0852 | --     | --     | --     | 381  s |
+| Quali Pole Model (late)     | 0.1186 | 0.5000 | 0.1739 | 0.9908 | 0.9580 | 0.9500 | 0.9374 | 0.2384 | --     | --     | --     | --     | 54   s |
+| Quali Pos Model (late)      | 2.6161 | --     | --     | --     | --     | 0.1500 | 0.7634 | 0.1053 | 0.1058 | --     | --     | --     | 380  s |
 | Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.5366 | 3.3560 | 0.6619 | 23   s |
 
-Model train results xgb >= 2018
+Model train results xgb from 2018 and on
 | Model                       | LL     | PPV    | sens   | spec   | npv    | ACC    | AUC    | Kappa  | mcc    | mae    | rmse   | rsq    | Time   |
-| ---                         | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    | ---    |
+|-----------------------------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
 | Quali Pole Model (early)    | 0.1594 | 0.2143 | 0.1304 | 0.9748 | 0.9552 | 0.9326 | 0.8857 | 0.1292 | --     | --     | --     | --     | 1936 s |
-| Quali Pos Model (early)     | 2.6952 | --     | --     | --     | --     | 0.1174 | 0.6997 | 0.0709 | 0.0715 | --     | --     | --     | 22575s |
-| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     | 3.0987 | 4.0342 | 0.5163 | 3714 s |   
-| Quali Pole Model (late)     |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
-| Quali Pos Model (late)      |        |        |        |        |        |        |        |        |        | --     | --     | --     |      s |
-| Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     |        |        |        |      s |
+| Quali Pos Model (early)     | 2.6676 | --     | --     | --     | --     | 0.1543 | 0.7624 | 0.1098 | 0.1103 | --     | --     | --     | 15918s |
+| Quali Pos Reg Model (early) | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.8156 | 3.5920 | 0.6146 | 2927 s |
+| Quali Pole Model (late)     | 0.1585 | 0.2353 | 0.1739 | 0.9703 | 0.9571 | 0.9304 | 0.9278 | 0.1645 | --     | --     | --     | --     | 2007 s |
+| Quali Pos Model (late)      | 2.5719 | --     | --     | --     | --     | 0.1500 | 0.7480 | 0.1053 | 0.1055 | --     | --     | --     | 16341s |
+| Quali Pos Reg Model (late)  | --     | --     | --     | --     | --     | --     | --     | --     | --     | 2.9903 | 3.8697 | 0.5502 | 3031 s |

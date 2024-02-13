@@ -333,7 +333,7 @@ model_quali_late_xgb <- function(data = clean_data(), cutoff_year = 2018) {
     tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
 
   position_best <- position_res %>%
-    tune::select_best("kappa")
+    tune::select_best("kap")
   tictoc::toc(log = T)
 
   position_final <- position_wflow %>%
