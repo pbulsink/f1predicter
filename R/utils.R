@@ -10,7 +10,7 @@ wmean <- function(x, ln = 20, val = 0) {
 
 #return the cumulative weighted mean (with weights as log(1:ln(x)))
 cumwmean <- function(x) {
-  return(cumsum(x * log(1:length(x)))/cumsum(log(1:length(x))))
+  return(cumsum(x * log(1:length(x))) / cumsum(log(1:length(x))))
 }
 
 # get the cube root
@@ -21,7 +21,7 @@ cubert <- function(x) {
 #get a nth root
 nroot <- function(x, n) {
   nr <- function(x, n) {
-    return(x^(1/n))
+    return(x^(1 / n))
   }
   nr_V <- Vectorize(nr, "x")
   return(nr_V(x, n))
@@ -57,20 +57,20 @@ expand_val <- function(v, ln, val = NA) {
 }
 
 ensure_tidy <- function(data) {
-  if( is.null(data) | all(is.na(data))){
+  if (is.null(data) | all(is.na(data))) {
     return(data)
   }
   data <- data %>% janitor::clean_names()
-  if('race' %in% colnames(data)){
+  if ('race' %in% colnames(data)) {
     data <- data %>%
       dplyr::rename('round' = 'race')
   }
   return(data)
 }
 
-wmean_two <- function(newval, x, ln){
-  wt <- function(newval, x, ln){
-    x <- c(rep(x, ln-1), newval)
+wmean_two <- function(newval, x, ln) {
+  wt <- function(newval, x, ln) {
+    x <- c(rep(x, ln - 1), newval)
     cwm <- cumwmean(x)
 
     return(cwm[length(cwm)])
