@@ -1,62 +1,265 @@
 # Models (regression/xgboost)
 
-# 1: Who will get Pole - Expected position of each person
+# 1: Who will get Pole - classification
+# 2: Qualifying Position - regression
+# 3:
 
-# 2: Finish Position: - 1st, top 3, top 10 (points), finish
-
-model_quali_early_r <- function(data = clean_data()) {
-  # Model quali early in the week - after practice sessions grid => step_dummy
-  data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
-  # Model results given a grid - predicted or actual
-  data$pole <- factor(ifelse(data$quali_position == 1, 1, 0), levels = c(1,0))
-
-  data$round_id <- as.factor(data$round_id)
-
-  data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
-                  "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
-                  "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "pole", "season",
-                  "round", "round_id") %>%
+#' Prepare and Split Data for Modeling
+#'
+#' This helper function preprocesses the data by selecting columns,
+#' converting character columns to factors, and then splits the data into
+#' training/testing sets and creates cross-validation folds.
+#' @param data The input data frame.
+#' @param columns A character vector of column names to select. If `NULL`,
+#'   all columns in `data` are used.
+#' @param prop The proportion of data to be in the training set.
+#' @param group The variable to group by for the split.
+#' @return A list containing the data split object, training data,
+#'   testing data, and cross-validation folds.
+prepare_and_split_data <- function(
+  data,
+  columns = NULL,
+  prop = 4 / 5,
+  group = "round_id"
+) {
+  if (!is.null(columns)) {
+    processed_data <- dplyr::select(data, dplyr::all_of(columns))
+  } else {
+    processed_data <- data
+  }
+  processed_data <- processed_data %>%
     dplyr::mutate_if(is.character, as.factor)
 
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
+  data_split <- rsample::group_initial_split(
+    processed_data,
+    prop = prop,
+    group = group
+  )
   train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
 
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
+  list(
+    data_split = data_split,
+    train_data = train_data,
+    test_data = rsample::testing(data_split),
+    data_folds = rsample::group_vfold_cv(data = train_data, group = group)
+  )
+}
 
-  metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
-                                         yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
+#' Report Model Performance Metrics
+#'
+#' A helper function to generate and print a formatted message with key
+#' performance metrics from a `last_fit` object.
+#'
+#' @param last_fit_object A `last_fit` object from `tune`.
+#' @param model_name A character string for the model's name (e.g., "Pole Quali Model").
+#' @param metrics A named character vector where names are the metric IDs from
+#'   `yardstick` (e.g., "mn_log_loss") and values are the display names (e.g., "log loss").
+#' @return Invisibly returns the `last_fit_object`.
+report_model_metrics <- function(last_fit_object, model_name, metrics) {
+  # Extract the metrics data frame once
+  collected_metrics <- tune::collect_metrics(last_fit_object)
 
-  # ---- Pole Model ----
-  pole_recipe <- recipes::recipe(pole ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+  # Build the string parts for each metric
+  metric_strings <- purrr::map2_chr(
+    names(metrics),
+    metrics,
+    function(metric_id, display_name) {
+      value <- collected_metrics %>%
+        dplyr::filter(.data$.metric == metric_id) %>%
+        dplyr::pull(.data$.estimate)
+
+      # Return NULL if a metric wasn't found, so it can be filtered out
+      if (length(value) == 0) {
+        return(NULL)
+      }
+
+      paste0(round(value, 4), " ", display_name)
+    }
+  )
+
+  # Filter out any NULLs if a metric wasn't found
+  metric_strings <- purrr::discard(metric_strings, is.null)
+
+  # Combine everything into a final message
+  full_message <- paste0(
+    model_name,
+    " with ",
+    paste(metric_strings, collapse = ", "),
+    "."
+  )
+
+  message(full_message)
+  invisible(last_fit_object)
+}
+# --------------------------- Quali Models ----------------------------
+
+#' Train Qualifying Prediction Models
+#'
+#' @description
+#' This function trains two classification models to predict qualifying results.
+#' It can be configured to use data from before ("early") or after ("late")
+#' practice sessions have occurred.
+#'
+#' The function produces:
+#' 1. A binary classification model (`quali_pole`) to predict if a driver will
+#'    achieve pole position.
+#' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
+#'    qualifying position (1-20).
+#'
+#' @details
+#' The function first filters the input data to include seasons from 2018 onwards.
+#' Both models are built using the `xgboost` engine. Hyperparameters are tuned
+#' via `tune::tune_grid()` with a Latin hypercube grid search.
+#'
+#' The pole position model is optimized by selecting the best model based on the
+#' `mn_log_loss` metric. The qualifying position model is optimized based on the
+#' `kap` (Cohen's Kappa) metric.
+#'
+#' Upon completion, the function prints the final performance metrics of each
+#' model (log loss, accuracy, AUC, etc.) to the console.
+#'
+#' @param data A data frame containing the modeling data.
+#' @param use_practice_data A logical value. If `TRUE`, includes practice session
+#'   performance metrics as predictors ("late" model). If `FALSE` (default),
+#'   it uses data available before practice sessions ("early" model).
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
+#' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
+train_quali_models <- function(
+  data,
+  use_practice_data = FALSE,
+  engine = "xgboost"
+) {
+  data <- data[data$season >= 2018, ]
+  p_mod_data <- data # Used later for position model
+
+  # ---- Pole Model Setup ----
+  data$pole <- factor(ifelse(data$quali_position == 1, 1, 0), levels = c(1, 0))
+
+  base_pole_cols <- c(
+    "quali_position",
+    "pole",
+    "driver_experience",
+    "driver_failure_avg",
+    "constructor_grid_avg",
+    "constructor_finish_avg",
+    "constructor_failure_avg",
+    "driver_grid_avg",
+    "driver_position_avg",
+    "driver_finish_avg",
+    "driver_failure_circuit_avg",
+    'driver_avg_qgap',
+    "constructor_failure_circuit_avg",
+    "season",
+    "round",
+    "round_id",
+    "driver_id",
+    "constructor_id"
+  )
+
+  # check if these are today's practice columns or average practice columns
+  practice_cols <- c(
+    "driver_practice_optimal_rank_avg",
+    "practice_avg_rank",
+    "practice_best_rank",
+    "practice_optimal_rank"
+  )
+
+  pole_cols <- if (use_practice_data) {
+    c(base_pole_cols, practice_cols)
+  } else {
+    base_pole_cols
+  }
+
+  pole_splits <- prepare_and_split_data(data, columns = pole_cols)
+  train_data_pole <- pole_splits$train_data
+  data_folds_pole <- pole_splits$data_folds
+  data_split_pole <- pole_splits$data_split
+
+  metrics_multi <- yardstick::metric_set(
+    yardstick::accuracy,
+    yardstick::kap,
+    yardstick::mcc,
+    yardstick::mn_log_loss,
+    yardstick::roc_auc
+  )
+  metrics_binary <- yardstick::metric_set(
+    yardstick::accuracy,
+    yardstick::mn_log_loss,
+    yardstick::roc_auc
+  )
+  metrics_reg <- yardstick::metric_set(
+    yardstick::rmse,
+    yardstick::mae,
+    yardstick::rsq
+  )
+
+  # ---- Pole Model Training ----
+  pole_recipe <- recipes::recipe(pole ~ ., data = train_data_pole) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
     recipes::step_rm("quali_position") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  pole_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
-                                 learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
+  if (engine == "xgboost") {
+    pole_model_spec <- parsnip::boost_tree(
+      trees = 1000,
+      tree_depth = tune::tune(),
+      min_n = tune::tune(),
+      loss_reduction = tune::tune(),
+      sample_size = tune::tune(),
+      mtry = tune::tune(),
+      learn_rate = tune::tune(),
+      stop_iter = tune::tune()
+    ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("xgboost", nthread = 4)
 
-  xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
-                                                                                                                                                            train_data), dials::learn_rate(), dials::stop_iter(), size = 30)
+    pole_grid <- dials::grid_latin_hypercube(
+      dials::tree_depth(),
+      dials::min_n(),
+      dials::loss_reduction(),
+      sample_size = dials::sample_prop(),
+      dials::finalize(dials::mtry(), train_data_pole),
+      dials::learn_rate(),
+      dials::stop_iter(),
+      size = 30
+    )
+  } else if (engine == "glmnet") {
+    pole_model_spec <- parsnip::logistic_reg(
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
+
+    pole_grid <- dials::grid_regular(
+      dials::penalty(),
+      dials::mixture(),
+      levels = 5
+    )
+  } else {
+    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
+  }
 
   pole_wflow <- workflows::workflow() %>%
-    workflows::add_model(pole_mod) %>%
+    workflows::add_model(pole_model_spec) %>%
     workflows::add_recipe(pole_recipe)
 
   tictoc::tic("Trained Pole Model")
   pole_res <- pole_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_binary)
+    tune::tune_grid(
+      resamples = data_folds_pole,
+      grid = pole_grid,
+      metrics = metrics_binary
+    )
 
   pole_best <- pole_res %>%
     tune::select_best("mn_log_loss")
@@ -64,990 +267,541 @@ model_quali_early_r <- function(data = clean_data()) {
 
   pole_final <- pole_wflow %>%
     tune::finalize_workflow(pole_best) %>%
-    parsnip::fit(train_data)
+    parsnip::fit(train_data_pole)
   pole_final_fit <- pole_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
+    tune::last_fit(data_split_pole, metrics = metrics_binary)
 
-  message("Pole Quali Model with ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
+  report_model_metrics(
+    pole_final_fit,
+    "Pole Quali Model",
+    c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
+  )
 
-  # ---- Quali Position Model ----
-  data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
+  # ---- Quali Position Model Setup ----
+  pos_cols <- pole_cols
+  if ("pole" %in% pos_cols) {
+    pos_cols <- pos_cols[pos_cols != "pole"]
+  }
 
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
+  # The data for the position model should not be filtered or mutated based on
+  # the race result 'position'. We are predicting 'quali_position'.
+  pos_data <- p_mod_data %>%
+    dplyr::filter(!is.na(.data$quali_position)) %>% # Ensure we have a quali result
+    dplyr::select(dplyr::all_of(pos_cols))
 
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
+  pos_splits <- prepare_and_split_data(pos_data)
+  train_data_pos <- pos_splits$train_data
+  data_folds_pos <- pos_splits$data_folds
+  data_split_pos <- pos_splits$data_split
 
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
+  # ---- Quali Position Model Training ----
+  position_recipe <- recipes::recipe(
+    quali_position ~ .,
+    data = train_data_pos
+  ) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  # Note multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
+  if (engine == "xgboost") {
+    position_model_spec <- parsnip::boost_tree(
+      trees = 1000,
+      tree_depth = tune::tune(),
+      min_n = tune::tune(),
+      loss_reduction = tune::tune(),
+      sample_size = tune::tune(),
+      mtry = tune::tune(),
+      learn_rate = tune::tune(),
+      stop_iter = tune::tune()
+    ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("xgboost", nthread = 4)
+
+    position_grid <- dials::grid_latin_hypercube(
+      dials::tree_depth(),
+      dials::min_n(),
+      dials::loss_reduction(),
+      sample_size = dials::sample_prop(),
+      dials::finalize(dials::mtry(), train_data_pos),
+      dials::learn_rate(),
+      dials::stop_iter(),
+      size = 30
+    )
+  } else if (engine == "glmnet") {
+    position_model_spec <- parsnip::linear_reg(
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
+
+    position_grid <- dials::grid_regular(
+      dials::penalty(),
+      dials::mixture(),
+      levels = 5
+    )
+  } else {
+    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
+  }
 
   position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
+    workflows::add_model(position_model_spec) %>%
     workflows::add_recipe(position_recipe)
 
   tictoc::tic("Trained Position Model")
   position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
+    tune::tune_grid(
+      resamples = data_folds_pos,
+      grid = position_grid,
+      metrics = metrics_reg
+    )
 
   position_best <- position_res %>%
-    tune::select_best("kappa")
-  tictoc::toc(log = T)
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data)
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_multi)
-
-  message("Quali Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
-}
-
-model_quali_late_r <- function(data = clean_data()) {
-
-  # Model quali late in the week - after practices are done. grid => step_dummy
-  data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
-  # Model results given a grid - predicted or actual
-  data$pole <- factor(ifelse(data$quali_position == 1, 1, 0), levels = c(1,0))
-
-  data$round_id <- as.factor(data$round_id)
-
-  data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "quali_position", "driver_experience", "driver_failure_avg",
-                  "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg", "driver_grid_avg",
-                  "driver_position_avg", "driver_finish_avg", "driver_failure_circuit_avg", 'driver_avg_qgap',
-                  "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg", "practice_avg_rank",
-                  "practice_best_rank", "practice_optimal_rank", "pole", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
-                                         yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
-
-  # ---- Pole Model ----
-  pole_recipe <- recipes::recipe(pole ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("quali_position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  pole_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
-                                  learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
-                                                                                                                                                            train_data), dials::learn_rate(), dials::stop_iter(), size = 30)
-
-  pole_wflow <- workflows::workflow() %>%
-    workflows::add_model(pole_mod) %>%
-    workflows::add_recipe(pole_recipe)
-
-  tictoc::tic("Trained Pole Model")
-  pole_res <- pole_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_binary)
-
-  pole_best <- pole_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  pole_final <- pole_wflow %>%
-    tune::finalize_workflow(pole_best) %>%
-    parsnip::fit(train_data)
-  pole_final_fit <- pole_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Pole Quali Model with ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(pole_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Quali Position Model ----
-  data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  # Note multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Position Model")
-  position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
-
-  position_best <- position_res %>%
-    tune::select_best("kappa")
-  tictoc::toc(log = T)
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data)
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_multi)
-
-  message("Quali Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
-}
-
-model_results_after_quali_r <- function(data = clean_data()){
-  #As model_results_early - but with practice data
-  # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
-  # Model results given a grid - predicted or actual
-  data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
-  data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1,0))
-  data$t10 <- factor(ifelse(data$position <= 10, 1, 0), levels = c(1,0))
-
-  data$finished <- factor(data$finished, levels = c(1,0))
-  data$position <- as.factor(data$position)
-  data$round_id <- as.factor(data$round_id)
-
-  data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "practice_avg_gap", "practice_best_gap",
-                  "q_min_perc", "q_avg_perc", "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
-                                         yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
-
-  # ---- Winner Model ----
-  win_recipe <- recipes::recipe(win ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  win_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
-                                 learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("regression") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
-                                                                                                                                                            train_data), dials::learn_rate(), dials::stop_iter(), size = 30)
-
-  win_wflow <- workflows::workflow() %>%
-    workflows::add_model(win_mod) %>%
-    workflows::add_recipe(win_recipe)
-
-  tictoc::tic("Trained Win Model")
-  win_res <- win_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = yardstick::metric_set(pacc, yardstick::mn_log_loss, yardstick::roc_auc))
-
-  win_best <- win_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  win_final <- win_wflow %>%
-    tune::finalize_workflow(win_best) %>%
-    parsnip::fit(train_data)
-  win_final_fit <- win_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Win Model with ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Podium Model ----
-  podium_recipe <- recipes::recipe(podium ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("win", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  podium_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  podium_wflow <- workflows::workflow() %>%
-    workflows::add_model(podium_mod) %>%
-    workflows::add_recipe(podium_recipe)
-
-  tictoc::tic("Trained Podium Model")
-  podium_res <- podium_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  podium_best <- podium_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  podium_final <- podium_wflow %>%
-    tune::finalize_workflow(podium_best) %>%
-    parsnip::fit(train_data)
-  podium_final_fit <- podium_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Podium Model with ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-
-  # ---- T10 Model ----
-  t10_recipe <- recipes::recipe(t10 ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  t10_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  t10_wflow <- workflows::workflow() %>%
-    workflows::add_model(t10_mod) %>%
-    workflows::add_recipe(t10_recipe)
-
-  tictoc::tic("Trained T10 Model")
-  t10_res <- t10_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  t10_best <- t10_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  t10_final <- t10_wflow %>%
-    tune::finalize_workflow(t10_best) %>%
-    parsnip::fit(train_data)
-  t10_final_fit <- t10_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("T10 Model with ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Finish Model ----
-  finish_recipe <- recipes::recipe(finished ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "t10", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  finish_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  finish_wflow <- workflows::workflow() %>%
-    workflows::add_model(finish_mod) %>%
-    workflows::add_recipe(finish_recipe)
-
-  tictoc::tic("Trained Finishing Model")
-  finish_res <- finish_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  finish_best <- finish_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  finish_final <- finish_wflow %>%
-    tune::finalize_workflow(finish_best) %>%
-    parsnip::fit(train_data)
-  finish_final_fit <- finish_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Finishing Model with ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Position Model ----
-  data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank",
-                  "q_min_perc", "q_avg_perc", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  # Note: multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("regression") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Position Model")
-  position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
-
-  position_best <- position_res %>%
-    tune::select_best("kappa")
-  tictoc::toc(log = T)
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data)
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
-
-}
-
-model_results_late_r <- function(data = clean_data()){
-  #As model_results_early - but with practice data
-  # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
-  # Model results given a grid - predicted or actual
-  data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
-  data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1,0))
-  data$t10 <- factor(ifelse(data$position <= 10, 1, 0), levels = c(1,0))
-
-  data$finished <- factor(data$finished, levels = c(1,0))
-  data$position <- as.factor(data$position)
-  data$round_id <- as.factor(data$round_id)
-
-  data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "practice_avg_gap", "practice_best_gap",
-                  "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
-                                         yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
-
-  # ---- Winner Model ----
-  win_recipe <- recipes::recipe(win ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  win_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
-                                 learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
-                                                                                                                                                            train_data), dials::learn_rate(), dials::stop_iter(), size = 30)
-
-  win_wflow <- workflows::workflow() %>%
-    workflows::add_model(win_mod) %>%
-    workflows::add_recipe(win_recipe)
-
-  tictoc::tic("Trained Win Model")
-  win_res <- win_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = yardstick::metric_set(pacc, yardstick::mn_log_loss, yardstick::roc_auc))
-
-  win_best <- win_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  win_final <- win_wflow %>%
-    tune::finalize_workflow(win_best) %>%
-    parsnip::fit(train_data)
-  win_final_fit <- win_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Win Model with ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Podium Model ----
-  podium_recipe <- recipes::recipe(podium ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("win", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  podium_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  podium_wflow <- workflows::workflow() %>%
-    workflows::add_model(podium_mod) %>%
-    workflows::add_recipe(podium_recipe)
-
-  tictoc::tic("Trained Podium Model")
-  podium_res <- podium_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  podium_best <- podium_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  podium_final <- podium_wflow %>%
-    tune::finalize_workflow(podium_best) %>%
-    parsnip::fit(train_data)
-  podium_final_fit <- podium_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Podium Model with ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-
-  # ---- T10 Model ----
-  t10_recipe <- recipes::recipe(t10 ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  t10_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  t10_wflow <- workflows::workflow() %>%
-    workflows::add_model(t10_mod) %>%
-    workflows::add_recipe(t10_recipe)
-
-  tictoc::tic("Trained T10 Model")
-  t10_res <- t10_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  t10_best <- t10_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  t10_final <- t10_wflow %>%
-    tune::finalize_workflow(t10_best) %>%
-    parsnip::fit(train_data)
-  t10_final_fit <- t10_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("T10 Model with ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Finish Model ----
-  finish_recipe <- recipes::recipe(finished ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "t10", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  finish_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  finish_wflow <- workflows::workflow() %>%
-    workflows::add_model(finish_mod) %>%
-    workflows::add_recipe(finish_recipe)
-
-  tictoc::tic("Trained Finishing Model")
-  finish_res <- finish_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  finish_best <- finish_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  finish_final <- finish_wflow %>%
-    tune::finalize_workflow(finish_best) %>%
-    parsnip::fit(train_data)
-  finish_final_fit <- finish_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Finishing Model with ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Position Model ----
-  data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "practice_avg_rank", "practice_best_rank", "practice_optimal_rank", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  # Note: multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Position Model")
-  position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
-
-  position_best <- position_res %>%
-    tune::select_best("kappa")
-  tictoc::toc(log = T)
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data)
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
-
-}
-
-model_results_early_r <- function(data = clean_data()) {
-  #Doesn't include practice data - predictions could be with grid predicted (early in week) or actual
-  # ---- Common Data ----
-  data <- data[data$season >= 2018, ]
-  p_mod_data <- data  # Used later
-  # Model results given a grid - predicted or actual
-  data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1,0))
-  data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1,0))
-  data$t10 <- factor(ifelse(data$position <= 10, 1, 0), levels = c(1,0))
-
-  data$finished <- factor(data$finished, levels = c(1,0))
-  data$position <- as.factor(data$position)
-  data$round_id <- as.factor(data$round_id)
-
-  data <- data %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg","driver_practice_optimal_rank_avg",
-                  "win", "podium", "t10", "finished", "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  metrics_multi <- yardstick::metric_set(yardstick::accuracy, yardstick::kap, yardstick::mcc, yardstick::mn_log_loss,
-                                         yardstick::roc_auc)
-  metrics_binary <- yardstick::metric_set(yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc)
-
-  # ---- Winner Model ----
-  win_recipe <- recipes::recipe(win ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  win_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(), mtry = tune::tune(),
-    learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  xgb_grid <- dials::grid_latin_hypercube(dials::tree_depth(), dials::min_n(), dials::loss_reduction(), sample_size = dials::sample_prop(), dials::finalize(dials::mtry(),
-    train_data), dials::learn_rate(), dials::stop_iter(), size = 30)
-
-  win_wflow <- workflows::workflow() %>%
-    workflows::add_model(win_mod) %>%
-    workflows::add_recipe(win_recipe)
-
-  tictoc::tic("Trained Win Model")
-  win_res <- win_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = yardstick::metric_set(pacc, yardstick::mn_log_loss, yardstick::roc_auc))
-
-  win_best <- win_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  win_final <- win_wflow %>%
-    tune::finalize_workflow(win_best) %>%
-    parsnip::fit(train_data)
-  win_final_fit <- win_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Win Model with ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(win_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Podium Model ----
-  podium_recipe <- recipes::recipe(podium ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("win", "t10", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  podium_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  podium_wflow <- workflows::workflow() %>%
-    workflows::add_model(podium_mod) %>%
-    workflows::add_recipe(podium_recipe)
-
-  tictoc::tic("Trained Podium Model")
-  podium_res <- podium_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  podium_best <- podium_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  podium_final <- podium_wflow %>%
-    tune::finalize_workflow(podium_best) %>%
-    parsnip::fit(train_data)
-  podium_final_fit <- podium_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Podium Model with ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(podium_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-
-  # ---- T10 Model ----
-  t10_recipe <- recipes::recipe(t10 ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "finished", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  t10_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  t10_wflow <- workflows::workflow() %>%
-    workflows::add_model(t10_mod) %>%
-    workflows::add_recipe(t10_recipe)
-
-  tictoc::tic("Trained T10 Model")
-  t10_res <- t10_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  t10_best <- t10_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  t10_final <- t10_wflow %>%
-    tune::finalize_workflow(t10_best) %>%
-    parsnip::fit(train_data)
-  t10_final_fit <- t10_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("T10 Model with ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(t10_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Finish Model ----
-  finish_recipe <- recipes::recipe(finished ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_rm("podium", "win", "t10", "position") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  finish_mod <- parsnip::logistic_reg(penalty = tune::tune(), mixture = tune::tune()) %>%
-    parsnip::set_engine("glmnet")
-
-  finish_wflow <- workflows::workflow() %>%
-    workflows::add_model(finish_mod) %>%
-    workflows::add_recipe(finish_recipe)
-
-  tictoc::tic("Trained Finishing Model")
-  finish_res <- finish_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = glmnet_grid, metrics = metrics_binary)
-
-  finish_best <- finish_res %>%
-    tune::select_best("mn_log_loss")
-  tictoc::toc()
-
-  finish_final <- finish_wflow %>%
-    tune::finalize_workflow(finish_best) %>%
-    parsnip::fit(train_data)
-  finish_final_fit <- finish_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Finishing Model with ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(finish_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  # ---- Position Model ----
-  data <- p_mod_data %>%
-    dplyr::filter(.data$position <= 20) %>%
-    dplyr::mutate(position = as.factor(.data$position), round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg",
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  glmnet_grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  position_recipe <- recipes::recipe(position ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  # Note: multinomial regression
-  position_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-    mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("classification") %>%
-    parsnip::set_engine("xgboost", nthread = 4)
-
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Position Model")
-  position_res <- position_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid, metrics = metrics_multi)
-
-  position_best <- position_res %>%
-    tune::select_best("kappa")
-  tictoc::toc(log = T)
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data)
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split, metrics = metrics_binary)
-
-  message("Position Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mn_log_loss") %>% dplyr::pull(".estimate"), 4), " log loss, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "accuracy") %>% dplyr::pull(".estimate"), 4), " accuracy, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "kap") %>% dplyr::pull(".estimate"), 4), " kappa, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mcc") %>% dplyr::pull(".estimate"), 4), " mcc, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "roc_auc") %>% dplyr::pull(".estimate"), 4), " auc.")
-
-  return(list("win" = win_final, "podium" = podium_final, "t10" = t10_final, 'finish' = finish_final, 'position' = position_final))
-
-}
-
-model_quali_gap_early_r <- function(data = clean_data()) {
-  # Model quali early in the week - before practice sessions - use quali gap to sort grid
-  data <- data[data$season >= 2018, ]
-
-  # ---- Quali Gap Model ----
-  data <- data %>%
-    dplyr::mutate(round_id = as.factor(.data$round_id)) %>%
-    dplyr::select("driver_id", "constructor_id", "position", "grid", "quali_position", "driver_experience",
-                  "driver_failure_avg", "constructor_grid_avg", "constructor_finish_avg", "constructor_failure_avg",
-                  "driver_grid_avg", "driver_position_avg", "driver_finish_avg", "grid_pos_corr_avg", 'driver_avg_qgap',
-                  "driver_failure_circuit_avg", "constructor_failure_circuit_avg", "driver_practice_optimal_rank_avg",
-                  "season", "round", "round_id") %>%
-    dplyr::mutate_if(is.character, as.factor)
-
-  # Put 4/5 of the data into the training set
-  data_split <- rsample::group_initial_split(data, prop = 4/5, group = "round_id")
-
-  # Create data frames for the two sets:
-  train_data <- rsample::training(data_split)
-  test_data <- rsample::testing(data_split)
-
-  data_folds <- rsample::group_vfold_cv(data = train_data, group = "round_id")
-
-  qgap_recipe <- recipes::recipe(qgap ~ ., data = train_data) %>%
-    recipes::update_role("season", "round", "round_id", "driver_id", "constructor_id", new_role = "ID") %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  qgap_mod <- parsnip::boost_tree(trees = 1000, tree_depth = tune::tune(), min_n = tune::tune(), loss_reduction = tune::tune(), sample_size = tune::tune(),
-                                      mtry = tune::tune(), learn_rate = tune::tune(), stop_iter = tune::tune()) %>%
-    parsnip::set_mode("regression") %>%
-    parsnip::set_engine("xgboost", nthread = 2)
-
-  qgap_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_mod) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Quali Gap Model")
-  qgap_res <- qgap_wflow %>%
-    tune::tune_grid(resamples = data_folds, grid = xgb_grid)
-
-  qgap_best <- qgap_res %>%
     tune::select_best("rmse")
   tictoc::toc(log = T)
 
-  qgap_final <- qgap_wflow %>%
-    tune::finalize_workflow(qgap_best) %>%
+  position_final <- position_wflow %>%
+    tune::finalize_workflow(position_best) %>%
+    parsnip::fit(train_data_pos)
+  position_final_fit <- position_final %>%
+    tune::last_fit(data_split_pos, metrics = metrics_reg)
+
+  report_model_metrics(
+    position_final_fit,
+    "Quali Position Model",
+    c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+  )
+
+  return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
+}
+
+
+#' Train Early Qualifying Prediction Models
+#'
+#' @description
+#' This function trains two classification models to predict qualifying results using
+#' data available before any practice sessions have occurred for a race weekend.
+#'
+#' The function produces:
+#' 1. A binary classification model (`quali_pole`) to predict if a driver will
+#'    achieve pole position.
+#' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
+#'    qualifying position (1-20).
+#'
+#' @inherit train_quali_models details
+#' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
+#' @inherit train_quali_models return
+#' @export
+model_quali_early <- function(data = clean_data()) {
+  train_quali_models(data, use_practice_data = FALSE)
+}
+
+#' Train Late Qualifying Prediction Models
+#'
+#' @description
+#' This function trains two classification models to predict qualifying results using
+#' data available *after* all practice sessions have occurred for a race weekend.
+#' This model includes practice performance metrics as predictors.
+#'
+#' The function produces:
+#' 1. A binary classification model (`quali_pole`) to predict if a driver will
+#'    achieve pole position.
+#' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
+#'    qualifying position (1-20).
+#'
+#' @inherit train_quali_models details
+#' @inheritParams model_quali_early
+#' @inherit train_quali_models return
+#' @export
+model_quali_late <- function(data = clean_data()) {
+  train_quali_models(data, use_practice_data = TRUE)
+}
+
+
+#' Train a Binary Race Result Model
+#'
+#' Internal helper function to train a single binary classification model for
+#' race results (e.g., win, podium, t10, finish).
+#'
+#' @param outcome_var The name of the outcome variable (string).
+#' @param model_name The display name for the model (string).
+#' @param train_data The training data frame.
+#' @param data_split The data split object.
+#' @param data_folds The cross-validation folds.
+#' @param model_spec The parsnip model specification.
+#' @param grid The tuning grid.
+#' @param other_outcomes A character vector of other outcome variables to remove
+#'   from the predictors in the recipe.
+#' @return A fitted `workflow` object.
+train_binary_result_model <- function(
+  outcome_var,
+  model_name,
+  train_data,
+  data_split,
+  data_folds,
+  model_spec,
+  grid,
+  other_outcomes
+) {
+  recipe <- recipes::recipe(
+    reformulate(".", response = outcome_var),
+    data = train_data
+  ) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
+    recipes::step_rm(dplyr::all_of(other_outcomes), "position") %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_predictors())
+
+  wflow <- workflows::workflow() %>%
+    workflows::add_model(model_spec) %>%
+    workflows::add_recipe(recipe)
+
+  metrics_binary <- yardstick::metric_set(
+    yardstick::accuracy,
+    yardstick::mn_log_loss,
+    yardstick::roc_auc
+  )
+
+  tictoc::tic(paste("Trained", model_name))
+  res <- wflow %>%
+    tune::tune_grid(
+      resamples = data_folds,
+      grid = grid,
+      metrics = metrics_binary
+    )
+
+  best_params <- res %>%
+    tune::select_best("mn_log_loss")
+  tictoc::toc()
+
+  final_model <- wflow %>%
+    tune::finalize_workflow(best_params) %>%
     parsnip::fit(train_data)
-  qgap_final_fit <- qgap_final %>%
-    tune::last_fit(data_split)
 
-  message("Quali Gap Model with ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rmse") %>% dplyr::pull(".estimate"), 4), " rmse, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "rsq") %>% dplyr::pull(".estimate"), 4), " rsq, ",
-          round(tune::collect_metrics(position_final_fit) %>% dplyr::filter(.data$.metric == "mae") %>% dplyr::pull(".estimate"), 4), " mae.")
+  final_fit <- final_model %>%
+    tune::last_fit(data_split, metrics = metrics_binary)
 
-  return(list('quali_qgap' = position_final))
+  report_model_metrics(
+    final_fit,
+    model_name,
+    c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
+  )
+
+  return(final_model)
+}
+
+#' Train Race Result Models
+#'
+#' @description
+#' This function trains a suite of five classification models to predict race
+#' results based on the specified scenario.
+#'
+#' @param data A data frame containing the modeling data.
+#' @param scenario A character string specifying the modeling context. One of
+#'   "early" (pre-practice), "late" (post-practice), or "after_quali".
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
+#' @return A list containing five fitted `workflow` objects.
+train_results_models <- function(data, scenario, engine = "xgboost") {
+  # ---- Common Data Prep ----
+  data <- data[data$season >= 2018, ]
+  p_mod_data <- data # Keep original for position model
+
+  data$win <- factor(ifelse(data$position == 1, 1, 0), levels = c(1, 0))
+  data$podium <- factor(ifelse(data$position <= 3, 1, 0), levels = c(1, 0))
+  data$t10 <- factor(ifelse(data$position <= 10, 1, 0), levels = c(1, 0))
+  data$finished <- factor(data$finished, levels = c(1, 0))
+  # `position` is kept as numeric for regression
+  data$round_id <- as.factor(data$round_id)
+
+  # ---- Scenario-specific Columns ----
+  base_cols <- c(
+    "driver_id",
+    "constructor_id",
+    "grid",
+    "quali_position",
+    "driver_experience",
+    "driver_failure_avg",
+    "constructor_grid_avg",
+    "constructor_finish_avg",
+    "constructor_failure_avg",
+    "driver_grid_avg",
+    "driver_position_avg",
+    "driver_finish_avg",
+    "grid_pos_corr_avg",
+    'driver_avg_qgap',
+    "driver_failure_circuit_avg",
+    "constructor_failure_circuit_avg",
+    "season",
+    "round",
+    "round_id"
+  )
+  practice_cols <- c(
+    "driver_practice_optimal_rank_avg",
+    "practice_avg_rank",
+    "practice_best_rank",
+    "practice_optimal_rank",
+    "practice_avg_gap",
+    "practice_best_gap"
+  )
+  quali_perf_cols <- c("q_min_perc", "q_avg_perc")
+  outcome_cols <- c("win", "podium", "t10", "finished", "position")
+
+  results_cols <- switch(
+    scenario,
+    "early" = c(base_cols, outcome_cols),
+    "late" = c(base_cols, practice_cols, outcome_cols),
+    "after_quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
+  )
+
+  # ---- Data Splits ----
+  splits <- prepare_and_split_data(data, columns = results_cols)
+  train_data <- splits$train_data
+  data_split <- splits$data_split
+  data_folds <- splits$data_folds
+
+  # ---- Model Specs and Grids ----
+  if (engine == "xgboost") {
+    class_mod_spec <- parsnip::boost_tree(
+      trees = 1000,
+      tree_depth = tune::tune(),
+      min_n = tune::tune(),
+      loss_reduction = tune::tune(),
+      sample_size = tune::tune(),
+      mtry = tune::tune(),
+      learn_rate = tune::tune(),
+      stop_iter = tune::tune()
+    ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("xgboost", nthread = 4)
+
+    reg_mod_spec <- parsnip::boost_tree(
+      trees = 1000,
+      tree_depth = tune::tune(),
+      min_n = tune::tune(),
+      loss_reduction = tune::tune(),
+      sample_size = tune::tune(),
+      mtry = tune::tune(),
+      learn_rate = tune::tune(),
+      stop_iter = tune::tune()
+    ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("xgboost", nthread = 4)
+
+    grid <- dials::grid_latin_hypercube(
+      dials::tree_depth(),
+      dials::min_n(),
+      dials::loss_reduction(),
+      sample_size = dials::sample_prop(),
+      dials::finalize(dials::mtry(), train_data),
+      dials::learn_rate(),
+      dials::stop_iter(),
+      size = 30
+    )
+  } else if (engine == "glmnet") {
+    class_mod_spec <- parsnip::logistic_reg(
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
+
+    reg_mod_spec <- parsnip::linear_reg(
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
+
+    grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
+  } else {
+    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
+  }
+
+  # ---- Train Binary Models ----
+  binary_outcomes <- c("win", "podium", "t10", "finished")
+
+  win_final <- train_binary_result_model(
+    "win",
+    "Win Model",
+    train_data,
+    data_split,
+    data_folds,
+    class_mod_spec,
+    grid,
+    setdiff(binary_outcomes, "win")
+  )
+  podium_final <- train_binary_result_model(
+    "podium",
+    "Podium Model",
+    train_data,
+    data_split,
+    data_folds,
+    class_mod_spec,
+    grid,
+    setdiff(binary_outcomes, "podium")
+  )
+  t10_final <- train_binary_result_model(
+    "t10",
+    "T10 Model",
+    train_data,
+    data_split,
+    data_folds,
+    class_mod_spec,
+    grid,
+    setdiff(binary_outcomes, "t10")
+  )
+  finish_final <- train_binary_result_model(
+    "finished",
+    "Finishing Model",
+    train_data,
+    data_split,
+    data_folds,
+    class_mod_spec,
+    grid,
+    setdiff(binary_outcomes, "finished")
+  )
+
+  # ---- Train Position Model (Regression) ----
+  pos_cols <- setdiff(results_cols, binary_outcomes)
+  pos_data <- p_mod_data %>%
+    dplyr::select(dplyr::all_of(pos_cols))
+
+  pos_splits <- prepare_and_split_data(pos_data)
+  position_recipe <- recipes::recipe(
+    position ~ .,
+    data = pos_splits$train_data
+  ) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_predictors())
+
+  position_wflow <- workflows::workflow() %>%
+    workflows::add_model(reg_mod_spec) %>%
+    workflows::add_recipe(position_recipe)
+
+  metrics_reg <- yardstick::metric_set(
+    yardstick::rmse,
+    yardstick::mae,
+    yardstick::rsq
+  )
+  tictoc::tic("Trained Position Model")
+  position_res <- tune::tune_grid(
+    position_wflow,
+    resamples = pos_splits$data_folds,
+    grid = grid,
+    metrics = metrics_reg
+  )
+  position_best <- tune::select_best(position_res, "rmse")
+  tictoc::toc(log = T)
+
+  position_final <- tune::finalize_workflow(position_wflow, position_best) %>%
+    parsnip::fit(pos_splits$train_data)
+  position_final_fit <- tune::last_fit(
+    position_final,
+    pos_splits$data_split,
+    metrics = metrics_reg
+  )
+  report_model_metrics(
+    position_final_fit,
+    "Position Model",
+    c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+  )
+
+  return(list(
+    "win" = win_final,
+    "podium" = podium_final,
+    "t10" = t10_final,
+    'finish' = finish_final,
+    'position' = position_final
+  ))
+}
+
+# --------------------------- Results Models --------------------------
+#' Train Race Result Models (Post-Qualifying)
+#'
+#' @description
+#' This function trains a suite of five classification models to predict race
+#' results using data available *after* qualifying has completed. This includes
+#' historical data, practice session metrics, and final qualifying results.
+#'
+#' The function produces:
+#' 1. `win`: A binary classification model to predict if a driver will win the race.
+#' 2. `podium`: A binary classification model to predict if a driver will finish in the top 3.
+#' 3. `t10`: A binary classification model to predict if a driver will finish in the top 10.
+#' 4. `finish`: A binary classification model to predict if a driver will finish the race (not DNF).
+#' 5. `position`: A regression model to predict a driver's exact finishing position.
+#'
+#' @details
+#' The function filters data for seasons from 2018 onwards. All five models are
+#' built using the `xgboost` engine, with hyperparameters tuned via a Latin
+#' hypercube grid search.
+#'
+#' The four binary models (`win`, `podium`, `t10`, `finish`) are optimized on
+#' the `mn_log_loss` metric. The `position` regression model is optimized
+#' based on the `rmse` (Root Mean Squared Error) metric.
+#'
+#' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
+#' @return A list containing five fitted `workflow` objects for `win`, `podium`,
+#'   `t10`, `finish`, and `position`.
+#' @export
+model_results_after_quali <- function(data = clean_data()) {
+  train_results_models(data, scenario = "after_quali")
+}
+
+#' Train Race Result Models (Post-Practice)
+#'
+#' @description
+#' This function trains a suite of five classification models to predict race
+#' results using data available *after* practice sessions but *before*
+#' qualifying.
+#'
+#' It produces the same models as `model_results_after_quali`, but uses a
+#' smaller set of predictors.
+#'
+#' @inherit model_results_after_quali details
+#' @inheritParams model_results_after_quali
+#' @inherit model_results_after_quali return
+#' @export
+model_results_late <- function(data = clean_data()) {
+  train_results_models(data, scenario = "late")
+}
+
+#' Train Race Result Models (Pre-Practice)
+#'
+#' @description
+#' This function trains a suite of five classification models to predict race
+#' results using data available *before* any practice or qualifying sessions
+#' have occurred for a race weekend.
+#'
+#' It produces the same models as `model_results_after_quali`, but uses a
+#' smaller set of predictors.
+#'
+#' @inherit model_results_after_quali details
+#' @inheritParams model_results_after_quali
+#' @inherit model_results_after_quali return
+#' @export
+model_results_early <- function(data = clean_data()) {
+  train_results_models(data, scenario = "early")
 }
