@@ -6,7 +6,7 @@
 \title{default parameters
 Just a list of default parameters}
 \format{
-An object of class \code{list} of length 11.
+An object of class \code{list} of length 12.
 }
 \usage{
 default_params
