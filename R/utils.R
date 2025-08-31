@@ -8,8 +8,9 @@ wmean <- function(x, ln = 20, val = 0) {
   return(stats::weighted.mean(x, w = cubert(1:length(x))))
 }
 
-#return the cumulative weighted mean (with weights as log(1:ln(x)))
-cumwmean <- function(x) {
+#return the cumulative weighted mean (with weights as log(1:length(x)))
+cumwmean <- function(x, na.val = 0) {
+  x[is.na(x)] <- na.val
   return(cumsum(x * log(1:length(x))) / cumsum(log(1:length(x))))
 }
 
@@ -27,23 +28,23 @@ nroot <- function(x, n) {
   return(nr_V(x, n))
 }
 
-cumwmean_expanded <- function(x, ln = 10, val = 0) {
+cumwmean_expanded <- function(x, ln = 10, val = 0, na.val = val) {
   ln_origin <- length(x)
 
   x <- c(rep(val, ln), x)
-  cwm <- cumwmean(x)
+  cwm <- cumwmean(x, na.val = na.val)
 
   return(cwm[(ln + 1):length(cwm)])
   # if(length(x)<ln){ x <- c(rep(val, ln-length(x)), x) } cwm<-cumwmean(x) if(ln_origin < ln){ return(cwm[(ln-ln_origin+1):ln]) } else { return(cwm) }
 }
 
-lagged_cumwmean_expanded <- function(x, ln = 20, val = 0) {
-  cwme <- cumwmean_expanded(x, ln, val)
+lagged_cumwmean_expanded <- function(x, ln = 20, val = 0, na.val = val) {
+  cwme <- cumwmean_expanded(x, ln, val, na.val = na.val)
   return(c(val, cwme[-length(cwme)]))
 }
 
-s_lagged_cumwmean_expanded <- function(x, ln = 20, val = 0) {
-  lce <- lagged_cumwmean_expanded(x, ln = ln, val = val)
+s_lagged_cumwmean_expanded <- function(x, ln = 20, val = 0, na.val = val) {
+  lce <- lagged_cumwmean_expanded(x, ln = ln, val = val, na.val = na.val)
   return(lce[length(lce)])
 }
 

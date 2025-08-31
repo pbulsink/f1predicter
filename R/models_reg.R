@@ -1,8 +1,11 @@
-# Models (regression/xgboost)
+# Models (regression/classification via xgboost/glmnet)
 
 # 1: Who will get Pole - classification
 # 2: Qualifying Position - regression
-# 3:
+# 3: Winner - classification
+# 4: Podium - classification
+# 5: T10 - classification
+# 6: Finishing Position - regression
 
 #' Prepare and Split Data for Modeling
 #'
@@ -130,6 +133,18 @@ train_quali_models <- function(
   use_practice_data = FALSE,
   engine = "xgboost"
 ) {
+
+  if(engine == 'xgboost') {
+    if(!requireNamespace('xgboost', quietly = TRUE)){
+      cli::cli_abort("Error in f1predicter:::train_quali_models. Package {.code xgboost} needs to be installed")
+    }
+  } else if (engine == "glmnet") {
+    if(!requireNamespace('glmnet', quietly = TRUE)){
+      cli::cli_abort("Error in f1predicter:::train_quali_models. Package {.code glmnet} needs to be installed")
+    }
+  } else {
+    cli::cli_abort("Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'xgboost'} or {.code 'glmnet'}.")
+  }
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Used later for position model
 
@@ -261,13 +276,13 @@ train_quali_models <- function(
       metrics = metrics_binary
     )
 
-  pole_best <- pole_res %>%
-    tune::select_best("mn_log_loss")
   tictoc::toc()
 
+  pole_best <- pole_res %>%
+    tune::select_best(metric = "mn_log_loss")
+
   pole_final <- pole_wflow %>%
-    tune::finalize_workflow(pole_best) %>%
-    parsnip::fit(train_data_pole)
+    tune::finalize_workflow(pole_best)
   pole_final_fit <- pole_final %>%
     tune::last_fit(data_split_pole, metrics = metrics_binary)
 
@@ -347,8 +362,6 @@ train_quali_models <- function(
       dials::mixture(),
       levels = 5
     )
-  } else {
-    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
   }
 
   position_wflow <- workflows::workflow() %>%
@@ -364,12 +377,11 @@ train_quali_models <- function(
     )
 
   position_best <- position_res %>%
-    tune::select_best("rmse")
+    tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
 
   position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(train_data_pos)
+    tune::finalize_workflow(position_best)
   position_final_fit <- position_final %>%
     tune::last_fit(data_split_pos, metrics = metrics_reg)
 
@@ -397,10 +409,12 @@ train_quali_models <- function(
 #'
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
 #' @inherit train_quali_models return
 #' @export
-model_quali_early <- function(data = clean_data()) {
-  train_quali_models(data, use_practice_data = FALSE)
+model_quali_early <- function(data = clean_data(), engine = "xgboost") {
+  train_quali_models(data, use_practice_data = FALSE, engine = engine)
 }
 
 #' Train Late Qualifying Prediction Models
@@ -420,8 +434,8 @@ model_quali_early <- function(data = clean_data()) {
 #' @inheritParams model_quali_early
 #' @inherit train_quali_models return
 #' @export
-model_quali_late <- function(data = clean_data()) {
-  train_quali_models(data, use_practice_data = TRUE)
+model_quali_late <- function(data = clean_data(), engine = "xgboost") {
+  train_quali_models(data, use_practice_data = TRUE, engine = engine)
 }
 
 
@@ -486,7 +500,7 @@ train_binary_result_model <- function(
     )
 
   best_params <- res %>%
-    tune::select_best("mn_log_loss")
+    tune::select_best(metric = "mn_log_loss")
   tictoc::toc()
 
   final_model <- wflow %>%
@@ -713,7 +727,8 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     grid = grid,
     metrics = metrics_reg
   )
-  position_best <- tune::select_best(position_res, "rmse")
+  position_best <- position_res %>%
+    tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
 
   position_final <- tune::finalize_workflow(position_wflow, position_best) %>%
@@ -763,11 +778,13 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
 #' based on the `rmse` (Root Mean Squared Error) metric.
 #'
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
 #' @return A list containing five fitted `workflow` objects for `win`, `podium`,
 #'   `t10`, `finish`, and `position`.
 #' @export
-model_results_after_quali <- function(data = clean_data()) {
-  train_results_models(data, scenario = "after_quali")
+model_results_after_quali <- function(data = clean_data(), engine = "xgboost") {
+  train_results_models(data, scenario = "after_quali", engine = engine)
 }
 
 #' Train Race Result Models (Post-Practice)
@@ -784,8 +801,8 @@ model_results_after_quali <- function(data = clean_data()) {
 #' @inheritParams model_results_after_quali
 #' @inherit model_results_after_quali return
 #' @export
-model_results_late <- function(data = clean_data()) {
-  train_results_models(data, scenario = "late")
+model_results_late <- function(data = clean_data(), engine = "xgboost") {
+  train_results_models(data, scenario = "late", engine = engine)
 }
 
 #' Train Race Result Models (Pre-Practice)
@@ -802,6 +819,6 @@ model_results_late <- function(data = clean_data()) {
 #' @inheritParams model_results_after_quali
 #' @inherit model_results_after_quali return
 #' @export
-model_results_early <- function(data = clean_data()) {
-  train_results_models(data, scenario = "early")
+model_results_early <- function(data = clean_data(), engine = "xgboost") {
+  train_results_models(data, scenario = "early", engine = engine)
 }
