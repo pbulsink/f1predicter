@@ -4,27 +4,26 @@
 \alias{model_quali_late}
 \title{Train Late Qualifying Prediction Models}
 \usage{
-model_quali_late(data = clean_data(), engine = "xgboost")
+model_quali_late(data = clean_data(), engine = "xgboost", save_model = TRUE)
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to the output of `clean_data()`.}
 
 \item{engine}{A character string specifying the model engine. One of "xgboost"
 (default) or "glmnet".}
+
+\item{save_model}{A logical value. If `TRUE` (default), the trained models
+are automatically butchered and saved to the path specified in
+`options('f1predicter.models')`.}
 }
 \value{
 A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 }
 \description{
 This function trains two classification models to predict qualifying results using
-data available *after* all practice sessions have occurred for a race weekend.
-This model includes practice performance metrics as predictors.
-
-The function produces:
-1. A binary classification model (`quali_pole`) to predict if a driver will
-   achieve pole position.
-2. A multiclass classification model (`quali_pos`) to predict a driver's exact
-   qualifying position (1-20).
+data available *after* all practice sessions have occurred for a race weekend. This
+model includes practice performance metrics as predictors. It is a wrapper
+around `train_quali_models(use_practice_data = TRUE)`.
 }
 \details{
 The function first filters the input data to include seasons from 2018 onwards.

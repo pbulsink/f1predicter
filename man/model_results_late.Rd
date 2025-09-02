@@ -4,13 +4,17 @@
 \alias{model_results_late}
 \title{Train Race Result Models (Post-Practice)}
 \usage{
-model_results_late(data = clean_data(), engine = "xgboost")
+model_results_late(data = clean_data(), engine = "xgboost", save_model = TRUE)
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to `clean_data()`.}
 
 \item{engine}{A character string specifying the model engine. One of "xgboost"
 (default) or "glmnet".}
+
+\item{save_model}{A logical value. If `TRUE` (default), the trained models
+are automatically butchered and saved to the path specified in
+`options('f1predicter.models')`.}
 }
 \value{
 A list containing five fitted `workflow` objects for `win`, `podium`,

@@ -1,0 +1,146 @@
+---
+title: "Predicting Formula 1"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Predicting Formula 1}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## `f1predicter` Vignette: Updating Data, Training Models, and Making Predictions
+
+This vignette describes the workflow for the `f1predicter` R package. It covers the steps from updating the historical data to training new models and using those models to predict the outcomes of an upcoming race weekend.
+
+### 1\. Setting up the Project and Dependencies
+
+First, ensure you have all the necessary R packages installed. The `f1predicter` project relies on several key libraries for data manipulation, modeling, and social media integration. It can be installed by:
+
+```r
+devtools::install_github("pbulsink/f1predicter")
+```
+
+Further, the models require either `glmnet` or `xgboost` engines, you can install one or both by
+```r
+install.packages("glmnet")
+install.packages("xgboost")
+```
+
+#### 1\.1 Cache Directories
+
+The `f1predicter` package uses a standardized approach for managing file paths for data caching and saving trained models. This is done through R's options mechanism, which allows for persistent settings within a session.
+
+The default paths are managed by two primary options:
+
+  *  `"f1predicter.cache"`: This option specifies the directory where raw data from the update_data() function (e.g., race results, lap times) is stored as CSV files.
+
+  *  `"f1predicter.models"`: This option specifies the directory where the trained tidymodels objects are saved as .RDS files by the train_models() function.
+
+You can set these options at the beginning of your R script or in your .Rprofile file to ensure they are consistent across sessions. It is recommended to create a dedicated directory for these files.
+
+### 2\. Updating the Historical Data
+
+The prediction models rely on up-to-date historical data. The `data.R` file contains functions to pull data from a data source (e.g., FastF1). The `get_weekend_data()` function fetches the provided race (season & round) results, qualifying data, pit stops, and lap times and caches them locally as CSV files.
+
+To update the data for an entire year, use the `get_season_data()` function:
+
+```r
+# Update data for the 2024 season
+# This will download and save data to the specified cache directory
+get_season_data(season = 2024))
+```
+
+This function ensures the models have the most recent data to train on, which is crucial for capturing current performance trends.
+
+### 3\. Training the Prediction Models
+
+The models are defined and trained in `models_reg.R`. The package uses a `tidymodels` framework, which allows for a consistent and structured approach to modeling. The models are trained to predict several outcomes:
+
+  - **Qualifying Outcomes**: `quali_position` (regression & classification), `pole_sitter` (classification)
+  - **Race Outcomes**: `finish_position` (regression), `winner`, `podium`, `top_10` (classification)
+
+The `train_models` function automates the training process, saving the trained models to disk. This is a computationally intensive step and should be run whenever new data is available or the model parameters need to be updated. 
+
+There are two options for training the models, with glmnet or xgboost engines. The more computationally expensive xgboost may or may not provide better results.
+
+```r
+# Load the clean and processed data
+cleaned_data <- clean_data()
+
+# Define the model timing. 'early' is for predictions made before any sessions
+# have started. 'late' would include practice data. 'after_quali' would include
+# qualifying data for the race result predictions.
+timing <- "after_quali"
+
+# Train the qualifying models
+# This will train models to predict quali position and who gets pole
+train_models(
+  data = cleaned_data,
+  model_type = "quali",
+  model_timing = timing
+)
+
+# Train the race results models
+# This will train models for winner, podium, top 10, and finish position
+train_models(
+  data = cleaned_data,
+  model_type = "results",
+  model_timing = timing
+)
+```
+
+The `train_models` function saves the trained `butchered` `parsnip` model objects as `.RDS` files. Butchering removes the large training data from the model object to reduce file size.
+
+### 4\. Making Predictions for the Next Race Weekend
+
+With the data updated and the models trained, you can now generate predictions for the next race. The process involves two main steps:
+
+1.  Generating the new data for the upcoming race.
+2.  Using the trained models to make predictions on this new data.
+
+The `predict.R` file contains functions to perform these tasks. The `generate_next_race_data` function creates a data frame with all the necessary features for the upcoming race. It can optionally take practice and qualifying data to create more accurate predictions after those sessions have occurred.
+
+Let's assume we want to predict the outcome of the next race (e.g., season 2024, round 14).
+
+```r
+# Define the season and round
+season <- 2024
+round <- 14
+
+# Get the list of drivers for the next race.
+# This would typically be a scrape or a manual input.
+drivers_for_next_race <- get_drivers_for_round(season, round)
+
+# Generate the data for prediction.
+# This will create features based on historical performance up to the current race.
+new_race_data <- generate_next_race_data(
+  season = season,
+  round = round,
+  drivers = drivers_for_next_race
+)
+```
+
+Now, use this `new_race_data` with the trained models to get predictions. The `predict_round` function orchestrates this process, calling the appropriate prediction function for each model (e.g., `predict_winner`, `predict_podium`, `predict_position`).
+
+```r
+# Load the quali and results models from disk
+quali_models <- load_models(model_type = "quali", model_timing = "early")
+results_models <- load_models(model_type = "results", model_timing = "early")
+
+# Make predictions for Qualifying
+quali_predictions <- predict_quali_round(
+  new_data = new_race_data,
+  quali_models = quali_models
+)
+
+# Make predictions for the Race
+race_predictions <- predict_round(
+  new_data = new_race_data,
+  results_models = results_models
+)
+```
+
+The `predict_quali_round` and `predict_round` functions will return a data frame containing predictions for each driver, including their predicted finishing position, and probabilities for winning, getting a podium, or finishing in the top 10.
+
+### 5\. Conclusion
+
+This workflow provides a complete and automated process for F1 prediction, from data acquisition to prediction generation. The modular design allows for flexibility, letting you update data, retrain models, or make predictions for different scenarios as the race weekend progresses.

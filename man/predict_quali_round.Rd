@@ -4,28 +4,28 @@
 \alias{predict_quali_round}
 \title{Predict Qualifying Results for a Round}
 \usage{
-predict_quali_round(
-  new_data = generate_next_race_data(),
-  quali_pole_model,
-  quali_pos_model
-)
+predict_quali_round(new_data = generate_next_race_data(), quali_models = NULL)
 }
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
 
-\item{quali_pole_model}{A `workflow` object for predicting pole position.}
-
-\item{quali_pos_model}{A `workflow` object for predicting qualifying position.}
+\item{quali_models}{A list of fitted `workflow` objects for qualifying prediction.
+If `NULL` (default), the function will attempt to load the "early"
+qualifying models using `load_models()`. Otherwise, it should be a list as
+returned by `model_quali_early()` or `model_quali_late()`, containing
+`quali_pole`, `quali_pos`, and `quali_pos_class`.}
 }
 \value{
 A tibble with predictions for pole probability and qualifying position
-  for each driver.
+  (from both regression and classification models) for each driver.
 }
 \description{
-A wrapper function to predict both pole position probability and likely
-qualifying position for a given round.
+A wrapper function to predict pole position probability and likely qualifying
+position for a given round using multiple models.
 }
 \details{
-This function combines the outputs of `predict_quali_pole()` and
-`predict_quali_pos()` into a single tibble.
+This function combines the outputs of `predict_quali_pole()`,
+`predict_quali_pos()`, and `predict_quali_pos_class()` into a single tibble.
+It takes the list of fitted models returned by `model_quali_early()` or
+`model_quali_late()`.
 }

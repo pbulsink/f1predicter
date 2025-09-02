@@ -4,27 +4,16 @@
 \alias{predict_round}
 \title{Predict Race Results for a Round}
 \usage{
-predict_round(
-  new_data = generate_next_race_data(),
-  win_model,
-  podium_model,
-  t10_model,
-  finish_model,
-  position_model
-)
+predict_round(new_data = generate_next_race_data(), results_models = NULL)
 }
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
 
-\item{win_model}{A `workflow` object for predicting the winner.}
-
-\item{podium_model}{A `workflow` object for predicting a podium finish.}
-
-\item{t10_model}{A `workflow` object for predicting a top 10 finish.}
-
-\item{finish_model}{A `workflow` object for predicting finishing the race.}
-
-\item{position_model}{A `workflow` object for predicting the finishing position.}
+\item{results_models}{A list of fitted `workflow` objects for race results prediction.
+If `NULL` (default), the function will attempt to load the "early" results
+models using `load_models()`. Otherwise, it should be a list as returned by
+a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
+and `position`.}
 }
 \value{
 A tibble with predictions for all race outcomes for each driver,

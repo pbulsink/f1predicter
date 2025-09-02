@@ -133,17 +133,22 @@ train_quali_models <- function(
   use_practice_data = FALSE,
   engine = "xgboost"
 ) {
-
-  if(engine == 'xgboost') {
-    if(!requireNamespace('xgboost', quietly = TRUE)){
-      cli::cli_abort("Error in f1predicter:::train_quali_models. Package {.code xgboost} needs to be installed")
+  if (engine == 'xgboost') {
+    if (!requireNamespace('xgboost', quietly = TRUE)) {
+      cli::cli_abort(
+        "Error in f1predicter:::train_quali_models. Package {.code xgboost} needs to be installed"
+      )
     }
   } else if (engine == "glmnet") {
-    if(!requireNamespace('glmnet', quietly = TRUE)){
-      cli::cli_abort("Error in f1predicter:::train_quali_models. Package {.code glmnet} needs to be installed")
+    if (!requireNamespace('glmnet', quietly = TRUE)) {
+      cli::cli_abort(
+        "Error in f1predicter:::train_quali_models. Package {.code glmnet} needs to be installed"
+      )
     }
   } else {
-    cli::cli_abort("Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'xgboost'} or {.code 'glmnet'}.")
+    cli::cli_abort(
+      "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'xgboost'} or {.code 'glmnet'}."
+    )
   }
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Used later for position model
@@ -393,8 +398,87 @@ train_quali_models <- function(
     c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
   )
 
+  # ---- Quali Position Classification Model (Ordered Logistic) ----
+
+  # Use the same data as the regression model, but with a factor outcome
+  pos_class_data <- pos_data %>%
+    dplyr::mutate(quali_position = factor(.data$quali_position, ordered = TRUE))
+
+  pos_class_splits <- prepare_and_split_data(pos_class_data)
+  train_data_pos_class <- pos_class_splits$train_data
+  data_split_pos_class <- pos_class_splits$data_split
+  data_folds_pos_class <- pos_class_splits$data_folds
+
+  pos_class_recipe <- recipes::recipe(
+    quali_position ~ .,
+    data = train_data_pos_class
+  ) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_predictors())
+
+  # Model spec for ordered logistic regression
+  pos_class_spec <- parsnip::proportional_odds(
+    penalty = tune::tune(),
+    mixture = tune::tune()
+  ) %>%
+    parsnip::set_engine("glmnet") %>%
+    parsnip::set_mode("classification")
+
+  # Grid for glmnet
+  pos_class_grid <- dials::grid_regular(
+    dials::penalty(),
+    dials::mixture(),
+    levels = 5
+  )
+
+  pos_class_wflow <- workflows::workflow() %>%
+    workflows::add_model(pos_class_spec) %>%
+    workflows::add_recipe(pos_class_recipe)
+
+  tictoc::tic("Trained Position Classification Model")
+  pos_class_res <- pos_class_wflow %>%
+    tune::tune_grid(
+      resamples = data_folds_pos_class,
+      grid = pos_class_grid,
+      metrics = metrics_multi
+    )
+
+  pos_class_best <- pos_class_res %>%
+    tune::select_best(metric = "mn_log_loss")
+
+  pos_class_final <- pos_class_wflow %>%
+    tune::finalize_workflow(pos_class_best)
+
+  pos_class_final_fit <- pos_class_final %>%
+    tune::last_fit(data_split_pos_class, metrics = metrics_multi)
+  tictoc::toc()
+
+  report_model_metrics(
+    pos_class_final_fit,
+    "Quali Position Classif. Model",
+    c(
+      "mn_log_loss" = "log loss",
+      "accuracy" = "accuracy",
+      "kap" = "kappa",
+      "roc_auc" = "auc"
+    )
+  )
+
   # ---- Return ----
-  return(list("quali_pole" = pole_final_fit, 'quali_pos' = position_final_fit))
+  return(list(
+    "quali_pole" = pole_final_fit,
+    'quali_pos' = position_final_fit,
+    'quali_pos_class' = pos_class_final_fit
+  ))
 }
 
 
@@ -402,43 +486,55 @@ train_quali_models <- function(
 #'
 #' @description
 #' This function trains two classification models to predict qualifying results using
-#' data available before any practice sessions have occurred for a race weekend.
-#'
-#' The function produces:
-#' 1. A binary classification model (`quali_pole`) to predict if a driver will
-#'    achieve pole position.
-#' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
-#'    qualifying position (1-20).
+#' data available before any practice sessions have occurred for a race weekend. It
+#' is a wrapper around `train_quali_models(use_practice_data = FALSE)`.
 #'
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "xgboost"
 #'   (default) or "glmnet".
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically butchered and saved to the path specified in
+#'   `options('f1predicter.models')`.
 #' @inherit train_quali_models return
-#' @export
-model_quali_early <- function(data = clean_data(), engine = "xgboost") {
-  train_quali_models(data, use_practice_data = FALSE, engine = engine)
+model_quali_early <- function(
+  data = clean_data(),
+  engine = "xgboost",
+  save_model = TRUE
+) {
+  models <- train_quali_models(data, use_practice_data = FALSE, engine = engine)
+  if (save_model) {
+    save_models(model_list = models, model_timing = "early")
+  }
+  return(models)
 }
 
 #' Train Late Qualifying Prediction Models
 #'
 #' @description
 #' This function trains two classification models to predict qualifying results using
-#' data available *after* all practice sessions have occurred for a race weekend.
-#' This model includes practice performance metrics as predictors.
-#'
-#' The function produces:
-#' 1. A binary classification model (`quali_pole`) to predict if a driver will
-#'    achieve pole position.
-#' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
-#'    qualifying position (1-20).
+#' data available *after* all practice sessions have occurred for a race weekend. This
+#' model includes practice performance metrics as predictors. It is a wrapper
+#' around `train_quali_models(use_practice_data = TRUE)`.
 #'
 #' @inherit train_quali_models details
-#' @inheritParams model_quali_early
+#' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically butchered and saved to the path specified in
+#'   `options('f1predicter.models')`.
 #' @inherit train_quali_models return
-#' @export
-model_quali_late <- function(data = clean_data(), engine = "xgboost") {
-  train_quali_models(data, use_practice_data = TRUE, engine = engine)
+model_quali_late <- function(
+  data = clean_data(),
+  engine = "xgboost",
+  save_model = TRUE
+) {
+  models <- train_quali_models(data, use_practice_data = TRUE, engine = engine)
+  if (save_model) {
+    save_models(model_list = models, model_timing = "late")
+  }
+  return(models)
 }
 
 
@@ -519,7 +615,7 @@ train_binary_result_model <- function(
     c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
   )
 
-  return(final_model)
+  return(final_fit)
 }
 
 #' Train Race Result Models
@@ -753,7 +849,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     "podium" = podium_final,
     "t10" = t10_final,
     'finish' = finish_final,
-    'position' = position_final
+    'position' = position_final_fit
   ))
 }
 
@@ -784,11 +880,26 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "xgboost"
 #'   (default) or "glmnet".
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically butchered and saved to the path specified in
+#'   `options('f1predicter.models')`.
 #' @return A list containing five fitted `workflow` objects for `win`, `podium`,
 #'   `t10`, `finish`, and `position`.
 #' @export
-model_results_after_quali <- function(data = clean_data(), engine = "xgboost") {
-  train_results_models(data, scenario = "after_quali", engine = engine)
+model_results_after_quali <- function(
+  data = clean_data(),
+  engine = "xgboost",
+  save_model = TRUE
+) {
+  models <- train_results_models(
+    data,
+    scenario = "after_quali",
+    engine = engine
+  )
+  if (save_model) {
+    save_models(model_list = models, model_timing = "after_quali")
+  }
+  return(models)
 }
 
 #' Train Race Result Models (Post-Practice)
@@ -802,11 +913,24 @@ model_results_after_quali <- function(data = clean_data(), engine = "xgboost") {
 #' smaller set of predictors.
 #'
 #' @inherit model_results_after_quali details
-#' @inheritParams model_results_after_quali
+#' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically butchered and saved to the path specified in
+#'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
 #' @export
-model_results_late <- function(data = clean_data(), engine = "xgboost") {
-  train_results_models(data, scenario = "late", engine = engine)
+model_results_late <- function(
+  data = clean_data(),
+  engine = "xgboost",
+  save_model = TRUE
+) {
+  models <- train_results_models(data, scenario = "late", engine = engine)
+  if (save_model) {
+    save_models(model_list = models, model_timing = "late")
+  }
+  return(models)
 }
 
 #' Train Race Result Models (Pre-Practice)
@@ -820,9 +944,187 @@ model_results_late <- function(data = clean_data(), engine = "xgboost") {
 #' smaller set of predictors.
 #'
 #' @inherit model_results_after_quali details
-#' @inheritParams model_results_after_quali
+#' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
+#' @param engine A character string specifying the model engine. One of "xgboost"
+#'   (default) or "glmnet".
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically butchered and saved to the path specified in
+#'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
 #' @export
-model_results_early <- function(data = clean_data(), engine = "xgboost") {
-  train_results_models(data, scenario = "early", engine = engine)
+model_results_early <- function(
+  data = clean_data(),
+  engine = "xgboost",
+  save_model = TRUE
+) {
+  models <- train_results_models(data, scenario = "early", engine = engine)
+  if (save_model) {
+    save_models(model_list = models, model_timing = "early")
+  }
+  return(models)
+}
+
+#' Construct Model File Path
+#'
+#' Internal helper to construct a standardized file path for saving/loading models.
+#' It validates the model type and timing, and checks for the required option.
+#'
+#' @param model_type The type of model, either "quali" or "results".
+#' @param model_timing The timing of the model, one of "early", "late", or "after_quali".
+#' @return A full file path string.
+#' @noRd
+construct_model_path <- function(model_type, model_timing) {
+  # 1. Check if the base path option is set
+  base_path <- getOption("f1predicter.models")
+  if (is.null(base_path)) {
+    cli::cli_abort(
+      c(
+        "Model directory path is not set.",
+        "i" = "Please set the path using `options(f1predicter.models = 'path/to/your/models')`."
+      )
+    )
+  }
+
+  # 2. Validate model_type
+  if (!model_type %in% c("quali", "results")) {
+    cli::cli_abort(
+      "{.arg model_type} must be one of 'quali' or 'results', not {.val {model_type}}."
+    )
+  }
+
+  # 3. Validate model_timing based on model_type
+  valid_timings <- if (model_type == "quali") {
+    c("early", "late")
+  } else {
+    # "results"
+    c("early", "late", "after_quali")
+  }
+
+  if (!model_timing %in% valid_timings) {
+    cli::cli_abort(
+      c(
+        "{.arg model_timing} is invalid for model type {.val {model_type}}.",
+        "i" = "Valid timings for '{model_type}' are: {.val {valid_timings}}.",
+        "x" = "You provided: {.val {model_timing}}."
+      )
+    )
+  }
+
+  # 4. Construct and return the full path
+  file_name <- paste0(model_type, "_", model_timing, "_models.rds")
+  file.path(base_path, file_name)
+}
+
+
+#' Save Models
+#'
+#' This function takes a list of trained `last_fit` model object
+#' and saves the resulting list to a standardized file
+#' path. The `model_type` ("quali" or "results") is automatically inferred from
+#' the names of the models in the list (e.g., "quali_pole", "win").
+#'
+#' The path is constructed from the base directory set in
+#' `getOption("f1predicter.models")` and the specified model timing.
+#'
+#' @param model_list A named list of `last_fit` objects from `tune`. The names
+#'   (e.g., "quali_pole", "win") are used to infer the model type.
+#' @param model_timing The timing context for the models, one of `"early"`,
+#'   `"late"`, or (for "results" models only) `"after_quali"`.
+#' @return Invisibly returns the full `file_path` where models were saved.
+#' @export
+save_models <- function(model_list, model_timing) {
+  # Infer model_type from the names in model_list
+  model_names <- names(model_list)
+  is_quali <- any(grepl("quali", model_names, fixed = TRUE))
+  is_results <- any(
+    model_names %in% c("win", "podium", "t10", "finish", "position")
+  )
+
+  if (is_quali && is_results) {
+    cli::cli_abort(c(
+      "Ambiguous model list provided. Contains names for both 'quali' and 'results' models.",
+      "i" = "Please provide a list containing only one type of model."
+    ))
+  } else if (is_quali) {
+    model_type <- "quali"
+  } else if (is_results) {
+    model_type <- "results"
+  } else {
+    cli::cli_abort(c(
+      "Could not automatically determine {.arg model_type} from the names in {.arg model_list}.",
+      "i" = "Expected names to contain 'quali' for qualifying models, or be among {.val {c('win', 'podium', 't10', 'finish', 'position')}} for results models.",
+      "x" = "Found names: {.val {model_names}}"
+    ))
+  }
+
+  file_path <- construct_model_path(
+    model_type = model_type,
+    model_timing = model_timing
+  )
+  dir.create(dirname(file_path), showWarnings = FALSE, recursive = TRUE)
+
+  final_list <- list()
+  for (model_name in names(model_list)) {
+    model_object <- model_list[[model_name]]
+
+    if (!inherits(model_object, "last_fit")) {
+      cli::cli_warn(
+        "Object {.val {model_name}} is not a 'last_fit' object and will be skipped."
+      )
+      next
+    }
+
+    # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness
+    tryCatch(
+      {
+        # Extract the fitted workflow from the last_fit object
+        fitted_wf <- model_object$.workflow[[1]]
+        # Butcher the workflow
+        butchered_wf <- butcher::butcher(fitted_wf)
+        # Replace the original workflow with the butchered one
+        model_object$.workflow[[1]] <- butchered_wf
+
+        cli::cli_inform("Butchered workflow for model: {.val {model_name}}")
+        final_list[[model_name]] <- model_object
+      },
+      error = function(e) {
+        cli::cli_warn(
+          "Failed to butcher model {.val {model_name}}: {e$message}"
+        )
+      }
+    )
+  }
+
+  if (length(final_list) > 0) {
+    saveRDS(final_list, file = file_path)
+    cli::cli_inform(
+      "Models successfully butchered and saved to {.path {file_path}}."
+    )
+  } else {
+    cli::cli_warn("No valid models were found to save.")
+  }
+
+  invisible(file_path)
+}
+
+#' Load Models
+#'
+#' Loads a list of models from a standardized file path. The path is
+#' constructed from the base directory set in `getOption("f1predicter.models")`,
+#' the model type, and timing.
+#'
+#' @param model_type The type of models to load, either `"quali"` or `"results"`.
+#' @param model_timing The timing context for the models, one of `"early"`,
+#'   `"late"`, or (for "results" models only) `"after_quali"`.
+#' @return A list of  model objects, ready for prediction.
+#' @export
+load_models <- function(model_type, model_timing) {
+  file_path <- construct_model_path(model_type, model_timing)
+
+  if (!file.exists(file_path)) {
+    cli::cli_abort("Model file not found at {.path {file_path}}.")
+  }
+  models <- readRDS(file_path)
+  cli::cli_inform("Models loaded from {.path {file_path}}.")
+  return(models)
 }

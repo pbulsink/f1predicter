@@ -49,7 +49,10 @@ generate_new_data <- function(
   )
 
   if (is.null(drivers)) {
-    drivers <- historical_data[historical_data$round_id == tail(historical_data$round_id, 1), c('driver_id', 'constructor_id')]
+    drivers <- historical_data[
+      historical_data$round_id == tail(historical_data$round_id, 1),
+      c('driver_id', 'constructor_id')
+    ]
   }
 
   new_data <- tibble::as_tibble(drivers) %>%
@@ -300,7 +303,10 @@ generate_new_data <- function(
       by = 'circuit_id'
     ) %>%
     dplyr::mutate(
-      constructor_grid_avg = tidyr::replace_na(.data$constructor_grid_avg, default_params$grid)
+      constructor_grid_avg = tidyr::replace_na(
+        .data$constructor_grid_avg,
+        default_params$grid
+      )
     )
 
   #Optionally included practice data
@@ -456,44 +462,115 @@ predict_quali_pole <- function(
 #' @return A tibble with `driver_id`, `round`, `season`, and
 #'   `likely_quali_position`.
 #' @export
-predict_quali_pos <- function(new_data = generate_next_race_data(), quali_pos_model) {
-
+predict_quali_pos <- function(
+  new_data = generate_next_race_data(),
+  quali_pos_model
+) {
   preds <- new_data %>%
     dplyr::mutate(
       likely_quali_position = (tune::extract_workflow(quali_pos_model) %>%
-                    stats::predict(new_data, type = "numeric"))$.pred
+        stats::predict(new_data, type = "numeric"))$.pred
     ) %>%
     dplyr::select("driver_id", "round", "season", "likely_quali_position") %>%
-    dplyr::arrange(-.data$likely_quali_position)
+    dplyr::arrange(.data$likely_quali_position)
+  return(preds)
+}
+
+#' Predict Qualifying Position (Classification)
+#'
+#' @description
+#' Predicts the likely qualifying position for each driver using an ordered
+#' classification model.
+#'
+#' @details
+#' This function takes a `workflow` object (trained for qualifying position
+#' prediction using a classification method) and a data frame of features for
+#' the upcoming race. The user can control whether to make an "early"
+#' (pre-practice) or "late" (post-practice) prediction by passing the
+#' appropriate model object from `model_quali_early()` or `model_quali_late()`.
+#'
+#' @param new_data A data frame of new data, typically from `generate_new_data()`.
+#' @param quali_pos_class_model A `workflow` object for predicting qualifying position,
+#'   such as `model_quali_early()$quali_pos_class`.
+#' @return A tibble with `driver_id`, `round`, `season`, and
+#'   `likely_quali_position_class`.
+#' @export
+predict_quali_pos_class <- function(
+  new_data = generate_next_race_data(),
+  quali_pos_class_model
+) {
+  preds <- new_data %>%
+    dplyr::mutate(
+      .pred = (tune::extract_workflow(quali_pos_class_model) %>%
+        stats::predict(new_data, type = "class"))$.pred_class
+    ) %>%
+    # The prediction is a factor, convert to numeric for sorting/comparison
+    dplyr::mutate(
+      likely_quali_position_class = as.numeric(as.character(.data$.pred))
+    ) %>%
+    dplyr::select(
+      "driver_id",
+      "round",
+      "season",
+      "likely_quali_position_class"
+    ) %>%
+    dplyr::arrange(.data$likely_quali_position_class)
   return(preds)
 }
 
 #' Predict Qualifying Results for a Round
 #'
 #' @description
-#' A wrapper function to predict both pole position probability and likely
-#' qualifying position for a given round.
+#' A wrapper function to predict pole position probability and likely qualifying
+#' position for a given round using multiple models.
 #'
 #' @details
-#' This function combines the outputs of `predict_quali_pole()` and
-#' `predict_quali_pos()` into a single tibble.
+#' This function combines the outputs of `predict_quali_pole()`,
+#' `predict_quali_pos()`, and `predict_quali_pos_class()` into a single tibble.
+#' It takes the list of fitted models returned by `model_quali_early()` or
+#' `model_quali_late()`.
 #'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
-#' @param quali_pole_model A `workflow` object for predicting pole position.
-#' @param quali_pos_model A `workflow` object for predicting qualifying position.
+#' @param quali_models A list of fitted `workflow` objects for qualifying prediction.
+#'   If `NULL` (default), the function will attempt to load the "early"
+#'   qualifying models using `load_models()`. Otherwise, it should be a list as
+#'   returned by `model_quali_early()` or `model_quali_late()`, containing
+#'   `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @return A tibble with predictions for pole probability and qualifying position
-#'   for each driver.
+#'   (from both regression and classification models) for each driver.
 #' @export
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
-  quali_pole_model,
-  quali_pos_model
+  quali_models = NULL
 ) {
-  pole_preds <- predict_quali_pole(new_data, quali_pole_model)
-  pos_preds <- predict_quali_pos(new_data, quali_pos_model)
+  if (is.null(quali_models)) {
+    cli::cli_inform(
+      "No models provided, loading 'early' qualifying models from disk."
+    )
+    quali_models <- load_models(model_type = "quali", model_timing = "early")
+  }
+
+  # Check if all required models are in the list
+  required_models <- c("quali_pole", "quali_pos", "quali_pos_class")
+  if (!all(required_models %in% names(quali_models))) {
+    cli::cli_abort(
+      "The {.arg quali_models} list must contain the following models: {.val {required_models}}"
+    )
+  }
+
+  pole_preds <- predict_quali_pole(new_data, quali_models$quali_pole)
+  pos_preds <- predict_quali_pos(new_data, quali_models$quali_pos)
+  pos_class_preds <- predict_quali_pos_class(
+    new_data,
+    quali_models$quali_pos_class
+  )
 
   all_preds <- pole_preds %>%
     dplyr::left_join(pos_preds, by = c("driver_id", "round", "season")) %>%
+    dplyr::left_join(
+      pos_class_preds,
+      by = c("driver_id", "round", "season")
+    ) %>%
     dplyr::arrange(-.data$pole_odd)
   return(all_preds)
 }
@@ -568,8 +645,15 @@ predict_finish <- function(new_data = generate_next_race_data(), finish_model) {
 #' @param position_model A `workflow` object for predicting the finishing position.
 #' @return A tibble with `driver_id`, `round`, `season`, and `likely_position`.
 #' @keywords internal
-predict_position <- function(new_data = generate_next_race_data(), position_model) {
-  position_preds <- stats::predict(tune::extract_workflow(position_model), new_data, type = "numeric")
+predict_position <- function(
+  new_data = generate_next_race_data(),
+  position_model
+) {
+  position_preds <- stats::predict(
+    tune::extract_workflow(position_model),
+    new_data,
+    type = "numeric"
+  )
 
   preds <- new_data %>%
     dplyr::select("driver_id", "round", "season") %>%
@@ -590,27 +674,41 @@ predict_position <- function(new_data = generate_next_race_data(), position_mode
 #' `model_results_*()` functions.
 #'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
-#' @param win_model A `workflow` object for predicting the winner.
-#' @param podium_model A `workflow` object for predicting a podium finish.
-#' @param t10_model A `workflow` object for predicting a top 10 finish.
-#' @param finish_model A `workflow` object for predicting finishing the race.
-#' @param position_model A `workflow` object for predicting the finishing position.
+#' @param results_models A list of fitted `workflow` objects for race results prediction.
+#'   If `NULL` (default), the function will attempt to load the "early" results
+#'   models using `load_models()`. Otherwise, it should be a list as returned by
+#'   a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
+#'   and `position`.
 #' @return A tibble with predictions for all race outcomes for each driver,
 #'   including win/podium/t10/finish odds and the likely finishing position.
 #' @export
 predict_round <- function(
   new_data = generate_next_race_data(),
-  win_model,
-  podium_model,
-  t10_model,
-  finish_model,
-  position_model
+  results_models = NULL
 ) {
-  win_preds <- predict_winner(new_data, win_model)
-  podium_preds <- predict_podium(new_data, podium_model)
-  t10_preds <- predict_t10(new_data, t10_model)
-  finish_preds <- predict_finish(new_data, finish_model)
-  position_preds <- predict_position(new_data, position_model)
+  if (is.null(results_models)) {
+    cli::cli_inform(
+      "No models provided, loading 'early' results models from disk."
+    )
+    results_models <- load_models(
+      model_type = "results",
+      model_timing = "early"
+    )
+  }
+
+  # Check if all required models are in the list
+  required_models <- c("win", "podium", "t10", "finish", "position")
+  if (!all(required_models %in% names(results_models))) {
+    cli::cli_abort(
+      "The {.arg results_models} list must contain the following models: {.val {required_models}}"
+    )
+  }
+
+  win_preds <- predict_winner(new_data, results_models$win)
+  podium_preds <- predict_podium(new_data, results_models$podium)
+  t10_preds <- predict_t10(new_data, results_models$t10)
+  finish_preds <- predict_finish(new_data, results_models$finish)
+  position_preds <- predict_position(new_data, results_models$position)
 
   all_preds <- win_preds %>%
     dplyr::left_join(podium_preds, by = c("driver_id", "round", "season")) %>%
