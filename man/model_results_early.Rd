@@ -4,10 +4,13 @@
 \alias{model_results_early}
 \title{Train Race Result Models (Pre-Practice)}
 \usage{
-model_results_early(data = clean_data())
+model_results_early(data = clean_data(), engine = "xgboost")
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to `clean_data()`.}
+
+\item{engine}{A character string specifying the model engine. One of "xgboost"
+(default) or "glmnet".}
 }
 \value{
 A list containing five fitted `workflow` objects for `win`, `podium`,

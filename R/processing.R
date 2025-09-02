@@ -60,7 +60,7 @@ clean_data <- function(input = load_all_data()) {
         "ligier" ~ "prost",
         c("marussia", "virgin") ~ "manor",
         "osella" ~ "fondmetal",
-        "sauber" ~ "alfa",
+        c("sauber", "kick", "stake", "audi") ~ "alfa",
         .default = .data$constructor_id
       )
     ) %>%
@@ -98,7 +98,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::ungroup() %>%
     dplyr::mutate(
       finished = dplyr::if_else(
-        grepl("Finished|\\+(\\d+) Lap", .data$status),
+        grepl("Finished|\\+(\\d+) Lap|Lapped", .data$status),
         1,
         0
       ),
@@ -112,6 +112,7 @@ clean_data <- function(input = load_all_data()) {
             "Collision damage",
             "Did not qualify",
             "Disqualified",
+            "Did not start",
             "Not classified",
             "Injured",
             "Spun off",
@@ -260,11 +261,14 @@ clean_data <- function(input = load_all_data()) {
     dplyr::ungroup() %>%
     suppressWarnings() %>%
     dplyr::group_by(.data$season, .data$round, .data$session_type) %>%
+    dplyr::mutate('session_best' = min(.data$best_time, na.rm = TRUE),
+                  'session_most_laps' = max(.data$num_laps, na.rm = TRUE)) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(.data$season, .data$round, .data$session_type, .data$driver_id) %>%
     dplyr::mutate(
-      gap_to_best = .data$best_time - min(.data$best_time, na.rm = T),
-      perc_to_best = .data$best_time / min(.data$best_time, na.rm = T),
-      perc_num_laps = .data$num_laps / max(.data$num_laps, na.rm = T),
-      rank = dplyr::dense_rank(.data$best_time),
+      gap_to_best = .data$best_time - .data$session_best,
+      perc_to_best = .data$best_time / .data$session_best,
+      perc_num_laps = .data$num_laps / .data$session_most_laps,
       best_s1 = min(.data$sector1time, na.rm = T),
       best_s2 = min(.data$sector2time, na.rm = T),
       best_s3 = min(.data$sector3time, na.rm = T),
@@ -273,12 +277,7 @@ clean_data <- function(input = load_all_data()) {
         is.infinite(.data$optimal_time),
         NA,
         .data$optimal_time
-      ),
-      optimal_time = tidyr::replace_na(
-        .data$optimal_time,
-        max(.data$optimal_time, na.rm = TRUE) + 0.1
-      ),
-      optimal_rank = dplyr::dense_rank(.data$optimal_time)
+      )
     ) %>%
     dplyr::ungroup() %>%
     dplyr::select(
@@ -287,15 +286,31 @@ clean_data <- function(input = load_all_data()) {
       "round",
       "session_type",
       "best_time",
-      "rank",
       "num_laps",
       "gap_to_best",
       "perc_to_best",
       "perc_num_laps",
-      "optimal_time",
-      "optimal_rank"
+      "optimal_time"
     ) %>%
     unique() %>%
+    dplyr::group_by(.data$season, .data$round, .data$session_type) %>%
+    dplyr::mutate(
+      optimal_time = tidyr::replace_na(
+        .data$optimal_time,
+        max(.data$optimal_time, na.rm = TRUE) + 0.5
+      ),
+      best_time = tidyr::replace_na(
+        .data$best_time,
+        max(.data$best_time, na.rm = TRUE) + 0.5
+      ),
+      rank = dplyr::dense_rank(.data$best_time),
+      optimal_rank = dplyr::dense_rank(.data$optimal_time)
+    ) %>%
+    dplyr::mutate(
+      rank = tidyr::replace_na(.data$rank, dplyr::n()),
+      optimal_rank = tidyr::replace_na(.data$optimal_rank, dplyr::n())
+    ) %>%
+    dplyr::ungroup() %>%
     janitor::clean_names()
 
   # practices ----
@@ -311,11 +326,18 @@ clean_data <- function(input = load_all_data()) {
       practice_best_gap = min(.data$gap_to_best, na.rm = T),
       practice_optimal_rank = mean(.data$optimal_rank, na.rm = T)
     ) %>%
+    dplyr::mutate(
+      practice_avg_rank = dplyr::if_else(is.infinite(.data$practice_avg_rank), dplyr::n(), .data$practice_avg_rank),
+      practice_best_rank = dplyr::if_else(is.infinite(.data$practice_best_rank), dplyr::n(), .data$practice_best_rank),
+      practice_avg_gap = dplyr::if_else(is.infinite(.data$practice_avg_gap), NA, .data$practice_avg_gap),
+      practice_best_gap = dplyr::if_else(is.infinite(.data$practice_best_gap), NA, .data$practice_best_gap),
+      practice_optimal_rank = dplyr::if_else(is.infinite(.data$practice_optimal_rank), dplyr::n(), .data$practice_optimal_rank)
+    ) %>%
     dplyr::ungroup() %>%
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(
-      practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, 20),
-      practice_best_rank = tidyr::replace_na(.data$practice_best_rank, 20),
+      practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, dplyr::n()),
+      practice_best_rank = tidyr::replace_na(.data$practice_best_rank, dplyr::n()),
       practice_num_laps = tidyr::replace_na(.data$practice_num_laps, 0),
       practice_avg_gap = tidyr::replace_na(
         .data$practice_avg_gap,
@@ -325,7 +347,7 @@ clean_data <- function(input = load_all_data()) {
         .data$practice_best_gap,
         max(.data$practice_avg_gap, na.rm = TRUE) + 0.1
       ),
-      practice_optimal_rank = tidyr::replace_na(.data$practice_optimal_rank, 20)
+      practice_optimal_rank = tidyr::replace_na(.data$practice_optimal_rank, dplyr::n())
     ) %>%
     dplyr::ungroup() %>%
     dplyr::select(
@@ -418,8 +440,9 @@ clean_data <- function(input = load_all_data()) {
     dplyr::mutate(stops = dplyr::n()) %>%
     dplyr::ungroup(.data$driver_id) %>%
     # Set the fastest stop to a fastest pit default value to get a better est of team comparisons
-    # Unless a fastest stop time can be found online
+    # TODO: Unless a fastest stop time can be found online
     dplyr::mutate(
+      stops = tidyr::replace_na(.data$stops, 0),
       adj_duration = .data$duration -
         (min(.data$duration, na.rm = T)) +
         default_params$fastest_pit,
@@ -439,7 +462,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::mutate(pit_duration_avg = mean(.data$pit_duration, na.rm = TRUE)) %>%
     dplyr::ungroup(.data$driver_id) %>%
     dplyr::mutate(
-      pit_duration_perc = .data$pit_duration_avg / min(.data$pit_duration)
+      pit_duration_perc = .data$pit_duration_avg / min(.data$pit_duration, na.rm = TRUE)
     ) %>%
     dplyr::ungroup() %>%
     dplyr::select(
@@ -454,6 +477,10 @@ clean_data <- function(input = load_all_data()) {
     dplyr::mutate(
       pit_num_perc = .data$pit_stops / mean(.data$pit_stops, na.rm = T)
     ) %>%
+    dplyr::mutate(
+      pit_num_perc = tidyr::replace_na(.data$pit_num_perc, 0),
+      pit_duration_perc = tidyr::replace_na(.data$pit_duration_perc, 2)
+    ) %>%
     dplyr::ungroup() %>%
     dplyr::select(
       "driver_id",
@@ -465,6 +492,7 @@ clean_data <- function(input = load_all_data()) {
     unique() %>%
     janitor::clean_names()
 
+  # constructor ----
   constructor_results <- results %>%
     dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
     dplyr::group_by(.data$season, .data$round, .data$constructor_id) %>%
@@ -475,6 +503,10 @@ clean_data <- function(input = load_all_data()) {
       constructor_pit_duration_perc = mean(.data$pit_duration_perc, na.rm = T),
       constructor_pit_num_perc = mean(.data$pit_num_perc)
     ) %>%
+    dplyr::mutate(
+      constructor_best_grid = tidyr::replace_na(.data$constructor_best_grid, 19)
+    ) %>%
+    dplyr::ungroup() %>%
     dplyr::mutate(
       constructor_grid_avg = as.numeric(slider::slide(
         .data$constructor_best_grid,
@@ -528,6 +560,7 @@ clean_data <- function(input = load_all_data()) {
     unique() %>%
     janitor::clean_names()
 
+  # schedule ----
   schedule <- f1predicter::schedule %>%
     dplyr::mutate(
       round = as.numeric(.data$round),
@@ -535,6 +568,7 @@ clean_data <- function(input = load_all_data()) {
     ) %>%
     dplyr::select("circuit_id", "season", "round")
 
+  # rebuild results ----
   results <- results %>%
     dplyr::arrange(.data$season, .data$round, .data$position) %>%
     dplyr::left_join(qualis, by = c("round", "season", "driver_id")) %>%
@@ -619,6 +653,7 @@ clean_data <- function(input = load_all_data()) {
     ) %>%
     janitor::clean_names()
 
+  # data cleaning ----
   results <- results %>%
     dplyr::select(
       "round",
@@ -663,7 +698,7 @@ clean_data <- function(input = load_all_data()) {
     dplyr::ungroup() %>%
     dplyr::right_join(results, by = c("round", "season", "circuit_id")) %>%
     dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%
-    dplyr::arrange(.data$season, .data$round, .data$position) %>%
+    dplyr::arrange(.data$season, .data$round) %>%
     dplyr::mutate(
       q_min_perc = tidyr::replace_na(
         .data$q_min_perc,
@@ -677,11 +712,11 @@ clean_data <- function(input = load_all_data()) {
         .data$driver_avg_qgap,
         mean(.data$driver_avg_qgap, na.rm = TRUE)
       ),
-      practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, 20),
-      practice_best_rank = tidyr::replace_na(.data$practice_best_rank, 20),
+      practice_avg_rank = tidyr::replace_na(.data$practice_avg_rank, dplyr::n()),
+      practice_best_rank = tidyr::replace_na(.data$practice_best_rank, dplyr::n()),
       practice_best_rank = dplyr::if_else(
         is.infinite(.data$practice_best_rank),
-        20,
+        dplyr::n(),
         .data$practice_best_rank
       ),
       practice_avg_gap = tidyr::replace_na(
@@ -696,8 +731,16 @@ clean_data <- function(input = load_all_data()) {
       practice_best_gap = tidyr::replace_na(
         .data$practice_best_gap,
         mean(.data$practice_best_gap, na.rm = TRUE)
+      ),
+      pit_duration_perc = tidyr::replace_na(
+        .data$pit_duration_perc,
+        mean(.data$pit_duration_perc, na.rm = TRUE)
+      ),
+      pit_num_perc = tidyr::replace_na(
+        .data$pit_num_perc, 0
       )
     ) %>%
+    dplyr::ungroup() %>%
     janitor::clean_names()
 
   return(results)
