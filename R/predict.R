@@ -49,7 +49,7 @@ generate_new_data <- function(
   )
 
   if (is.null(drivers)) {
-    drivers <- get_last_drivers()
+    drivers <- historical_data[historical_data$round_id == tail(historical_data$round_id, 1), c('driver_id', 'constructor_id')]
   }
 
   new_data <- tibble::as_tibble(drivers) %>%
@@ -434,7 +434,7 @@ predict_quali_pole <- function(
       pole_odd = normalize_vector(.data$pole_odd)
     ) %>%
     dplyr::select("driver_id", "round", "season", "pole_odd") %>%
-    dplyr::arrange(.data$pole_odd)
+    dplyr::arrange(-.data$pole_odd)
   return(preds)
 }
 
@@ -464,7 +464,7 @@ predict_quali_pos <- function(new_data = generate_next_race_data(), quali_pos_mo
                     stats::predict(new_data, type = "numeric"))$.pred
     ) %>%
     dplyr::select("driver_id", "round", "season", "likely_quali_position") %>%
-    dplyr::arrange(.data$likely_quali_position)
+    dplyr::arrange(-.data$likely_quali_position)
   return(preds)
 }
 
@@ -494,7 +494,7 @@ predict_quali_round <- function(
 
   all_preds <- pole_preds %>%
     dplyr::left_join(pos_preds, by = c("driver_id", "round", "season")) %>%
-    dplyr::arrange(.data$pole_odd)
+    dplyr::arrange(-.data$pole_odd)
   return(all_preds)
 }
 
