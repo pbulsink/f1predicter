@@ -60,7 +60,7 @@ clean_data <- function(input = load_all_data()) {
         "ligier" ~ "prost",
         c("marussia", "virgin") ~ "manor",
         "osella" ~ "fondmetal",
-        "sauber" ~ "alfa",
+        c("sauber", "kick", "stake", "audi") ~ "alfa",
         .default = .data$constructor_id
       )
     ) %>%
@@ -503,6 +503,10 @@ clean_data <- function(input = load_all_data()) {
       constructor_pit_duration_perc = mean(.data$pit_duration_perc, na.rm = T),
       constructor_pit_num_perc = mean(.data$pit_num_perc)
     ) %>%
+    dplyr::mutate(
+      constructor_best_grid = tidyr::replace_na(.data$constructor_best_grid, 19)
+    ) %>%
+    dplyr::ungroup() %>%
     dplyr::mutate(
       constructor_grid_avg = as.numeric(slider::slide(
         .data$constructor_best_grid,

@@ -79,3 +79,40 @@ wmean_two <- function(newval, x, ln) {
   wt_v <- Vectorize(wt, vectorize.args = c('newval', 'x'))
   return(wt_v(newval, x, ln))
 }
+
+#' Normalize a Numeric Vector
+#'
+#' @description
+#' This function takes a numeric vector and scales its values so that they sum
+#' to 1. `NA` values are treated as 0.
+#'
+#' @details
+#' If the sum of the vector is 0 (e.g., it contains only zeros and `NA`s),
+#' the function will return a vector of uniform values, where each element is
+#' `1 / length(x)`. Otherwise, each element is divided by the total sum of the
+#' vector after `NA`s have been converted to 0.
+#'
+#' @param x A numeric vector.
+#'
+#' @return A numeric vector of the same length as `x` where the elements sum to 1.
+#'
+#' @examples
+#' normalize_vector(c(1, 2, 3, 4))
+#' normalize_vector(c(10, 10))
+#' normalize_vector(c(1, 2, NA, 3))
+#' normalize_vector(c(0, 0, 0))
+#' normalize_vector(c(NA, NA))
+normalize_vector <- function(x) {
+  if (!is.numeric(x)) {
+    cli::cli_abort("{.arg x} must be a numeric vector.")
+  }
+  if (length(x) == 0) {
+    return(numeric(0))
+  }
+  total <- sum(x, na.rm = TRUE)
+  if (total == 0) {
+    return(rep(1 / length(x), length(x)))
+  } else {
+    return(x / total)
+  }
+}

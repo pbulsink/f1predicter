@@ -283,6 +283,7 @@ train_quali_models <- function(
 
   pole_final <- pole_wflow %>%
     tune::finalize_workflow(pole_best)
+
   pole_final_fit <- pole_final %>%
     tune::last_fit(data_split_pole, metrics = metrics_binary)
 
@@ -382,6 +383,7 @@ train_quali_models <- function(
 
   position_final <- position_wflow %>%
     tune::finalize_workflow(position_best)
+
   position_final_fit <- position_final %>%
     tune::last_fit(data_split_pos, metrics = metrics_reg)
 
@@ -391,7 +393,8 @@ train_quali_models <- function(
     c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
   )
 
-  return(list("quali_pole" = pole_final, 'quali_pos' = position_final))
+  # ---- Return ----
+  return(list("quali_pole" = pole_final_fit, 'quali_pos' = position_final_fit))
 }
 
 
@@ -731,7 +734,8 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
 
-  position_final <- tune::finalize_workflow(position_wflow, position_best) %>%
+  position_final <- position_wflow %>%
+    tune::finalize_workflow(position_best) %>%
     parsnip::fit(pos_splits$train_data)
   position_final_fit <- tune::last_fit(
     position_final,
