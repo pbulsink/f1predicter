@@ -94,6 +94,8 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
   message(full_message)
   invisible(last_fit_object)
 }
+
+
 # --------------------------- Quali Models ----------------------------
 
 #' Train Qualifying Prediction Models
@@ -399,6 +401,7 @@ train_quali_models <- function(
   )
 
   # ---- Quali Position Classification Model (Ordered Logistic) ----
+  tictoc::tic("Trained Position Classification Model (polr)")
 
   # Use the same data as the regression model, but with a factor outcome
   pos_class_data <- pos_data %>%
@@ -407,7 +410,6 @@ train_quali_models <- function(
   pos_class_splits <- prepare_and_split_data(pos_class_data)
   train_data_pos_class <- pos_class_splits$train_data
   data_split_pos_class <- pos_class_splits$data_split
-  data_folds_pos_class <- pos_class_splits$data_folds
 
   pos_class_recipe <- recipes::recipe(
     quali_position ~ .,
@@ -425,52 +427,81 @@ train_quali_models <- function(
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  # Model spec for ordered logistic regression
-  pos_class_spec <- parsnip::proportional_odds(
-    penalty = tune::tune(),
-    mixture = tune::tune()
-  ) %>%
-    parsnip::set_engine("glmnet") %>%
-    parsnip::set_mode("classification")
-
-  # Grid for glmnet
-  pos_class_grid <- dials::grid_regular(
-    dials::penalty(),
-    dials::mixture(),
-    levels = 5
+  # Prep the recipe and bake the data
+  prepped_recipe <- recipes::prep(
+    pos_class_recipe,
+    training = train_data_pos_class
+  )
+  baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
+  baked_test <- recipes::bake(
+    prepped_recipe,
+    new_data = rsample::testing(data_split_pos_class)
   )
 
-  pos_class_wflow <- workflows::workflow() %>%
-    workflows::add_model(pos_class_spec) %>%
-    workflows::add_recipe(pos_class_recipe)
+  # Fit the model directly using MASS::polr
+  ## Generate a start because polr is bad at that
+  u <- as.integer(table(baked_train$quali_position))
+  q <- length(unique(baked_train$quali_position)) - 1
+  u <- (cumsum(u) / sum(u))[1:q]
+  zetas = qlogis(u)
+  pc <- sum(grepl("predictor", pos_class_recipe[1]$var_info$role)) # number of predictors
+  start0 <- c(rep(0, pc), zetas[1], log(diff(zetas)))
 
-  tictoc::tic("Trained Position Classification Model")
-  pos_class_res <- pos_class_wflow %>%
-    tune::tune_grid(
-      resamples = data_folds_pos_class,
-      grid = pos_class_grid,
-      metrics = metrics_multi
-    )
+  polr_fit <- MASS::polr(
+    quali_position ~ .,
+    data = baked_train,
+    Hess = TRUE,
+    start = start0
+  )
 
-  pos_class_best <- pos_class_res %>%
-    tune::select_best(metric = "mn_log_loss")
+  # --- Evaluate the model on the test set ---
+  # Get class predictions
+  class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
+  # Get probability predictions
+  prob_preds <- predict(polr_fit, newdata = baked_test, type = "probs")
 
-  pos_class_final <- pos_class_wflow %>%
-    tune::finalize_workflow(pos_class_best)
+  # Combine true values and predictions
+  test_results <- dplyr::bind_cols(
+    baked_test %>% dplyr::select(truth = quali_position),
+    .pred_class = class_preds,
+    tibble::as_tibble(prob_preds)
+  )
 
-  pos_class_final_fit <- pos_class_final %>%
-    tune::last_fit(data_split_pos_class, metrics = metrics_multi)
+  # Calculate metrics
+  log_loss_val <- yardstick::mn_log_loss(
+    test_results,
+    truth = truth,
+    dplyr::starts_with("..")
+  )
+  accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
+  kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)
+
+  # Manually create a metrics object for reporting
+  polr_metrics <- tibble::tribble(
+    ~.metric,
+    ~.estimator,
+    ~.estimate,
+    "mn_log_loss",
+    "standard",
+    log_loss_val$.estimate,
+    "accuracy",
+    "multiclass",
+    accuracy_val$.estimate,
+    "kap",
+    "multiclass",
+    kap_val$.estimate
+  )
+
+  # Report metrics
+  message(glue::glue(
+    "Quali Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
+  ))
   tictoc::toc()
 
-  report_model_metrics(
-    pos_class_final_fit,
-    "Quali Position Classif. Model",
-    c(
-      "mn_log_loss" = "log loss",
-      "accuracy" = "accuracy",
-      "kap" = "kappa",
-      "roc_auc" = "auc"
-    )
+  pos_class_final_fit <- list(
+    fit = polr_fit,
+    recipe = prepped_recipe,
+    metrics = polr_metrics
   )
 
   # ---- Return ----
@@ -497,6 +528,7 @@ train_quali_models <- function(
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
 #' @inherit train_quali_models return
+#' @export
 model_quali_early <- function(
   data = clean_data(),
   engine = "xgboost",
@@ -525,6 +557,7 @@ model_quali_early <- function(
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
 #' @inherit train_quali_models return
+#' @export
 model_quali_late <- function(
   data = clean_data(),
   engine = "xgboost",
@@ -1067,9 +1100,17 @@ save_models <- function(model_list, model_timing) {
   for (model_name in names(model_list)) {
     model_object <- model_list[[model_name]]
 
+    # Handle the special case for the polr model, which is a list(fit, recipe)
+    if (inherits(model_object$fit, "polr")) {
+      cli::cli_inform("Saving polr model object for: {.val {model_name}}")
+      final_list[[model_name]] <- model_object
+      next # Skip to the next model
+    }
+
+    # Proceed with butchering for standard last_fit objects
     if (!inherits(model_object, "last_fit")) {
       cli::cli_warn(
-        "Object {.val {model_name}} is not a 'last_fit' object and will be skipped."
+        "Object {.val {model_name}} is not a 'last_fit' object or a recognized custom model and will be skipped."
       )
       next
     }

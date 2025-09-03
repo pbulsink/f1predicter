@@ -36,5 +36,6 @@ Depends:
     R (>= 3.5)
 Suggests: 
     knitr,
+    MASS,
     rmarkdown
 VignetteBuilder: knitr

@@ -435,7 +435,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       drivers <- f1dataR::load_drivers(season = season) %>%
         dplyr::select("driver_id", "code")
       laps <- get_laps(season = season, round = round)
-      if (!is.null(laps)) {
+      if (!is.null(laps) && nrow(laps) > 0) {
         laps <- laps %>%
           dplyr::left_join(drivers, by = c(driver = "code")) %>%
           dplyr::left_join(
