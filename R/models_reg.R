@@ -403,9 +403,14 @@ train_quali_models <- function(
   # ---- Quali Position Classification Model (Ordered Logistic) ----
   tictoc::tic("Trained Position Classification Model (polr)")
 
-  # Use the same data as the regression model, but with a factor outcome
+  # Use the same data as the regression model, but with a factor outcome and
+  # prepped for MASS:polr
   pos_class_data <- pos_data %>%
-    dplyr::mutate(quali_position = factor(.data$quali_position, ordered = TRUE))
+    dplyr::arrange(.data$quali_position) %>%
+    dplyr::mutate(
+      quali_position = factor(.data$quali_position, ordered = TRUE)
+    ) %>%
+    dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
   train_data_pos_class <- pos_class_splits$train_data
@@ -415,14 +420,6 @@ train_quali_models <- function(
     quali_position ~ .,
     data = train_data_pos_class
   ) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -439,19 +436,23 @@ train_quali_models <- function(
   )
 
   # Fit the model directly using MASS::polr
-  ## Generate a start because polr is bad at that
-  u <- as.integer(table(baked_train$quali_position))
-  q <- length(unique(baked_train$quali_position)) - 1
-  u <- (cumsum(u) / sum(u))[1:q]
-  zetas = qlogis(u)
-  pc <- sum(grepl("predictor", pos_class_recipe[1]$var_info$role)) # number of predictors
-  start0 <- c(rep(0, pc), zetas[1], log(diff(zetas)))
+  # Polr worked better with an explicit formula
 
   polr_fit <- MASS::polr(
-    quali_position ~ .,
+    quali_position ~
+      driver_experience +
+        driver_failure_avg +
+        constructor_grid_avg +
+        constructor_finish_avg +
+        constructor_failure_avg +
+        driver_grid_avg +
+        driver_position_avg +
+        driver_finish_avg +
+        driver_failure_circuit_avg +
+        driver_avg_qgap +
+        constructor_failure_circuit_avg,
     data = baked_train,
-    Hess = TRUE,
-    start = start0
+    Hess = TRUE
   )
 
   # --- Evaluate the model on the test set ---
@@ -471,7 +472,9 @@ train_quali_models <- function(
   log_loss_val <- yardstick::mn_log_loss(
     test_results,
     truth = truth,
-    dplyr::starts_with("..")
+    colnames(test_results)[
+      !(colnames(test_results) %in% c("truth", ".pred_class"))
+    ]
   )
   accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
   kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)

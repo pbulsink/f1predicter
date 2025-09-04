@@ -5,3 +5,5 @@
 ^\.Rprofile$
 ^\.notes$
 ^LICENSE\.md$
+^cache
+^model
