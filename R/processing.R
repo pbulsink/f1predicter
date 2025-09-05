@@ -507,43 +507,45 @@ clean_data <- function(input = load_all_data()) {
       constructor_best_grid = tidyr::replace_na(.data$constructor_best_grid, 19)
     ) %>%
     dplyr::ungroup() %>%
+    dplyr::group_by(.data$constructor_id) %>%
     dplyr::mutate(
       constructor_grid_avg = as.numeric(slider::slide(
         .data$constructor_best_grid,
         s_lagged_cumwmean_expanded,
-        ln = 20,
+        ln = 5,
         val = default_params$grid,
         .before = 10
       )),
       constructor_finish_avg = as.numeric(slider::slide(
         .data$constructor_best_finish,
         s_lagged_cumwmean_expanded,
-        ln = 20,
+        ln = 5,
         val = default_params$position,
         .before = 10
       )),
       constructor_failure_avg = as.numeric(slider::slide(
         .data$constructor_failure_race,
         s_lagged_cumwmean_expanded,
-        ln = 20,
+        ln = 10,
         val = default_params$constructor_failure_avg * 2,
         .before = 20
       )),
       constructor_pit_duration_avg = as.numeric(slider::slide(
         .data$constructor_pit_duration_perc,
         s_lagged_cumwmean_expanded,
-        ln = 20,
+        ln = 8,
         val = default_params$constructor_pit_duration_perc,
         .before = 20
       )),
       constructor_pit_num_avg = as.numeric(slider::slide(
         .data$constructor_pit_num_perc,
         s_lagged_cumwmean_expanded,
-        ln = 20,
+        ln = 8,
         val = default_params$constructor_pit_num_perc,
         .before = 20
       ))
     ) %>%
+    dplyr::ungroup() %>%
     dplyr::select(
       "constructor_id",
       "season",
@@ -584,14 +586,14 @@ clean_data <- function(input = load_all_data()) {
       driver_pos_change_avg = as.numeric(slider::slide(
         .data$pos_change,
         s_lagged_cumwmean_expanded,
-        ln = 5,
+        ln = 8,
         val = default_params$pos_change,
         .before = 5
       )),
       driver_weighted_pass_avg = as.numeric(slider::slide(
         .data$weighted_passes,
         s_lagged_cumwmean_expanded,
-        ln = 5,
+        ln = 8,
         val = 0,
         .before = 5
       )),
@@ -607,28 +609,28 @@ clean_data <- function(input = load_all_data()) {
         .data$driver_failure,
         s_lagged_cumwmean_expanded,
         val = default_params$driver_failure_avg,
-        ln = 20,
+        ln = 10,
         .before = 20
       )),
       driver_grid_avg = as.numeric(slider::slide(
         .data$grid,
         s_lagged_cumwmean_expanded,
         val = default_params$grid,
-        ln = 10,
+        ln = 8,
         .before = 10
       )),
       driver_position_avg = as.numeric(slider::slide(
         .data$position,
         s_lagged_cumwmean_expanded,
         val = default_params$position,
-        ln = 10,
+        ln = 8,
         .before = 10
       )),
       driver_finish_avg = as.numeric(slider::slide(
         .data$finished,
         s_lagged_cumwmean_expanded,
         val = default_params$driver_finish_avg,
-        ln = 10,
+        ln = 8,
         .before = 10
       )),
       practice_optimal_rank = tidyr::replace_na(
@@ -639,7 +641,7 @@ clean_data <- function(input = load_all_data()) {
         .data$practice_optimal_rank,
         s_lagged_cumwmean_expanded,
         val = default_params$position,
-        ln = 10,
+        ln = 8,
         .before = 10
       ))
     ) %>%
