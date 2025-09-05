@@ -438,6 +438,45 @@ train_quali_models <- function(
   # Fit the model directly using MASS::polr
   # Polr worked better with an explicit formula
 
+  if (use_practice_data) {
+    polr_fit <- MASS::polr(
+      quali_position ~
+        driver_experience +
+          driver_failure_avg +
+          constructor_grid_avg +
+          constructor_finish_avg +
+          constructor_failure_avg +
+          driver_grid_avg +
+          driver_position_avg +
+          driver_finish_avg +
+          driver_failure_circuit_avg +
+          driver_avg_qgap +
+          constructor_failure_circuit_avg +
+          driver_practice_optimal_rank_avg +
+          practice_avg_rank +
+          practice_best_rank +
+          practice_optimal_rank,
+      data = baked_train,
+      Hess = TRUE
+    )
+  } else {
+    polr_fit <- MASS::polr(
+      quali_position ~
+        driver_experience +
+          driver_failure_avg +
+          constructor_grid_avg +
+          constructor_finish_avg +
+          constructor_failure_avg +
+          driver_grid_avg +
+          driver_position_avg +
+          driver_finish_avg +
+          driver_failure_circuit_avg +
+          driver_avg_qgap +
+          constructor_failure_circuit_avg,
+      data = baked_train,
+      Hess = TRUE
+    )
+  }
   polr_fit <- MASS::polr(
     quali_position ~
       driver_experience +
