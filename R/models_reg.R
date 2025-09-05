@@ -243,7 +243,7 @@ train_quali_models <- function(
       stop_iter = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("xgboost", nthread = 4)
+      parsnip::set_engine("xgboost", nthread = 10)
 
     pole_grid <- dials::grid_latin_hypercube(
       dials::tree_depth(),
@@ -346,7 +346,7 @@ train_quali_models <- function(
       stop_iter = tune::tune()
     ) %>%
       parsnip::set_mode("regression") %>%
-      parsnip::set_engine("xgboost", nthread = 4)
+      parsnip::set_engine("xgboost", nthread = 10)
 
     position_grid <- dials::grid_latin_hypercube(
       dials::tree_depth(),
@@ -776,7 +776,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
       stop_iter = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("xgboost", nthread = 4)
+      parsnip::set_engine("xgboost", nthread = 10)
 
     reg_mod_spec <- parsnip::boost_tree(
       trees = 1000,
@@ -789,7 +789,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
       stop_iter = tune::tune()
     ) %>%
       parsnip::set_mode("regression") %>%
-      parsnip::set_engine("xgboost", nthread = 4)
+      parsnip::set_engine("xgboost", nthread = 10)
 
     grid <- dials::grid_latin_hypercube(
       dials::tree_depth(),

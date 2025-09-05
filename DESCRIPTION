@@ -36,6 +36,7 @@ Depends:
     R (>= 3.5)
 Suggests: 
     glmnet,
+    gt,
     knitr,
     MASS,
     rmarkdown

@@ -499,10 +499,25 @@ predict_quali_pos_class <- function(
   new_data = generate_next_race_data(),
   quali_pos_class_model
 ) {
+  # The polr model is not a workflow, so it needs special handling.
+  # It's a list containing the fit and the prepped recipe.
+  baked_new_data <- recipes::bake(
+    quali_pos_class_model$recipe,
+    new_data = new_data
+  )
+
   preds <- new_data %>%
     dplyr::mutate(
-      .pred = (tune::extract_workflow(quali_pos_class_model) %>%
-        stats::predict(new_data, type = "class"))$.pred_class
+      .pred = stats::predict(
+        quali_pos_class_model$fit,
+        newdata = baked_new_data,
+        type = "class"
+      ),
+      .probs = stats::predict(
+        quali_pos_class_model$fit,
+        newdata = baked_new_data,
+        type = "probs"
+      )
     ) %>%
     # The prediction is a factor, convert to numeric for sorting/comparison
     dplyr::mutate(
@@ -512,7 +527,8 @@ predict_quali_pos_class <- function(
       "driver_id",
       "round",
       "season",
-      "likely_quali_position_class"
+      "likely_quali_position_class",
+      ".probs"
     ) %>%
     dplyr::arrange(.data$likely_quali_position_class)
   return(preds)
