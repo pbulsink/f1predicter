@@ -477,22 +477,6 @@ train_quali_models <- function(
       Hess = TRUE
     )
   }
-  polr_fit <- MASS::polr(
-    quali_position ~
-      driver_experience +
-        driver_failure_avg +
-        constructor_grid_avg +
-        constructor_finish_avg +
-        constructor_failure_avg +
-        driver_grid_avg +
-        driver_position_avg +
-        driver_finish_avg +
-        driver_failure_circuit_avg +
-        driver_avg_qgap +
-        constructor_failure_circuit_avg,
-    data = baked_train,
-    Hess = TRUE
-  )
 
   # --- Evaluate the model on the test set ---
   # Get class predictions
@@ -639,7 +623,12 @@ train_binary_result_model <- function(
   other_outcomes
 ) {
   recipe <- recipes::recipe(
-    reformulate(".", response = outcome_var),
+    reformulate(
+      colnames(train_data)[
+        !(colnames(train_data) %in% c(outcome_var, other_outcomes, "position"))
+      ],
+      response = outcome_var
+    ),
     data = train_data
   ) %>%
     recipes::update_role(
@@ -650,7 +639,6 @@ train_binary_result_model <- function(
       "constructor_id",
       new_role = "ID"
     ) %>%
-    recipes::step_rm(dplyr::all_of(other_outcomes), "position") %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -952,9 +940,19 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
   baked_test <- recipes::bake(prepped_recipe, new_data = test_data_pos_class)
 
+  # Create a formula that excludes other outcome variables
+  predictor_vars <- setdiff(
+    names(baked_train),
+    c("position", "win", "podium", "t10", "finished")
+  )
+  polr_formula <- reformulate(
+    termlabels = predictor_vars,
+    response = "position"
+  )
+
   # Fit the model directly using MASS::polr
   polr_fit <- MASS::polr(
-    position ~ .,
+    polr_formula,
     data = baked_train,
     Hess = TRUE
   )

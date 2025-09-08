@@ -200,6 +200,8 @@ generate_new_data <- function(
         'driver_failure',
         'driver_failure_avg',
         'position',
+        'grid',
+        "quali_position",
         'driver_position_avg',
         'finished',
         'driver_finish_avg',
@@ -284,45 +286,50 @@ generate_new_data <- function(
   )
 
   if (!is.null(laps) && nrow(laps) > 0) {
-    d_ids <- f1dataR::load_drivers(season = season) %>%
-      dplyr::select("driver_id", "code")
-    cli::cli_inform("Found lap data for {season} round {round}. Calculating practice stats.")
-    practice_laps <- laps %>%
-      dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3"))
+    cli::cli_inform(
+      "Found lap data for {season} round {round}. Calculating practice stats."
+    )
+    practice_results <- laps %>%
+      process_lap_times() %>%
+      summarize_practice_laps()
+    # d_ids <- f1dataR::load_drivers(season = season) %>%
+    #   dplyr::select("driver_id", "code")
+    # practice_laps <- laps %>%
+    #   dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3"))
 
-    if (nrow(practice_laps) > 0) {
-      practice_results <- practice_laps %>%
-        dplyr::left_join(d_ids, by = c(driver = "code")) %>%
-        dplyr::group_by(.data$driver_id, .data$session_type) %>%
-        dplyr::summarise(
-          best_lap_time = min(.data$lap_time, na.rm = TRUE),
-          optimal_lap_time = min(.data$sector1time, na.rm = TRUE) +
-            min(.data$sector2time, na.rm = TRUE) +
-            min(.data$sector3time, na.rm = TRUE),
-          .groups = "drop_last"
-        ) %>%
-        dplyr::ungroup() %>%
-        dplyr::group_by(.data$session_type) %>%
-        dplyr::mutate(
-          best_rank = rank(.data$best_lap_time, ties.method = "min"),
-          optimal_rank = rank(.data$optimal_lap_time, ties.method = "min")
-        ) %>%
-        dplyr::ungroup() %>%
-        dplyr::group_by(.data$driver_id) %>%
-        dplyr::summarise(
-          practice_best_rank = min(.data$best_rank, na.rm = TRUE),
-          practice_avg_rank = mean(.data$best_rank, na.rm = TRUE),
-          practice_optimal_rank = min(.data$optimal_rank, na.rm = TRUE)
-        )
+    # practice_results <- practice_laps %>%
+    #   dplyr::left_join(d_ids, by = c(driver = "code")) %>%
+    # dplyr::group_by(.data$driver_id, .data$session_type) %>%
+    # dplyr::summarise(
+    #   best_lap_time = min(.data$lap_time, na.rm = TRUE),
+    #   optimal_lap_time = min(.data$sector1time, na.rm = TRUE) +
+    #     min(.data$sector2time, na.rm = TRUE) +
+    #     min(.data$sector3time, na.rm = TRUE),
+    #   .groups = "drop_last"
+    # ) %>%
+    # dplyr::ungroup() %>%
+    # dplyr::group_by(.data$session_type) %>%
+    # dplyr::mutate(
+    #   best_rank = rank(.data$best_lap_time, ties.method = "min"),
+    #   optimal_rank = rank(.data$optimal_lap_time, ties.method = "min")
+    # ) %>%
+    # dplyr::ungroup() %>%
+    # dplyr::group_by(.data$driver_id) %>%
+    # dplyr::summarise(
+    #   practice_best_rank = min(.data$best_rank, na.rm = TRUE),
+    #   practice_avg_rank = mean(.data$best_rank, na.rm = TRUE),
+    #   practice_optimal_rank = min(.data$optimal_rank, na.rm = TRUE)
+    # )
 
-      new_data <- new_data %>%
-        dplyr::left_join(practice_results, by = "driver_id")
-    }
+    new_data <- new_data %>%
+      dplyr::left_join(practice_results, by = "driver_id")
   } else {
-      new_data$driver_practice_optimal_rank_avg <- NA
-      new_data$practice_avg_rank <- NA
-      new_data$practice_best_rank <- NA
-      new_data$practice_optimal_rank <- NA
+    new_data$driver_practice_optimal_rank_avg <- nrow(new_data)*3/4
+    new_data$practice_avg_rank <- round(nrow(new_data)*3/4)
+    new_data$practice_best_rank <- round(nrow(new_data)/2)
+    new_data$practice_optimal_rank <- round(nrew(new_data)/2)
+    new_data$practice_avg_gap <- 1.5
+    new_data$practice_best_gap <- 1
   }
 
   quali <- tryCatch(
@@ -334,20 +341,14 @@ generate_new_data <- function(
 
   if (!is.null(quali) && nrow(quali) > 0) {
     cli::cli_inform("Found qualifying data for {season} round {round}.")
-    quali_results <- quali %>%
-      janitor::clean_names() %>%
-      dplyr::select("driver_id", "position") %>%
-      dplyr::rename(quali_position = "position") %>%
-      dplyr::mutate(quali_position = as.numeric(.data$quali_position))
+    quali_results <- process_quali_times(quali)
 
     # If quali_position already exists, remove it before joining
     if ("quali_position" %in% names(new_data)) {
-      new_data <- new_data %>% dplyr::select(-"quali_position")
+      new_data$quali_position <- NULL
     }
     if ("grid" %in% names(new_data)) {
-      # Grid is often based on quali, so we should update it too.
-      # A simple assumption is grid = quali_position unless penalties are known.
-      new_data <- new_data %>% dplyr::select(-"grid")
+      new_data$grid <- NULL
     }
     new_data <- new_data %>%
       dplyr::left_join(quali_results, by = "driver_id") %>%
@@ -355,7 +356,7 @@ generate_new_data <- function(
   } else {
     # sort drivers by their average grid for an estimate
     new_data <- new_data %>%
-      dplyr::rename('last_grid' = .data$grid) %>%
+      dplyr::rename('last_grid' = 'grid') %>%
       dplyr::mutate(
         driver_grid_avg = tidyr::replace_na(
           .data$driver_grid_avg,
@@ -363,7 +364,10 @@ generate_new_data <- function(
         ),
         last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
         driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
-        grid = order(order(.data$driver_grid_avg))
+        grid = order(order(.data$driver_grid_avg)),
+        quali_position = .data$grid,
+        q_min_perc = 1.02,
+        q_avg_perc = 1.02,
       )
   }
 
@@ -389,6 +393,10 @@ generate_new_data <- function(
       "practice_avg_rank",
       "practice_best_rank",
       "practice_optimal_rank",
+      "practice_avg_gap",
+      "practice_best_gap",
+      "q_min_perc",
+      "q_avg_perc",
       "season",
       "round",
       "round_id"
@@ -400,9 +408,13 @@ generate_new_data <- function(
       constructor_id = as.factor(.data$constructor_id)
     )
 
-  if(!is.null(penalties)) {
+  if (!is.null(penalties)) {
     for (p in seq_along(penalties)) {
-      new_data <- apply_grid_penalty(new_data, names(penalties)[p], penalties[p])
+      new_data <- apply_grid_penalty(
+        new_data,
+        names(penalties)[p],
+        penalties[p]
+      )
     }
   }
 
@@ -491,7 +503,11 @@ generate_next_race_data <- function(...) {
 #'     penalty = 5
 #'   )
 #' }
-apply_grid_penalty <- function(race_data = get_next_race_data(), driver_id, penalty) {
+apply_grid_penalty <- function(
+  race_data = get_next_race_data(),
+  driver_id,
+  penalty
+) {
   # --- Input Validation ---
   stopifnot(
     is.data.frame(race_data),
@@ -515,10 +531,17 @@ apply_grid_penalty <- function(race_data = get_next_race_data(), driver_id, pena
   target_pos <- min(original_pos + penalty, length(driver_order))
 
   # Re-order the drivers
-  driver_order <- append(driver_order[-original_pos], driver_id, after = target_pos - 1)
+  driver_order <- append(
+    driver_order[-original_pos],
+    driver_id,
+    after = target_pos - 1
+  )
 
   # Create the new grid mapping and join it back to the original data
-  new_grid_df <- tibble::tibble(driver_id = driver_order, grid = seq_along(driver_order))
+  new_grid_df <- tibble::tibble(
+    driver_id = driver_order,
+    grid = seq_along(driver_order)
+  )
 
   race_data %>%
     dplyr::select(-dplyr::any_of("grid")) %>%
