@@ -29,6 +29,9 @@
 #'   (the default), it will use the drivers from the most recent race.
 #' @param historical_data A data frame of historical race data, typically the
 #'   output of `clean_data()`. This is used to calculate the feature values.
+#' @param penalties A named vector of `driver_id = penalty_positions` to be
+#'   applied (in order of application).
+#'   For example `c('hamilton' = 5, 'max_verstappen' = 10)`.
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
 #' @export
@@ -36,6 +39,7 @@ generate_new_data <- function(
   season,
   round,
   drivers = NULL,
+  penalties = NULL,
   historical_data = clean_data()
 ) {
   # drivers should be a data.frame or tibble with: driver_id, constructor_id, (optional any of: quali_position, grid, practice_optimal_rank, practice_best_rank,
@@ -187,45 +191,6 @@ generate_new_data <- function(
     )
   }
 
-  # Fill in missing columns
-  if (!('grid' %in% colnames(new_data))) {
-    # sort drivers by their average grid for an estimate
-    new_data <- new_data %>%
-      dplyr::left_join(
-        hd_driver[, c('driver_id', 'driver_grid_avg', 'grid')],
-        by = 'driver_id'
-      ) %>%
-      dplyr::rename('last_grid' = .data$grid) %>%
-      dplyr::mutate(
-        driver_grid_avg = tidyr::replace_na(
-          .data$driver_grid_avg,
-          default_params$grid
-        ),
-        last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
-        driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
-        grid = order(order(.data$driver_grid_avg))
-      )
-  } else {
-    new_data <- new_data %>%
-      dplyr::left_join(
-        hd_driver[, c('driver_id', 'driver_grid_avg', 'grid')],
-        by = 'driver_id'
-      ) %>%
-      dplyr::rename('grid' = 'grid.x', 'last_grid' = 'grid.y') %>%
-      dplyr::mutate(
-        driver_grid_avg = tidyr::replace_na(
-          .data$driver_grid_avg,
-          default_params$grid
-        ),
-        last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
-        driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10)
-      )
-  }
-
-  if (!('quali_position' %in% colnames(new_data))) {
-    new_data$quali_position <- new_data$grid
-  }
-
   #Load driver/constructor/circuit info
   new_data <- new_data %>%
     dplyr::left_join(
@@ -238,7 +203,9 @@ generate_new_data <- function(
         'driver_position_avg',
         'finished',
         'driver_finish_avg',
-        'driver_avg_qgap'
+        'driver_avg_qgap',
+        'driver_grid_avg',
+        'driver_practice_optimal_rank_avg'
       )],
       by = 'driver_id'
     ) %>%
@@ -309,18 +276,95 @@ generate_new_data <- function(
       )
     )
 
-  #Optionally included practice data
-  if (!("driver_practice_optimal_rank_avg" %in% colnames(new_data))) {
-    new_data$driver_practice_optimal_rank_avg <- NA
+  # TODO Refactor processing code to subfunctions to do the same laps calculations for practice there as here
+  # Try to load laps and quali for the round to get up-to-date data
+  laps <- tryCatch(
+    get_laps(season = season, round = round),
+    error = function(e) NULL
+  )
+
+  if (!is.null(laps) && nrow(laps) > 0) {
+    d_ids <- f1dataR::load_drivers(season = season) %>%
+      dplyr::select("driver_id", "code")
+    cli::cli_inform("Found lap data for {season} round {round}. Calculating practice stats.")
+    practice_laps <- laps %>%
+      dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3"))
+
+    if (nrow(practice_laps) > 0) {
+      practice_results <- practice_laps %>%
+        dplyr::left_join(d_ids, by = c(driver = "code")) %>%
+        dplyr::group_by(.data$driver_id, .data$session_type) %>%
+        dplyr::summarise(
+          best_lap_time = min(.data$lap_time, na.rm = TRUE),
+          optimal_lap_time = min(.data$sector1time, na.rm = TRUE) +
+            min(.data$sector2time, na.rm = TRUE) +
+            min(.data$sector3time, na.rm = TRUE),
+          .groups = "drop_last"
+        ) %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(.data$session_type) %>%
+        dplyr::mutate(
+          best_rank = rank(.data$best_lap_time, ties.method = "min"),
+          optimal_rank = rank(.data$optimal_lap_time, ties.method = "min")
+        ) %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(.data$driver_id) %>%
+        dplyr::summarise(
+          practice_best_rank = min(.data$best_rank, na.rm = TRUE),
+          practice_avg_rank = mean(.data$best_rank, na.rm = TRUE),
+          practice_optimal_rank = min(.data$optimal_rank, na.rm = TRUE)
+        )
+
+      new_data <- new_data %>%
+        dplyr::left_join(practice_results, by = "driver_id")
+    }
+  } else {
+      new_data$driver_practice_optimal_rank_avg <- NA
+      new_data$practice_avg_rank <- NA
+      new_data$practice_best_rank <- NA
+      new_data$practice_optimal_rank <- NA
   }
-  if (!("practice_avg_rank" %in% colnames(new_data))) {
-    new_data$practice_avg_rank <- NA
-  }
-  if (!("practice_best_rank" %in% colnames(new_data))) {
-    new_data$practice_best_rank <- NA
-  }
-  if (!("practice_optimal_rank" %in% colnames(new_data))) {
-    new_data$practice_optimal_rank <- NA
+
+  quali <- tryCatch(
+    f1dataR::load_quali(season = season, round = round),
+    error = function(e) NULL
+  )
+
+  # TODO Refactor quali processing code to subfunctions to do the same laps calculations for quali there as here
+
+  if (!is.null(quali) && nrow(quali) > 0) {
+    cli::cli_inform("Found qualifying data for {season} round {round}.")
+    quali_results <- quali %>%
+      janitor::clean_names() %>%
+      dplyr::select("driver_id", "position") %>%
+      dplyr::rename(quali_position = "position") %>%
+      dplyr::mutate(quali_position = as.numeric(.data$quali_position))
+
+    # If quali_position already exists, remove it before joining
+    if ("quali_position" %in% names(new_data)) {
+      new_data <- new_data %>% dplyr::select(-"quali_position")
+    }
+    if ("grid" %in% names(new_data)) {
+      # Grid is often based on quali, so we should update it too.
+      # A simple assumption is grid = quali_position unless penalties are known.
+      new_data <- new_data %>% dplyr::select(-"grid")
+    }
+    new_data <- new_data %>%
+      dplyr::left_join(quali_results, by = "driver_id") %>%
+      dplyr::mutate(grid = .data$quali_position)
+  } else {
+    # sort drivers by their average grid for an estimate
+    new_data <- new_data %>%
+      dplyr::rename('last_grid' = .data$grid) %>%
+      dplyr::mutate(
+        driver_grid_avg = tidyr::replace_na(
+          .data$driver_grid_avg,
+          default_params$grid
+        ),
+        last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
+        driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
+        grid = order(order(.data$driver_grid_avg))
+      )
   }
 
   new_data <- new_data %>%
@@ -355,6 +399,12 @@ generate_new_data <- function(
       driver_id = as.factor(.data$driver_id),
       constructor_id = as.factor(.data$constructor_id)
     )
+
+  if(!is.null(penalties)) {
+    for (p in seq_along(penalties)) {
+      new_data <- apply_grid_penalty(new_data, names(penalties)[p], penalties[p])
+    }
+  }
 
   return(new_data)
 }
@@ -407,6 +457,73 @@ generate_next_race_data <- function(...) {
   )
 }
 
+#' Apply a Grid Penalty to a Driver
+#'
+#' @description
+#' Adjusts the starting grid by applying a penalty to a specific driver. The
+#' penalized driver is moved down the grid, and other drivers are moved up to
+#' fill the vacated spot.
+#'
+#' @details
+#' The function uses the `quali_position` column as the initial grid order.
+#' It calculates the new position for the penalized driver and re-orders the
+#' grid accordingly. The penalty is capped at the last position on the grid
+#' (e.g., a 5-place penalty for a driver in 19th out of 20 results in a 20th
+#' place start).
+#'
+#' @param race_data A data frame containing race participants. Must include
+#'   `driver_id`, `quali_position` and `grid`.
+#' @param driver_id The character string ID of the driver to penalize.
+#' @param penalty A positive integer representing the number of grid places
+#'   for the penalty.
+#'
+#' @return A tibble identical to `race_data` but with the `grid` column
+#'   updated to reflect the penalty.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'   # Assume `after_quali_data` is a data frame with quali results
+#'   # Apply a 5-place penalty to 'max_verstappen'
+#'   new_grid_data <- apply_grid_penalty(
+#'     race_data = get_next_race_data(),
+#'     driver_id = "max_verstappen",
+#'     penalty = 5
+#'   )
+#' }
+apply_grid_penalty <- function(race_data = get_next_race_data(), driver_id, penalty) {
+  # --- Input Validation ---
+  stopifnot(
+    is.data.frame(race_data),
+    "driver_id" %in% names(race_data),
+    "quali_position" %in% names(race_data),
+    "grid" %in% names(race_data)
+  )
+  if (!driver_id %in% race_data$driver_id) {
+    cli::cli_abort("Driver {.val {driver_id}} not found in the provided data.")
+  }
+  if (!is.numeric(penalty) || penalty <= 0) {
+    cli::cli_abort("{.arg penalty} must be a positive number.")
+  }
+
+  # --- Apply Penalty ---
+  # Establish the pre-penalty grid order based on qualifying
+  sorted_drivers <- race_data %>% dplyr::arrange(.data$quali_position)
+  driver_order <- as.character(sorted_drivers$driver_id)
+
+  original_pos <- which(driver_order == driver_id)
+  target_pos <- min(original_pos + penalty, length(driver_order))
+
+  # Re-order the drivers
+  driver_order <- append(driver_order[-original_pos], driver_id, after = target_pos - 1)
+
+  # Create the new grid mapping and join it back to the original data
+  new_grid_df <- tibble::tibble(driver_id = driver_order, grid = seq_along(driver_order))
+
+  race_data %>%
+    dplyr::select(-dplyr::any_of("grid")) %>%
+    dplyr::left_join(new_grid_df, by = "driver_id")
+}
 
 #' Predict Pole Position
 #'
