@@ -677,11 +677,10 @@ train_binary_result_model <- function(
     tune::select_best(metric = "mn_log_loss")
   tictoc::toc()
 
-  final_model <- wflow %>%
-    tune::finalize_workflow(best_params) %>%
-    parsnip::fit(train_data)
+  final_wflow <- wflow %>%
+    tune::finalize_workflow(best_params)
 
-  final_fit <- final_model %>%
+  final_fit <- final_wflow %>%
     tune::last_fit(data_split, metrics = metrics_binary)
 
   report_model_metrics(
@@ -905,18 +904,105 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
 
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best) %>%
-    parsnip::fit(pos_splits$train_data)
-  position_final_fit <- tune::last_fit(
-    position_final,
-    pos_splits$data_split,
-    metrics = metrics_reg
-  )
+  position_final_wflow <- position_wflow %>%
+    tune::finalize_workflow(position_best)
+
+  position_final_fit <- position_final_wflow %>%
+    tune::last_fit(
+      pos_splits$data_split,
+      metrics = metrics_reg
+    )
+
   report_model_metrics(
     position_final_fit,
     "Position Model",
     c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+  )
+
+  # ---- Train Position Model (Ordinal Classification) ----
+  tictoc::tic("Trained Position Classification Model (polr)")
+
+  pos_class_data <- pos_data %>%
+    dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+
+  pos_class_splits <- prepare_and_split_data(pos_class_data)
+  train_data_pos_class <- pos_class_splits$train_data
+  test_data_pos_class <- pos_class_splits$test_data
+
+  pos_class_recipe <- recipes::recipe(
+    position ~ .,
+    data = train_data_pos_class
+  ) %>%
+    recipes::update_role(
+      "season",
+      "round",
+      "round_id",
+      "driver_id",
+      "constructor_id",
+      new_role = "ID"
+    ) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_predictors())
+
+  prepped_recipe <- recipes::prep(
+    pos_class_recipe,
+    training = train_data_pos_class
+  )
+  baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
+  baked_test <- recipes::bake(prepped_recipe, new_data = test_data_pos_class)
+
+  # Fit the model directly using MASS::polr
+  polr_fit <- MASS::polr(
+    position ~ .,
+    data = baked_train,
+    Hess = TRUE
+  )
+
+  # --- Evaluate the model on the test set ---
+  class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
+  prob_preds <- predict(polr_fit, newdata = baked_test, type = "probs")
+
+  test_results <- dplyr::bind_cols(
+    baked_test %>% dplyr::select(truth = position),
+    .pred_class = class_preds,
+    tibble::as_tibble(prob_preds)
+  )
+
+  # Calculate metrics
+  log_loss_val <- yardstick::mn_log_loss(
+    test_results,
+    truth = truth,
+    dplyr::starts_with("..")
+  )
+  accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
+  kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)
+
+  # Manually create a metrics object for reporting
+  polr_metrics <- tibble::tribble(
+    ~.metric,
+    ~.estimator,
+    ~.estimate,
+    "mn_log_loss",
+    "standard",
+    log_loss_val$.estimate,
+    "accuracy",
+    "multiclass",
+    accuracy_val$.estimate,
+    "kap",
+    "multiclass",
+    kap_val$.estimate
+  )
+
+  message(glue::glue(
+    "Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
+  ))
+  tictoc::toc()
+
+  position_class_final_fit <- list(
+    fit = polr_fit,
+    recipe = prepped_recipe,
+    metrics = polr_metrics
   )
 
   return(list(
@@ -924,7 +1010,8 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     "podium" = podium_final,
     "t10" = t10_final,
     'finish' = finish_final,
-    'position' = position_final_fit
+    'position' = position_final_fit,
+    'position_class' = position_class_final_fit
   ))
 }
 
