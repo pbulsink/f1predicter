@@ -73,8 +73,21 @@ get_laps_or_null <- function(season, round, session) {
 get_grids <- function(season, round, session) {
   if (session == "R") {
     # data frame Position (1-20), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
-    results <- f1dataR::load_results(season = season, round = round)
-    quali <- f1dataR::load_quali(season = season, round = round)
+    results <- NULL
+    try(
+      results <- f1dataR::load_results(season = season, round = round) %>%
+        dplyr::mutate(
+          'position' = as.numeric(.data$position),
+          'grid' = as.numeric(.data$grid)
+        )
+    )
+    quali <- NULL
+    try(
+      quali <- f1dataR::load_quali(season = season, round = round)
+    )
+    if (is.null(results) && is.null(quali)) {
+      return(NULL)
+    }
   } else if (session == "S") {
     if (season < 2021) {
       return(NULL)
@@ -108,17 +121,29 @@ get_grids <- function(season, round, session) {
     quali <- f1dataR::load_quali(season = season, round = round)
   }
 
-  startgrid <- results %>%
-    dplyr::arrange("grid") %>%
-    dplyr::pull("driver_id")
-  ndrivers <- max(nrow(results), nrow(quali))
-  grid <- data.frame(position = 1:max(nrow(results), nrow(quali))) %>%
-    dplyr::mutate(
-      quali_results = expand_val(quali$driver_id, ndrivers, NA),
-      start_grid = expand_val(startgrid, ndrivers, NA),
-      race_results = expand_val(results$driver_id, ndrivers, NA)
-    ) %>%
-    janitor::clean_names()
+  if (is.null(results) & !is.null(quali)) {
+    # this is the situation that quali is done but not the race
+    grid <- quali %>%
+      dplyr::select(.data$position, .data$driver_id) %>%
+      dplyr::rename("quali_results" = "driver_id") %>%
+      dplyr::mutate(
+        'start_grid' = NA_character_,
+        'race_results' = NA_character_
+      ) %>%
+      janitor::clean_names()
+  } else {
+    startgrid <- results %>%
+      dplyr::arrange(.data$grid) %>%
+      dplyr::pull("driver_id")
+    ndrivers <- max(nrow(results), nrow(quali))
+    grid <- data.frame(position = 1:max(nrow(results), nrow(quali))) %>%
+      dplyr::mutate(
+        quali_results = expand_val(quali$driver_id, ndrivers, NA),
+        start_grid = expand_val(startgrid, ndrivers, NA),
+        race_results = expand_val(results$driver_id, ndrivers, NA)
+      ) %>%
+      janitor::clean_names()
+  }
   return(grid)
 }
 
@@ -260,7 +285,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
   }
 
   if (!any(!is.na(results))) {
-    results <- f1dataR::load_results(season = season, round = round)
+    results <- NULL
+    try(
+      results <- f1dataR::load_results(season = season, round = round)
+    )
     if (!is.null(results)) {
       if (!("fastest_rank") %in% colnames(results)) {
         # handles 2021.12 (Belgian GP) and possible others.
@@ -325,6 +353,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
         }
       }
     }
+  } else {
+    sprint_results <- NULL
   }
 
   if (season >= 2011) {
@@ -435,6 +465,16 @@ get_weekend_data <- function(season, round, force = FALSE) {
       drivers <- f1dataR::load_drivers(season = season) %>%
         dplyr::select("driver_id", "code")
       laps <- get_laps(season = season, round = round)
+      xresults <- FALSE
+      if (is.null(results)) {
+        xresults <- TRUE
+        #This allows driver/constructor matching regardless on if there's a results object
+        if (round > 1) {
+          results <- f1dataR::load_results(season = season, round = round - 1)
+        } else {
+          results <- f1dataR::load_results(season = season - 1)
+        }
+      }
       if (!is.null(laps) && nrow(laps) > 0) {
         laps <- laps %>%
           dplyr::left_join(drivers, by = c(driver = "code")) %>%
@@ -476,6 +516,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
             "season",
             "round"
           )
+        if (xresults) {
+          results <- NULL
+        }
         utils::write.csv(
           x = laps,
           file = file.path(
@@ -550,7 +593,7 @@ get_season_data <- function(season, force = FALSE) {
     schedule$season == season & schedule$date <= Sys.Date(),
   ]$round) {
     cat(
-      "Getting data for round",
+      "Getting data for", season, "round",
       round,
       "of",
       length(
@@ -565,24 +608,42 @@ get_season_data <- function(season, force = FALSE) {
       round = as.numeric(round),
       force = force
     )
-    rgrid <- dplyr::bind_rows(rgrid, r$rgrid)
-    sgrid <- dplyr::bind_rows(sgrid, r$sgrid)
-    results <- dplyr::bind_rows(results, r$results)
-    sprint_results <- dplyr::bind_rows(sprint_results, r$sprint_results)
-    laps <- dplyr::bind_rows(laps, r$laps)
-    pitstops <- dplyr::bind_rows(pitstops, r$pitstops)
-    qualis <- dplyr::bind_rows(qualis, r$quali)
+    if (!is.null(r$rgrid)) {
+      rgrid <- dplyr::bind_rows(rgrid, r$rgrid)
+    }
+    if (!is.null(r$sgrid)) {
+      sgrid <- dplyr::bind_rows(sgrid, r$sgrid)
+    }
+    if (!is.null(r$results)) {
+      results <- dplyr::bind_rows(results, r$results)
+    }
+    if (!is.null(r$sprint_results)) {
+      sprint_results <- dplyr::bind_rows(sprint_results, r$sprint_results)
+    }
+    if (!is.null(r$laps)) {
+      laps <- dplyr::bind_rows(laps, r$laps)
+    }
+    if (!is.null(r$pitstops)) {
+      pitstops <- dplyr::bind_rows(pitstops, r$pitstops)
+    }
+    if (!is.null(r$qualis)) {
+      qualis <- dplyr::bind_rows(qualis, r$quali)
+    }
   }
-  rgrid %>%
-    janitor::clean_names() %>%
-    utils::write.csv(
-      file = file.path(
-        options("f1predicter.cache"),
-        paste0(season, "_season_rgrid.csv")
-      ),
-      quote = F,
-      row.names = F
-    )
+
+  if (!is.null(rgrid)) {
+    rgrid %>%
+      janitor::clean_names() %>%
+      utils::write.csv(
+        file = file.path(
+          options("f1predicter.cache"),
+          paste0(season, "_season_rgrid.csv")
+        ),
+        quote = F,
+        row.names = F
+      )
+  }
+
   if (!is.null(sgrid)) {
     sgrid %>%
       janitor::clean_names() %>%
@@ -595,7 +656,8 @@ get_season_data <- function(season, force = FALSE) {
         row.names = F
       )
   }
-  if (season >= 2018) {
+
+  if (!is.null(laps)) {
     laps %>%
       janitor::clean_names() %>%
       utils::write.csv(
@@ -608,7 +670,7 @@ get_season_data <- function(season, force = FALSE) {
       )
   }
 
-  if (season >= 2021) {
+  if (!is.null(sprint_results)) {
     sprint_results %>%
       janitor::clean_names() %>%
       utils::write.csv(
@@ -621,38 +683,44 @@ get_season_data <- function(season, force = FALSE) {
       )
   }
 
-  results %>%
-    janitor::clean_names() %>%
-    utils::write.csv(
-      file = file.path(
-        options("f1predicter.cache"),
-        paste0(season, "_season_results.csv")
-      ),
-      quote = F,
-      row.names = F
-    )
+  if (!is.null(results)) {
+    results %>%
+      janitor::clean_names() %>%
+      utils::write.csv(
+        file = file.path(
+          options("f1predicter.cache"),
+          paste0(season, "_season_results.csv")
+        ),
+        quote = F,
+        row.names = F
+      )
+  }
 
-  pitstops %>%
-    janitor::clean_names() %>%
-    utils::write.csv(
-      file = file.path(
-        options("f1predicter.cache"),
-        paste0(season, "_season_pitstops.csv")
-      ),
-      quote = F,
-      row.names = F
-    )
+  if (!is.null(pitstops)) {
+    pitstops %>%
+      janitor::clean_names() %>%
+      utils::write.csv(
+        file = file.path(
+          options("f1predicter.cache"),
+          paste0(season, "_season_pitstops.csv")
+        ),
+        quote = F,
+        row.names = F
+      )
+  }
 
-  qualis %>%
-    janitor::clean_names() %>%
-    utils::write.csv(
-      file = file.path(
-        options("f1predicter.cache"),
-        paste0(season, "_season_qualis.csv")
-      ),
-      quote = F,
-      row.names = F
-    )
+  if (!is.null(qualis)) {
+    qualis %>%
+      janitor::clean_names() %>%
+      utils::write.csv(
+        file = file.path(
+          options("f1predicter.cache"),
+          paste0(season, "_season_qualis.csv")
+        ),
+        quote = F,
+        row.names = F
+      )
+  }
 
   closeAllConnections()
   cat("Success\n")
