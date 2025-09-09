@@ -152,6 +152,11 @@ train_quali_models <- function(
       "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'xgboost'} or {.code 'glmnet'}."
     )
   }
+
+  if (!requireNamespace('future', quietly = TRUE)) {
+    future::plan("multisession")
+  }
+
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Used later for position model
 
@@ -187,6 +192,12 @@ train_quali_models <- function(
     "practice_optimal_rank"
   )
 
+  id_cols <- c(    "season",
+                   "round",
+                   "round_id",
+                   "driver_id",
+                   "constructor_id")
+
   pole_cols <- if (use_practice_data) {
     c(base_pole_cols, practice_cols)
   } else {
@@ -217,16 +228,14 @@ train_quali_models <- function(
   )
 
   # ---- Pole Model Training ----
-  pole_recipe <- recipes::recipe(pole ~ ., data = train_data_pole) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
-    recipes::step_rm("quali_position") %>%
+  formula <- reformulate(
+    pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
+    response = "pole"
+  )
+  pole_recipe <- recipes::recipe(
+    formula,
+    data = train_data_pole
+  ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -301,10 +310,7 @@ train_quali_models <- function(
   )
 
   # ---- Quali Position Model Setup ----
-  pos_cols <- pole_cols
-  if ("pole" %in% pos_cols) {
-    pos_cols <- pos_cols[pos_cols != "pole"]
-  }
+  pos_cols <- pole_cols[pole_cols != "pole"]
 
   # The data for the position model should not be filtered or mutated based on
   # the race result 'position'. We are predicting 'quali_position'.
@@ -318,18 +324,14 @@ train_quali_models <- function(
   data_split_pos <- pos_splits$data_split
 
   # ---- Quali Position Model Training ----
+  formula <- reformulate(
+    pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
+    response = "quali_position"
+  )
   position_recipe <- recipes::recipe(
-    quali_position ~ .,
+    formula,
     data = train_data_pos
   ) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -438,45 +440,11 @@ train_quali_models <- function(
   # Fit the model directly using MASS::polr
   # Polr worked better with an explicit formula
 
-  if (use_practice_data) {
-    polr_fit <- MASS::polr(
-      quali_position ~
-        driver_experience +
-          driver_failure_avg +
-          constructor_grid_avg +
-          constructor_finish_avg +
-          constructor_failure_avg +
-          driver_grid_avg +
-          driver_position_avg +
-          driver_finish_avg +
-          driver_failure_circuit_avg +
-          driver_avg_qgap +
-          constructor_failure_circuit_avg +
-          driver_practice_optimal_rank_avg +
-          practice_avg_rank +
-          practice_best_rank +
-          practice_optimal_rank,
-      data = baked_train,
-      Hess = TRUE
-    )
-  } else {
-    polr_fit <- MASS::polr(
-      quali_position ~
-        driver_experience +
-          driver_failure_avg +
-          constructor_grid_avg +
-          constructor_finish_avg +
-          constructor_failure_avg +
-          driver_grid_avg +
-          driver_position_avg +
-          driver_finish_avg +
-          driver_failure_circuit_avg +
-          driver_avg_qgap +
-          constructor_failure_circuit_avg,
-      data = baked_train,
-      Hess = TRUE
-    )
-  }
+  polr_fit <- MASS::polr(
+    formula,
+    data = baked_train,
+    Hess = TRUE
+  )
 
   # --- Evaluate the model on the test set ---
   # Get class predictions

@@ -827,13 +827,23 @@ combine_and_finalize_features <- function(
         .data$practice_optimal_rank,
         default_params$position
       ),
-      driver_practice_optimal_rank_avg = as.numeric(slider::slide(
-        .data$practice_optimal_rank,
-        s_lagged_cumwmean_expanded,
-        val = default_params$position,
-        ln = 8,
-        .before = 10
-      ))
+      driver_practice_optimal_rank_avg = as.numeric(
+        slider::slide(
+          .data$practice_optimal_rank,
+          s_lagged_cumwmean_expanded,
+          val = default_params$position,
+          ln = 8,
+          .before = 10
+        )
+      ),
+      driver_avg_qgap = tidyr::replace_na(
+        .data$driver_avg_qgap,
+        mean(.data$driver_avg_qgap, na.rm = TRUE)
+      ),
+      driver_avg_qgap = tidyr::replace_na(
+        .data$driver_avg_qgap,
+        default_params$qgap
+      )
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(
@@ -864,10 +874,6 @@ combine_and_finalize_features <- function(
       q_avg_perc = tidyr::replace_na(
         .data$q_avg_perc,
         mean(.data$q_avg_perc, na.rm = TRUE)
-      ),
-      driver_avg_qgap = tidyr::replace_na(
-        .data$driver_avg_qgap,
-        mean(.data$driver_avg_qgap, na.rm = TRUE)
       ),
       practice_avg_rank = tidyr::replace_na(
         .data$practice_avg_rank,
@@ -922,6 +928,10 @@ combine_and_finalize_features <- function(
 #' @importFrom rlang .data
 #' @export
 clean_data <- function(input = load_all_data()) {
+  nseasons <- length(unique(input$results$season))
+  cli::cli_inform(
+    "Loaded {nseasons} seasons of data, now processing"
+  )
   # 1. Process individual data sources
   results_processed <- process_results_data(input)
   laps_processed <- process_lap_times(input$laps)
@@ -942,6 +952,6 @@ clean_data <- function(input = load_all_data()) {
     constructor_results = constructor_features,
     schedule = f1predicter::schedule
   )
-
+  cli::cli_inform("Returning {nrow(final_data)} rows of data.")
   return(final_data)
 }
