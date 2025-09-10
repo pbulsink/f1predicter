@@ -153,6 +153,10 @@ train_quali_models <- function(
     )
   }
 
+
+  cli::cli_h1("Training Qualifying Prediction Models")
+  cli::cli_inform("Scenario: {.val {ifelse(use_practice_data,'late','early')}}, Engine: {.val {engine}}")
+
   if (!requireNamespace('future', quietly = TRUE)) {
     future::plan("multisession")
   }
@@ -192,11 +196,7 @@ train_quali_models <- function(
     "practice_optimal_rank"
   )
 
-  id_cols <- c(    "season",
-                   "round",
-                   "round_id",
-                   "driver_id",
-                   "constructor_id")
+  id_cols <- c("season", "round", "round_id", "driver_id", "constructor_id")
 
   pole_cols <- if (use_practice_data) {
     c(base_pole_cols, practice_cols)
@@ -228,6 +228,7 @@ train_quali_models <- function(
   )
 
   # ---- Pole Model Training ----
+  cli::cli_inform("Training Pole Position Model ({.val {engine}})")
   formula <- reformulate(
     pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
     response = "pole"
@@ -324,6 +325,9 @@ train_quali_models <- function(
   data_split_pos <- pos_splits$data_split
 
   # ---- Quali Position Model Training ----
+  cli::cli_inform(
+    "Training Qualifying Position Model (Regression, {.val {engine}})"
+  )
   formula <- reformulate(
     pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
     response = "quali_position"
@@ -403,6 +407,7 @@ train_quali_models <- function(
   )
 
   # ---- Quali Position Classification Model (Ordered Logistic) ----
+  cli::cli_inform("Training Qualifying Position Model (Ordinal, polr)")
   tictoc::tic("Trained Position Classification Model (polr)")
 
   # Use the same data as the regression model, but with a factor outcome and
@@ -588,25 +593,12 @@ train_binary_result_model <- function(
   data_folds,
   model_spec,
   grid,
-  other_outcomes
+  predictor_vars
 ) {
-  recipe <- recipes::recipe(
-    reformulate(
-      colnames(train_data)[
-        !(colnames(train_data) %in% c(outcome_var, other_outcomes, "position"))
-      ],
-      response = outcome_var
-    ),
-    data = train_data
-  ) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
+  cli::cli_inform("Training {model_name}")
+  formula <- reformulate(predictor_vars, response = outcome_var)
+
+  recipe <- recipes::recipe(formula, data = train_data) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -628,6 +620,8 @@ train_binary_result_model <- function(
       grid = grid,
       metrics = metrics_binary
     )
+
+  tictoc::toc()
 
   best_params <- res %>%
     tune::select_best(metric = "mn_log_loss")
@@ -661,6 +655,8 @@ train_binary_result_model <- function(
 #'   (default) or "glmnet".
 #' @return A list containing five fitted `workflow` objects.
 train_results_models <- function(data, scenario, engine = "xgboost") {
+  cli::cli_h1("Training Race Results Models")
+  cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
   # ---- Common Data Prep ----
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Keep original for position model
@@ -704,6 +700,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   )
   quali_perf_cols <- c("q_min_perc", "q_avg_perc")
   outcome_cols <- c("win", "podium", "t10", "finished", "position")
+  id_cols <- c("season", "round", "round_id", "driver_id", "constructor_id")
 
   results_cols <- switch(
     scenario,
@@ -717,6 +714,9 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   train_data <- splits$train_data
   data_split <- splits$data_split
   data_folds <- splits$data_folds
+
+  # Define predictor variables once
+  predictor_vars <- setdiff(results_cols, c(outcome_cols, id_cols))
 
   # ---- Model Specs and Grids ----
   if (engine == "xgboost") {
@@ -775,8 +775,6 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   }
 
   # ---- Train Binary Models ----
-  binary_outcomes <- c("win", "podium", "t10", "finished")
-
   win_final <- train_binary_result_model(
     "win",
     "Win Model",
@@ -785,7 +783,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     data_folds,
     class_mod_spec,
     grid,
-    setdiff(binary_outcomes, "win")
+    predictor_vars
   )
   podium_final <- train_binary_result_model(
     "podium",
@@ -795,7 +793,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     data_folds,
     class_mod_spec,
     grid,
-    setdiff(binary_outcomes, "podium")
+    predictor_vars
   )
   t10_final <- train_binary_result_model(
     "t10",
@@ -805,7 +803,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     data_folds,
     class_mod_spec,
     grid,
-    setdiff(binary_outcomes, "t10")
+    predictor_vars
   )
   finish_final <- train_binary_result_model(
     "finished",
@@ -815,27 +813,24 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     data_folds,
     class_mod_spec,
     grid,
-    setdiff(binary_outcomes, "finished")
+    predictor_vars
   )
 
   # ---- Train Position Model (Regression) ----
-  pos_cols <- setdiff(results_cols, binary_outcomes)
+  cli::cli_inform("Training Position Model (Regression, {.val {engine}})")
+  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
   pos_data <- p_mod_data %>%
     dplyr::select(dplyr::all_of(pos_cols))
 
   pos_splits <- prepare_and_split_data(pos_data)
+  pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
+
+  position_formula <- reformulate(pos_predictor_vars, response = "position")
+
   position_recipe <- recipes::recipe(
-    position ~ .,
-    data = pos_splits$train_data
+    position_formula,
+    data = train_data
   ) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -856,6 +851,9 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     grid = grid,
     metrics = metrics_reg
   )
+
+  tictoc::toc()
+
   position_best <- position_res %>%
     tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
@@ -876,7 +874,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   )
 
   # ---- Train Position Model (Ordinal Classification) ----
-  tictoc::tic("Trained Position Classification Model (polr)")
+  cli::cli_inform("Training Position Model (Ordinal, polr)")
 
   pos_class_data <- pos_data %>%
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
@@ -886,17 +884,9 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   test_data_pos_class <- pos_class_splits$test_data
 
   pos_class_recipe <- recipes::recipe(
-    position ~ .,
+    position_formula,
     data = train_data_pos_class
   ) %>%
-    recipes::update_role(
-      "season",
-      "round",
-      "round_id",
-      "driver_id",
-      "constructor_id",
-      new_role = "ID"
-    ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
@@ -908,22 +898,16 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
   baked_test <- recipes::bake(prepped_recipe, new_data = test_data_pos_class)
 
-  # Create a formula that excludes other outcome variables
-  predictor_vars <- setdiff(
-    names(baked_train),
-    c("position", "win", "podium", "t10", "finished")
-  )
-  polr_formula <- reformulate(
-    termlabels = predictor_vars,
-    response = "position"
-  )
-
   # Fit the model directly using MASS::polr
+  cli::cli_inform("Fitting polr model...")
+  tictoc::tic("Trained Position Classification Model (polr)")
   polr_fit <- MASS::polr(
-    polr_formula,
+    position_formula,
     data = baked_train,
     Hess = TRUE
   )
+
+  tictoc::toc()
 
   # --- Evaluate the model on the test set ---
   class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
@@ -939,7 +923,9 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   log_loss_val <- yardstick::mn_log_loss(
     test_results,
     truth = truth,
-    dplyr::starts_with("..")
+    colnames(test_results)[
+      !(colnames(test_results) %in% c("truth", ".pred_class"))
+    ]
   )
   accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
   kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)
@@ -963,7 +949,6 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   message(glue::glue(
     "Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
   ))
-  tictoc::toc()
 
   position_class_final_fit <- list(
     fit = polr_fit,

@@ -908,9 +908,17 @@ combine_and_finalize_features <- function(
       pit_num_perc = tidyr::replace_na(
         .data$pit_num_perc,
         0
-      )
+      ),
+      q_min_perc = tidyr::replace_na(.data$q_min_perc, mean(.data$q_min_perc, na.rm = T)),
+      q_avg_perc = tidyr::replace_na(.data$q_avg_perc, mean(.data$q_avg_perc, na.rm = T))
     ) %>%
     dplyr::ungroup() %>%
+    dplyr::mutate(
+      q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.012),
+      q_avg_perc = tidyr::replace_na(.data$q_avg_perc, 1.015),
+      practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, 1.6),
+      practice_best_gap = tidyr::replace_na(.data$practice_best_gap, 1.0),
+    ) %>%
     dplyr::arrange(.data$season, .data$round) %>%
     janitor::clean_names()
 
