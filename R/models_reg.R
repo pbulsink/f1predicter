@@ -250,11 +250,23 @@ train_quali_models <- function(
       min_n = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
+      parsnip::set_engine("ranger", importance = "impurity")
 
     pole_grid <- dials::grid_regular(
-      dials::finalize(dials::mtry(), train_data_pole),
-      dials::min_n(),
+      dials::finalize(
+        dials::mtry(),
+        train_data_pole[, setdiff(
+          pole_cols,
+          c(id_cols, "pole", "quali_position")
+        )]
+      ),
+      dials::finalize(
+        dials::min_n(),
+        train_data_pole[, setdiff(
+          pole_cols,
+          c(id_cols, "pole", "quali_position")
+        )]
+      ),
       levels = 5
     )
   } else if (engine == "glmnet") {
@@ -262,6 +274,7 @@ train_quali_models <- function(
       penalty = tune::tune(),
       mixture = tune::tune()
     ) %>%
+      parsnip::set_mode("classification") %>%
       parsnip::set_engine("glmnet")
 
     pole_grid <- dials::grid_regular(
@@ -342,8 +355,14 @@ train_quali_models <- function(
       parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
     position_grid <- dials::grid_regular(
-      dials::finalize(dials::mtry(), train_data_pos),
-      dials::min_n(),
+      dials::finalize(
+        dials::mtry(),
+        train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
+      ),
+      dials::finalize(
+        dials::min_n(),
+        train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
+      ),
       levels = 5
     )
   } else if (engine == "glmnet") {
@@ -351,6 +370,7 @@ train_quali_models <- function(
       penalty = tune::tune(),
       mixture = tune::tune()
     ) %>%
+      parsnip::set_mode("regression") %>%
       parsnip::set_engine("glmnet")
 
     position_grid <- dials::grid_regular(
@@ -371,10 +391,10 @@ train_quali_models <- function(
       grid = position_grid,
       metrics = metrics_reg
     )
+  tictoc::toc()
 
   position_best <- position_res %>%
     tune::select_best(metric = "rmse")
-  tictoc::toc(log = T)
 
   position_final <- position_wflow %>%
     tune::finalize_workflow(position_best)
@@ -390,7 +410,6 @@ train_quali_models <- function(
 
   # ---- Quali Position Classification Model (Ordered Logistic) ----
   cli::cli_rule("Training Qualifying Position Model (Ordinal, polr)")
-  tictoc::tic("Trained Position Classification Model (polr)")
 
   # Use the same data as the regression model, but with a factor outcome and
   # prepped for MASS:polr
@@ -425,7 +444,7 @@ train_quali_models <- function(
   )
 
   # Fit the model directly using MASS::polr
-  # Polr worked better with an explicit formula
+  tictoc::tic("Trained Position Classification Model (polr)")
 
   polr_fit <- MASS::polr(
     formula,
@@ -433,6 +452,7 @@ train_quali_models <- function(
     Hess = TRUE
   )
 
+  tictoc::toc()
   # --- Evaluate the model on the test set ---
   # Get class predictions
   class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
@@ -477,7 +497,6 @@ train_quali_models <- function(
   message(glue::glue(
     "Quali Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
   ))
-  tictoc::toc()
 
   pos_class_final_fit <- list(
     fit = polr_fit,
@@ -517,7 +536,10 @@ model_quali_early <- function(
 ) {
   models <- train_quali_models(data, use_practice_data = FALSE, engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "early")
+    tryCatch(
+      save_models(model_list = models, model_timing = "early"),
+      error = function(e) paste0("Error saving models: ", e)
+    )
   }
   return(models)
 }
@@ -546,7 +568,10 @@ model_quali_late <- function(
 ) {
   models <- train_quali_models(data, use_practice_data = TRUE, engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "late")
+    tryCatch(
+      save_models(model_list = models, model_timing = "late"),
+      error = function(e) paste0("Error saving models: ", e)
+    )
   }
   return(models)
 }
@@ -720,8 +745,14 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
     grid <- dials::grid_regular(
-      dials::finalize(dials::mtry(), train_data),
-      dials::min_n(),
+      dials::finalize(
+        dials::mtry(),
+        train_data[, setdiff(results_cols, c(id_cols, outcome_cols))]
+      ),
+      dials::finalize(
+        dials::min_n(),
+        train_data[, setdiff(results_cols, c(id_cols, outcome_cols))]
+      ),
       levels = 5
     )
   } else if (engine == "glmnet") {
@@ -976,10 +1007,9 @@ model_results_after_quali <- function(
     engine = engine
   )
   if (save_model) {
-    save_models(
-      model_list = models,
-      model_timing = "after_quali",
-      engine = engine
+    tryCatch(
+      save_models(model_list = models, model_timing = "after_quali"),
+      error = function(e) paste0("Error saving models: ", e)
     )
   }
   return(models)
@@ -1011,7 +1041,10 @@ model_results_late <- function(
 ) {
   models <- train_results_models(data, scenario = "late", engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "late", engine = engine)
+    tryCatch(
+      save_models(model_list = models, model_timing = "late"),
+      error = function(e) paste0("Error saving models: ", e)
+    )
   }
   return(models)
 }
@@ -1042,7 +1075,10 @@ model_results_early <- function(
 ) {
   models <- train_results_models(data, scenario = "early", engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "early", engine = engine)
+    tryCatch(
+      save_models(model_list = models, model_timing = "early"),
+      error = function(e) paste0("Error saving models: ", e)
+    )
   }
   return(models)
 }
@@ -1114,10 +1150,9 @@ construct_model_path <- function(model_type, model_timing, engine) {
 #'   (e.g., "quali_pole", "win") are used to infer the model type.
 #' @param model_timing The timing context for the models, one of `"early"`,
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
-#' @param engine The engine used to train the models, e.g., "ranger" or "glmnet".
 #' @return Invisibly returns the full `file_path` where models were saved.
 #' @export
-save_models <- function(model_list, model_timing, engine) {
+save_models <- function(model_list, model_timing) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
   is_quali <- any(grepl("quali", model_names, fixed = TRUE))
@@ -1141,6 +1176,9 @@ save_models <- function(model_list, model_timing, engine) {
       "x" = "Found names: {.val {model_names}}"
     ))
   }
+
+  # Infer engine from model_list
+  engine <- model_list[[1]]$.workflow[[1]]$fit$actions$model$spec$engine # known to work for glmnet
 
   file_path <- construct_model_path(
     model_type = model_type,
