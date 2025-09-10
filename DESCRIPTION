@@ -41,5 +41,6 @@ Suggests:
     gt,
     knitr,
     MASS,
-    rmarkdown
+    rmarkdown,
+    ranger
 VignetteBuilder: knitr

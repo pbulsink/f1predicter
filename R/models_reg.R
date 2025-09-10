@@ -111,10 +111,12 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #' 2. A multiclass classification model (`quali_pos`) to predict a driver's exact
 #'    qualifying position (1-20).
 #'
-#' @details
+#' @details The function first filters the input data to include seasons from 2018
+#' onwards. Both models are built using the specified engine. Hyperparameters
+#' are tuned via `tune::tune_grid()` with a grid search. For the `ranger`
+#' engine, this is a regular grid; for `glmnet`, it's also a regular grid.
+#'
 #' The function first filters the input data to include seasons from 2018 onwards.
-#' Both models are built using the `xgboost` engine. Hyperparameters are tuned
-#' via `tune::tune_grid()` with a Latin hypercube grid search.
 #'
 #' The pole position model is optimized by selecting the best model based on the
 #' `mn_log_loss` metric. The qualifying position model is optimized based on the
@@ -122,23 +124,22 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #'
 #' Upon completion, the function prints the final performance metrics of each
 #' model (log loss, accuracy, AUC, etc.) to the console.
-#'
 #' @param data A data frame containing the modeling data.
 #' @param use_practice_data A logical value. If `TRUE`, includes practice session
 #'   performance metrics as predictors ("late" model). If `FALSE` (default),
 #'   it uses data available before practice sessions ("early" model).
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 train_quali_models <- function(
   data,
   use_practice_data = FALSE,
-  engine = "xgboost"
+  engine = "ranger"
 ) {
-  if (engine == 'xgboost') {
-    if (!requireNamespace('xgboost', quietly = TRUE)) {
+  if (engine == 'ranger') {
+    if (!requireNamespace('ranger', quietly = TRUE)) {
       cli::cli_abort(
-        "Error in f1predicter:::train_quali_models. Package {.code xgboost} needs to be installed"
+        "Error in f1predicter:::train_quali_models. Package {.code ranger} needs to be installed"
       )
     }
   } else if (engine == "glmnet") {
@@ -149,13 +150,14 @@ train_quali_models <- function(
     }
   } else {
     cli::cli_abort(
-      "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'xgboost'} or {.code 'glmnet'}."
+      "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'ranger'} or {.code 'glmnet'}."
     )
   }
 
-
-  cli::cli_h1("Training Qualifying Prediction Models")
-  cli::cli_inform("Scenario: {.val {ifelse(use_practice_data,'late','early')}}, Engine: {.val {engine}}")
+  cli::cli_h1("Training Qualifying Models")
+  cli::cli_inform(
+    "Scenario: {.val {ifelse(use_practice_data,'late','early')}}, Engine: {.val {engine}}"
+  )
 
   if (!requireNamespace('future', quietly = TRUE)) {
     future::plan("multisession")
@@ -228,7 +230,7 @@ train_quali_models <- function(
   )
 
   # ---- Pole Model Training ----
-  cli::cli_inform("Training Pole Position Model ({.val {engine}})")
+  cli::cli_rule("Training Pole Position Model ({.val {engine}})")
   formula <- reformulate(
     pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
     response = "pole"
@@ -241,29 +243,19 @@ train_quali_models <- function(
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  if (engine == "xgboost") {
-    pole_model_spec <- parsnip::boost_tree(
+  if (engine == "ranger") {
+    pole_model_spec <- parsnip::rand_forest(
       trees = 1000,
-      tree_depth = tune::tune(),
-      min_n = tune::tune(),
-      loss_reduction = tune::tune(),
-      sample_size = tune::tune(),
       mtry = tune::tune(),
-      learn_rate = tune::tune(),
-      stop_iter = tune::tune()
+      min_n = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("xgboost", nthread = 10)
+      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
-    pole_grid <- dials::grid_latin_hypercube(
-      dials::tree_depth(),
-      dials::min_n(),
-      dials::loss_reduction(),
-      sample_size = dials::sample_prop(),
+    pole_grid <- dials::grid_regular(
       dials::finalize(dials::mtry(), train_data_pole),
-      dials::learn_rate(),
-      dials::stop_iter(),
-      size = 30
+      dials::min_n(),
+      levels = 5
     )
   } else if (engine == "glmnet") {
     pole_model_spec <- parsnip::logistic_reg(
@@ -278,7 +270,7 @@ train_quali_models <- function(
       levels = 5
     )
   } else {
-    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
+    stop("Invalid engine specified. Choose 'ranger' or 'glmnet'.")
   }
 
   pole_wflow <- workflows::workflow() %>%
@@ -325,7 +317,7 @@ train_quali_models <- function(
   data_split_pos <- pos_splits$data_split
 
   # ---- Quali Position Model Training ----
-  cli::cli_inform(
+  cli::cli_rule(
     "Training Qualifying Position Model (Regression, {.val {engine}})"
   )
   formula <- reformulate(
@@ -340,29 +332,19 @@ train_quali_models <- function(
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
-  if (engine == "xgboost") {
-    position_model_spec <- parsnip::boost_tree(
+  if (engine == "ranger") {
+    position_model_spec <- parsnip::rand_forest(
       trees = 1000,
-      tree_depth = tune::tune(),
-      min_n = tune::tune(),
-      loss_reduction = tune::tune(),
-      sample_size = tune::tune(),
       mtry = tune::tune(),
-      learn_rate = tune::tune(),
-      stop_iter = tune::tune()
+      min_n = tune::tune()
     ) %>%
       parsnip::set_mode("regression") %>%
-      parsnip::set_engine("xgboost", nthread = 10)
+      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
-    position_grid <- dials::grid_latin_hypercube(
-      dials::tree_depth(),
-      dials::min_n(),
-      dials::loss_reduction(),
-      sample_size = dials::sample_prop(),
+    position_grid <- dials::grid_regular(
       dials::finalize(dials::mtry(), train_data_pos),
-      dials::learn_rate(),
-      dials::stop_iter(),
-      size = 30
+      dials::min_n(),
+      levels = 5
     )
   } else if (engine == "glmnet") {
     position_model_spec <- parsnip::linear_reg(
@@ -407,7 +389,7 @@ train_quali_models <- function(
   )
 
   # ---- Quali Position Classification Model (Ordered Logistic) ----
-  cli::cli_inform("Training Qualifying Position Model (Ordinal, polr)")
+  cli::cli_rule("Training Qualifying Position Model (Ordinal, polr)")
   tictoc::tic("Trained Position Classification Model (polr)")
 
   # Use the same data as the regression model, but with a factor outcome and
@@ -521,7 +503,7 @@ train_quali_models <- function(
 #'
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
@@ -530,7 +512,7 @@ train_quali_models <- function(
 #' @export
 model_quali_early <- function(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 ) {
   models <- train_quali_models(data, use_practice_data = FALSE, engine = engine)
@@ -550,7 +532,7 @@ model_quali_early <- function(
 #'
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
@@ -559,7 +541,7 @@ model_quali_early <- function(
 #' @export
 model_quali_late <- function(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 ) {
   models <- train_quali_models(data, use_practice_data = TRUE, engine = engine)
@@ -595,9 +577,10 @@ train_binary_result_model <- function(
   grid,
   predictor_vars
 ) {
-  cli::cli_inform("Training {model_name}")
+  cli::cli_rule("Training {model_name}")
   formula <- reformulate(predictor_vars, response = outcome_var)
 
+  cli::cli_inform("Defining recipe and workflow...")
   recipe <- recipes::recipe(formula, data = train_data) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%
@@ -613,6 +596,7 @@ train_binary_result_model <- function(
     yardstick::roc_auc
   )
 
+  cli::cli_inform("Tuning grid...")
   tictoc::tic(paste("Trained", model_name))
   res <- wflow %>%
     tune::tune_grid(
@@ -620,8 +604,6 @@ train_binary_result_model <- function(
       grid = grid,
       metrics = metrics_binary
     )
-
-  tictoc::toc()
 
   best_params <- res %>%
     tune::select_best(metric = "mn_log_loss")
@@ -638,6 +620,7 @@ train_binary_result_model <- function(
     model_name,
     c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
   )
+  tictoc::toc()
 
   return(final_fit)
 }
@@ -651,10 +634,10 @@ train_binary_result_model <- function(
 #' @param data A data frame containing the modeling data.
 #' @param scenario A character string specifying the modeling context. One of
 #'   "early" (pre-practice), "late" (post-practice), or "after_quali".
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @return A list containing five fitted `workflow` objects.
-train_results_models <- function(data, scenario, engine = "xgboost") {
+train_results_models <- function(data, scenario, engine = "ranger") {
   cli::cli_h1("Training Race Results Models")
   cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
   # ---- Common Data Prep ----
@@ -719,42 +702,27 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
   predictor_vars <- setdiff(results_cols, c(outcome_cols, id_cols))
 
   # ---- Model Specs and Grids ----
-  if (engine == "xgboost") {
-    class_mod_spec <- parsnip::boost_tree(
+  if (engine == "ranger") {
+    class_mod_spec <- parsnip::rand_forest(
       trees = 1000,
-      tree_depth = tune::tune(),
-      min_n = tune::tune(),
-      loss_reduction = tune::tune(),
-      sample_size = tune::tune(),
       mtry = tune::tune(),
-      learn_rate = tune::tune(),
-      stop_iter = tune::tune()
+      min_n = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("xgboost", nthread = 10)
+      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
-    reg_mod_spec <- parsnip::boost_tree(
+    reg_mod_spec <- parsnip::rand_forest(
       trees = 1000,
-      tree_depth = tune::tune(),
-      min_n = tune::tune(),
-      loss_reduction = tune::tune(),
-      sample_size = tune::tune(),
       mtry = tune::tune(),
-      learn_rate = tune::tune(),
-      stop_iter = tune::tune()
+      min_n = tune::tune()
     ) %>%
       parsnip::set_mode("regression") %>%
-      parsnip::set_engine("xgboost", nthread = 10)
+      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
-    grid <- dials::grid_latin_hypercube(
-      dials::tree_depth(),
-      dials::min_n(),
-      dials::loss_reduction(),
-      sample_size = dials::sample_prop(),
+    grid <- dials::grid_regular(
       dials::finalize(dials::mtry(), train_data),
-      dials::learn_rate(),
-      dials::stop_iter(),
-      size = 30
+      dials::min_n(),
+      levels = 5
     )
   } else if (engine == "glmnet") {
     class_mod_spec <- parsnip::logistic_reg(
@@ -771,7 +739,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
 
     grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
   } else {
-    stop("Invalid engine specified. Choose 'xgboost' or 'glmnet'.")
+    stop("Invalid engine specified. Choose 'ranger' or 'glmnet'.")
   }
 
   # ---- Train Binary Models ----
@@ -852,8 +820,6 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     metrics = metrics_reg
   )
 
-  tictoc::toc()
-
   position_best <- position_res %>%
     tune::select_best(metric = "rmse")
   tictoc::toc(log = T)
@@ -872,6 +838,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     "Position Model",
     c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
   )
+  tictoc::toc()
 
   # ---- Train Position Model (Ordinal Classification) ----
   cli::cli_inform("Training Position Model (Ordinal, polr)")
@@ -906,7 +873,6 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
     data = baked_train,
     Hess = TRUE
   )
-
   tictoc::toc()
 
   # --- Evaluate the model on the test set ---
@@ -982,16 +948,16 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
 #' 5. `position`: A regression model to predict a driver's exact finishing position.
 #'
 #' @details
-#' The function filters data for seasons from 2018 onwards. All five models are
-#' built using the `xgboost` engine, with hyperparameters tuned via a Latin
-#' hypercube grid search.
+#' The function filters data for seasons from 2018 onwards. All models are
+#' built using the specified engine, with hyperparameters tuned via a grid
+#' search.
 #'
 #' The four binary models (`win`, `podium`, `t10`, `finish`) are optimized on
 #' the `mn_log_loss` metric. The `position` regression model is optimized
 #' based on the `rmse` (Root Mean Squared Error) metric.
 #'
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
@@ -1001,7 +967,7 @@ train_results_models <- function(data, scenario, engine = "xgboost") {
 #' @export
 model_results_after_quali <- function(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 ) {
   models <- train_results_models(
@@ -1010,7 +976,11 @@ model_results_after_quali <- function(
     engine = engine
   )
   if (save_model) {
-    save_models(model_list = models, model_timing = "after_quali")
+    save_models(
+      model_list = models,
+      model_timing = "after_quali",
+      engine = engine
+    )
   }
   return(models)
 }
@@ -1027,7 +997,7 @@ model_results_after_quali <- function(
 #'
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
@@ -1036,12 +1006,12 @@ model_results_after_quali <- function(
 #' @export
 model_results_late <- function(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 ) {
   models <- train_results_models(data, scenario = "late", engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "late")
+    save_models(model_list = models, model_timing = "late", engine = engine)
   }
   return(models)
 }
@@ -1058,7 +1028,7 @@ model_results_late <- function(
 #'
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
-#' @param engine A character string specifying the model engine. One of "xgboost"
+#' @param engine A character string specifying the model engine. One of "ranger"
 #'   (default) or "glmnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
@@ -1067,12 +1037,12 @@ model_results_late <- function(
 #' @export
 model_results_early <- function(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 ) {
   models <- train_results_models(data, scenario = "early", engine = engine)
   if (save_model) {
-    save_models(model_list = models, model_timing = "early")
+    save_models(model_list = models, model_timing = "early", engine = engine)
   }
   return(models)
 }
@@ -1084,9 +1054,10 @@ model_results_early <- function(
 #'
 #' @param model_type The type of model, either "quali" or "results".
 #' @param model_timing The timing of the model, one of "early", "late", or "after_quali".
+#' @param engine The engine used for the model, e.g., "ranger" or "glmnet".
 #' @return A full file path string.
 #' @noRd
-construct_model_path <- function(model_type, model_timing) {
+construct_model_path <- function(model_type, model_timing, engine) {
   # 1. Check if the base path option is set
   base_path <- getOption("f1predicter.models")
   if (is.null(base_path)) {
@@ -1124,7 +1095,7 @@ construct_model_path <- function(model_type, model_timing) {
   }
 
   # 4. Construct and return the full path
-  file_name <- paste0(model_type, "_", model_timing, "_models.rds")
+  file_name <- paste0(model_type, "_", model_timing, "_", engine, "_models.rds")
   file.path(base_path, file_name)
 }
 
@@ -1143,9 +1114,10 @@ construct_model_path <- function(model_type, model_timing) {
 #'   (e.g., "quali_pole", "win") are used to infer the model type.
 #' @param model_timing The timing context for the models, one of `"early"`,
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
+#' @param engine The engine used to train the models, e.g., "ranger" or "glmnet".
 #' @return Invisibly returns the full `file_path` where models were saved.
 #' @export
-save_models <- function(model_list, model_timing) {
+save_models <- function(model_list, model_timing, engine) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
   is_quali <- any(grepl("quali", model_names, fixed = TRUE))
@@ -1172,7 +1144,8 @@ save_models <- function(model_list, model_timing) {
 
   file_path <- construct_model_path(
     model_type = model_type,
-    model_timing = model_timing
+    model_timing = model_timing,
+    engine = engine
   )
   dir.create(dirname(file_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -1237,10 +1210,11 @@ save_models <- function(model_list, model_timing) {
 #' @param model_type The type of models to load, either `"quali"` or `"results"`.
 #' @param model_timing The timing context for the models, one of `"early"`,
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
+#' @param engine The engine used for the model, e.g., "ranger" or "glmnet".
 #' @return A list of  model objects, ready for prediction.
 #' @export
-load_models <- function(model_type, model_timing) {
-  file_path <- construct_model_path(model_type, model_timing)
+load_models <- function(model_type, model_timing, engine = "ranger") {
+  file_path <- construct_model_path(model_type, model_timing, engine)
 
   if (!file.exists(file_path)) {
     cli::cli_abort("Model file not found at {.path {file_path}}.")
