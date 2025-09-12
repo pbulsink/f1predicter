@@ -42,5 +42,7 @@ Suggests:
     knitr,
     MASS,
     rmarkdown,
-    ranger
+    ranger,
+    kernlab,
+    kknn
 VignetteBuilder: knitr

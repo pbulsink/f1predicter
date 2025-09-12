@@ -6,4 +6,4 @@
 ^\.notes$
 ^LICENSE\.md$
 ^cache
-^model
+^models
