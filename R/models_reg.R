@@ -113,8 +113,8 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #'
 #' @details The function first filters the input data to include seasons from 2018
 #' onwards. Both models are built using the specified engine. Hyperparameters
-#' are tuned via `tune::tune_grid()` with a grid search. For the `ranger`
-#' engine, this is a regular grid; for `glmnet`, it's also a regular grid.
+#' are tuned via `tune::tune_grid()` with a grid search. For the `ranger`,
+#' `glmnet`, and `nnet` engines, this is a regular grid.
 #'
 #' The function first filters the input data to include seasons from 2018 onwards.
 #'
@@ -129,7 +129,7 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #'   performance metrics as predictors ("late" model). If `FALSE` (default),
 #'   it uses data available before practice sessions ("early" model).
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 train_quali_models <- function(
   data,
@@ -148,9 +148,15 @@ train_quali_models <- function(
         "Error in f1predicter:::train_quali_models. Package {.code glmnet} needs to be installed"
       )
     }
+  } else if (engine == "nnet") {
+    if (!requireNamespace('nnet', quietly = TRUE)) {
+      cli::cli_abort(
+        "Error in f1predicter:::train_quali_models. Package {.code nnet} needs to be installed"
+      )
+    }
   } else {
     cli::cli_abort(
-      "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be either {.code 'ranger'} or {.code 'glmnet'}."
+      "Error in f1predicter:::train_quali_models. Parameter {.param engine} must be one of {.val {c('ranger', 'glmnet', 'nnet')}}."
     )
   }
 
@@ -250,7 +256,7 @@ train_quali_models <- function(
       min_n = tune::tune()
     ) %>%
       parsnip::set_mode("classification") %>%
-      parsnip::set_engine("ranger", importance = "impurity")
+      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
     pole_grid <- dials::grid_regular(
       dials::finalize(
@@ -282,8 +288,23 @@ train_quali_models <- function(
       dials::mixture(),
       levels = 5
     )
+  } else if (engine == "nnet") {
+    pole_model_spec <- parsnip::mlp(
+      hidden_units = tune::tune(),
+      penalty = tune::tune(),
+      epochs = tune::tune()
+    ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("nnet")
+
+    pole_grid <- dials::grid_regular(
+      dials::hidden_units(),
+      dials::penalty(),
+      dials::epochs(),
+      levels = 4
+    )
   } else {
-    stop("Invalid engine specified. Choose 'ranger' or 'glmnet'.")
+    stop("Invalid engine specified. Choose 'ranger', 'glmnet', or 'nnet'.")
   }
 
   pole_wflow <- workflows::workflow() %>%
@@ -377,6 +398,21 @@ train_quali_models <- function(
       dials::penalty(),
       dials::mixture(),
       levels = 5
+    )
+  } else if (engine == "nnet") {
+    position_model_spec <- parsnip::mlp(
+      hidden_units = tune::tune(),
+      penalty = tune::tune(),
+      epochs = tune::tune()
+    ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("nnet")
+
+    position_grid <- dials::grid_regular(
+      dials::hidden_units(),
+      dials::penalty(),
+      dials::epochs(),
+      levels = 4
     )
   }
 
@@ -523,7 +559,7 @@ train_quali_models <- function(
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -555,7 +591,7 @@ model_quali_early <- function(
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -660,7 +696,7 @@ train_binary_result_model <- function(
 #' @param scenario A character string specifying the modeling context. One of
 #'   "early" (pre-practice), "late" (post-practice), or "after_quali".
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @return A list containing five fitted `workflow` objects.
 train_results_models <- function(data, scenario, engine = "ranger") {
   cli::cli_h1("Training Race Results Models")
@@ -769,8 +805,31 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       parsnip::set_engine("glmnet")
 
     grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
+  } else if (engine == "nnet") {
+    class_mod_spec <- parsnip::mlp(
+      hidden_units = tune::tune(),
+      penalty = tune::tune(),
+      epochs = tune::tune()
+    ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("nnet")
+
+    reg_mod_spec <- parsnip::mlp(
+      hidden_units = tune::tune(),
+      penalty = tune::tune(),
+      epochs = tune::tune()
+    ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("nnet")
+
+    grid <- dials::grid_regular(
+      dials::hidden_units(),
+      dials::penalty(),
+      dials::epochs(),
+      levels = 4
+    )
   } else {
-    stop("Invalid engine specified. Choose 'ranger' or 'glmnet'.")
+    stop("Invalid engine specified. Choose 'ranger', 'glmnet', or 'nnet'.")
   }
 
   # ---- Train Binary Models ----
@@ -816,7 +875,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
   )
 
   # ---- Train Position Model (Regression) ----
-  cli::cli_inform("Training Position Model (Regression, {.val {engine}})")
+  cli::cli_rule("Training Position Model (Regression, {.val {engine}})")
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
   pos_data <- p_mod_data %>%
     dplyr::select(dplyr::all_of(pos_cols))
@@ -850,6 +909,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     grid = grid,
     metrics = metrics_reg
   )
+  tictoc::toc()
 
   position_best <- position_res %>%
     tune::select_best(metric = "rmse")
@@ -869,10 +929,9 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     "Position Model",
     c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
   )
-  tictoc::toc()
 
   # ---- Train Position Model (Ordinal Classification) ----
-  cli::cli_inform("Training Position Model (Ordinal, polr)")
+  cli::cli_rule("Training Position Model (Ordinal, polr)")
 
   pos_class_data <- pos_data %>%
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
@@ -897,7 +956,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
   baked_test <- recipes::bake(prepped_recipe, new_data = test_data_pos_class)
 
   # Fit the model directly using MASS::polr
-  cli::cli_inform("Fitting polr model...")
+  cli::cli_rule("Fitting polr model...")
   tictoc::tic("Trained Position Classification Model (polr)")
   polr_fit <- MASS::polr(
     position_formula,
@@ -989,7 +1048,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 #'
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -1028,7 +1087,7 @@ model_results_after_quali <- function(
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -1062,7 +1121,7 @@ model_results_late <- function(
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
 #' @param engine A character string specifying the model engine. One of "ranger"
-#'   (default) or "glmnet".
+#'   (default), "glmnet", or "nnet".
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -1090,7 +1149,7 @@ model_results_early <- function(
 #'
 #' @param model_type The type of model, either "quali" or "results".
 #' @param model_timing The timing of the model, one of "early", "late", or "after_quali".
-#' @param engine The engine used for the model, e.g., "ranger" or "glmnet".
+#' @param engine The engine used for the model, e.g., "ranger", "glmnet", or "nnet".
 #' @return A full file path string.
 #' @noRd
 construct_model_path <- function(model_type, model_timing, engine) {
@@ -1248,7 +1307,7 @@ save_models <- function(model_list, model_timing) {
 #' @param model_type The type of models to load, either `"quali"` or `"results"`.
 #' @param model_timing The timing context for the models, one of `"early"`,
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
-#' @param engine The engine used for the model, e.g., "ranger" or "glmnet".
+#' @param engine The engine used for the model, e.g., "ranger", "glmnet", or "nnet".
 #' @return A list of  model objects, ready for prediction.
 #' @export
 load_models <- function(model_type, model_timing, engine = "ranger") {

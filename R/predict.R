@@ -324,10 +324,10 @@ generate_new_data <- function(
     new_data <- new_data %>%
       dplyr::left_join(practice_results, by = "driver_id")
   } else {
-    new_data$driver_practice_optimal_rank_avg <- nrow(new_data)*3/4
-    new_data$practice_avg_rank <- round(nrow(new_data)*3/4)
-    new_data$practice_best_rank <- round(nrow(new_data)/2)
-    new_data$practice_optimal_rank <- round(nrew(new_data)/2)
+    new_data$driver_practice_optimal_rank_avg <- nrow(new_data) * 3 / 4
+    new_data$practice_avg_rank <- round(nrow(new_data) * 3 / 4)
+    new_data$practice_best_rank <- round(nrow(new_data) / 2)
+    new_data$practice_optimal_rank <- round(nrew(new_data) / 2)
     new_data$practice_avg_gap <- 1.5
     new_data$practice_best_gap <- 1
   }
@@ -692,18 +692,25 @@ predict_quali_pos_class <- function(
 #'   qualifying models using `load_models()`. Otherwise, it should be a list as
 #'   returned by `model_quali_early()` or `model_quali_late()`, containing
 #'   `quali_pole`, `quali_pos`, and `quali_pos_class`.
+#' @param engine The model engine to use if loading models from disk. Defaults
+#'   to `"ranger"`.
 #' @return A tibble with predictions for pole probability and qualifying position
 #'   (from both regression and classification models) for each driver.
 #' @export
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
-  quali_models = NULL
+  quali_models = NULL,
+  engine = "ranger"
 ) {
   if (is.null(quali_models)) {
     cli::cli_inform(
-      "No models provided, loading 'early' qualifying models from disk."
+      "No models provided, loading 'early' qualifying models for engine {.val {engine}} from disk."
     )
-    quali_models <- load_models(model_type = "quali", model_timing = "early")
+    quali_models <- load_models(
+      model_type = "quali",
+      model_timing = "early",
+      engine = engine
+    )
   }
 
   # Check if all required models are in the list
@@ -835,20 +842,24 @@ predict_position <- function(
 #'   models using `load_models()`. Otherwise, it should be a list as returned by
 #'   a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
 #'   and `position`.
+#' @param engine The model engine to use if loading models from disk. Defaults
+#'   to `"ranger"`.
 #' @return A tibble with predictions for all race outcomes for each driver,
 #'   including win/podium/t10/finish odds and the likely finishing position.
 #' @export
 predict_round <- function(
   new_data = generate_next_race_data(),
-  results_models = NULL
+  results_models = NULL,
+  engine = "ranger"
 ) {
   if (is.null(results_models)) {
     cli::cli_inform(
-      "No models provided, loading 'early' results models from disk."
+      "No models provided, loading 'early' results models for engine {.val {engine}} from disk."
     )
     results_models <- load_models(
       model_type = "results",
-      model_timing = "early"
+      model_timing = "early",
+      engine = engine
     )
   }
 
