@@ -451,6 +451,19 @@ train_quali_models <- function(
       dials::epochs(),
       levels = 4
     )
+  } else if (engine == "kernlab") {
+    position_model_spec <- parsnip::svm_rbf(
+      cost = tune::tune(),
+      rbf_sigma = tune::tune()
+    ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
+
+    position_grid <- dials::grid_regular(
+      dials::cost(),
+      dials::rbf_sigma(),
+      levels = 4
+    )
   } else if (engine == "kknn") {
     position_model_spec <- parsnip::nearest_neighbor(
       neighbors = tune::tune()
