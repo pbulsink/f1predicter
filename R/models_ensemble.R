@@ -284,31 +284,190 @@ load_ensemble_model <- function(model_name) {
   return(model)
 }
 
-# Optimal Model hyperparameters (2025-09)
-# -------------------------------------------------
-# From early quali models:
-qme_pole_hyperparameters = list(
-  'glmnet' = list(), 
-  'kknn' = list(),
-  'nnet' = list(),
-  'ranger' = list(),
-  'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
-)
-
-qme_pos_hyperparameters = list(
-  'glmnet' = list(), 
-  'kknn' = list(),
-  'nnet' = list(),
-  'ranger' = list(mtry, min_n), # trees = 1000
-  'kernlab' = list(cost = 1, rbf_sigma = 0.000464158883361278) 
-)
-
-# From late quali models:
-qle_hyperparameters = list(
-  'glmnet' = list(), 
-  'kknn' = list(),
-  'nnet' = list(),
-  'ranger' = list(),
-  'kernlab' = list()
-)
-# -------------------------------------------------
+#' Get Optimal Model hyperparameters (2025-09)
+#' @description Model hyperparameters were determined in 2025-09
+#' and are conveniently returned by this function
+#'
+#' @param model
+#' @param timing
+#'
+#' @return a list of list of hyperparameters by engine.
+#' @nord
+get_hyperparameters(model = 'quali', timing = 'early')
+{
+  if (model == 'quali') {
+    if (timing == 'early') {
+      return(
+        list(
+          pole_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.75),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 10, penalty = 1, epochs = 1000),
+            'ranger' = list(mtry = 1, min_n = 30), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          ),
+          position_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 4, penalty = 1, epochs = 1000),
+            'ranger' = list(mtry = 3, min_n = 30), # trees = 1000
+            'kernlab' = list(cost = 1, rbf_sigma = 0.000464158883361278)
+          )
+        )
+      )
+    } else if (timing == 'late') {
+      return(
+        list(
+          pole_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 10, penalty = 1, epochs = 1000),
+            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          ),
+          position_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.50),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1, epochs = 340),
+            'ranger' = list(mtry = 4, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          )
+        )
+      )
+    } else {
+      cli::cli_abort(
+        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early} or {.val late}."
+      )
+    }
+  } else if (model == 'results') {
+    if (timing == 'early') {
+      return(
+        list(
+          win_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 0.000464158883361278, epochs = 670),
+            'ranger' = list(mtry = 4, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = 1, rbf_sigma = 0.000464158883361278)
+          ),
+          podium_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 0.000464158883361278, epochs = 340),
+            'ranger' = list(mtry = 1, min_n = 30), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          ).
+          t10_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 0.5),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 2.15443469003189e-07, epochs = 670),
+            'ranger' = list(mtry = 1, min_n = 30), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          ),
+          finish_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 7, penalty = 1, epochs = 10),
+            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 2.15443469003189e-07)
+          ),
+          position_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1, epochs = 340),
+            'ranger' = list(mtry = 4, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
+          )
+        )
+      )
+    } else if (timing == 'late') {
+      return(
+        list(
+          win_hyperparameters = list(
+            'glmnet' = list(penalty =0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 4, penalty = 2.15443469003189e-07, epochs = 340),
+            'ranger' = list(mtry = 5, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          podium_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 0.75),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1e-10, epochs = 1000),
+            'ranger' = list(mtry = 5, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ).
+          t10_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 0.000464158883361278, epochs = 1000),
+            'ranger' = list(mtry = 1, min_n = 11), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          finish_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1e-10, epochs = 670),
+            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          position_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0.25),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1, epochs = 340),
+            'ranger' = list(mtry = 5, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          )
+        )
+      )
+    } else if (timing == 'after-quali') {
+      return(
+        list(
+          win_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 10, penalty = 1, epochs = 1000),
+            'ranger' = list(mtry = 6, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          podium_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 0.5),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 2.15443469003189e-07, epochs = 1000),
+            'ranger' = list(mtry = 1, min_n = 11), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ).
+          t10_hyperparameters = list(
+            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 2.15443469003189e-07, epochs = 340),
+            'ranger' = list(mtry = 1, min_n = 2), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          finish_hyperparameters = list(
+            'glmnet' = list(penalty = 1, mixture = 0),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1e-10, epochs = 10),
+            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          ),
+          position_hyperparameters = list(
+            'glmnet' = list(penalty = 1e-10, mixture = 0),
+            'kknn' = list(neighbors = 25),
+            'nnet' = list(hidden_units = 1, penalty = 1, epochs = 670),
+            'ranger' = list(mtry = 6, min_n = 40), # trees = 1000
+            'kernlab' = list(cost = , rbf_sigma = )
+          )
+        )
+      )
+    } else {
+      cli::cli_abort(
+        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after-quali}."
+      )
+    }
+  } else {
+    cli::cli_abort(
+      "Error in f1predicter:::get_hyperparameters: {.param model} must be {.val quali} or {.val results}."
+    )
+  }
+}
