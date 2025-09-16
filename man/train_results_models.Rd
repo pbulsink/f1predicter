@@ -4,7 +4,7 @@
 \alias{train_results_models}
 \title{Train Race Result Models}
 \usage{
-train_results_models(data, scenario, engine = "xgboost")
+train_results_models(data, scenario, engine = "ranger")
 }
 \arguments{
 \item{data}{A data frame containing the modeling data.}
@@ -12,8 +12,8 @@ train_results_models(data, scenario, engine = "xgboost")
 \item{scenario}{A character string specifying the modeling context. One of
 "early" (pre-practice), "late" (post-practice), or "after_quali".}
 
-\item{engine}{A character string specifying the model engine. One of "xgboost"
-(default) or "glmnet".}
+\item{engine}{A character string specifying the model engine. One of `"ranger"`
+(default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
 }
 \value{
 A list containing five fitted `workflow` objects.

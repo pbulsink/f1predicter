@@ -7,11 +7,12 @@
 clean_data(input = load_all_data())
 }
 \arguments{
-\item{input}{take an input data (or load fresh) and process it for modelling}
+\item{input}{A list of raw data frames, typically from `load_all_data()`.}
 }
 \value{
-a data frame
+A single, cleaned data frame.
 }
 \description{
-Clean Data
+This function serves as a wrapper to load all raw data and process it through
+a series of cleaning and feature engineering steps, preparing it for modeling.
 }

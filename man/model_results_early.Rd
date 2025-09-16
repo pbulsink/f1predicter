@@ -4,13 +4,12 @@
 \alias{model_results_early}
 \title{Train Race Result Models (Pre-Practice)}
 \usage{
-model_results_early(data = clean_data(), engine = "xgboost", save_model = TRUE)
+model_results_early(data = clean_data(), engine = "ranger", save_model = TRUE)
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to `clean_data()`.}
 
-\item{engine}{A character string specifying the model engine. One of "xgboost"
-(default) or "glmnet".}
+\item{engine}{A character string specifying the model engine. One of `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
 
 \item{save_model}{A logical value. If `TRUE` (default), the trained models
 are automatically butchered and saved to the path specified in
@@ -29,9 +28,9 @@ It produces the same models as `model_results_after_quali`, but uses a
 smaller set of predictors.
 }
 \details{
-The function filters data for seasons from 2018 onwards. All five models are
-built using the `xgboost` engine, with hyperparameters tuned via a Latin
-hypercube grid search.
+The function filters data for seasons from 2018 onwards. All models are
+built using the specified engine, with hyperparameters tuned via a grid
+search.
 
 The four binary models (`win`, `podium`, `t10`, `finish`) are optimized on
 the `mn_log_loss` metric. The `position` regression model is optimized

@@ -8,6 +8,7 @@ generate_new_data(
   season,
   round,
   drivers = NULL,
+  penalties = NULL,
   historical_data = clean_data()
 )
 }
@@ -20,6 +21,10 @@ generate_new_data(
 It must include `driver_id` and `constructor_id`. Optionally, it can
 include `quali_position`, `grid`, and practice-related ranks. If `NULL`
 (the default), it will use the drivers from the most recent race.}
+
+\item{penalties}{A named vector of `driver_id = penalty_positions` to be
+applied (in order of application).
+For example `c('hamilton' = 5, 'max_verstappen' = 10)`.}
 
 \item{historical_data}{A data frame of historical race data, typically the
 output of `clean_data()`. This is used to calculate the feature values.}

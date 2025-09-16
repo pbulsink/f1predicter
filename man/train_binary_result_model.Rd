@@ -12,7 +12,7 @@ train_binary_result_model(
   data_folds,
   model_spec,
   grid,
-  other_outcomes
+  predictor_vars
 )
 }
 \arguments{

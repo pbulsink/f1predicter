@@ -4,7 +4,11 @@
 \alias{predict_quali_round}
 \title{Predict Qualifying Results for a Round}
 \usage{
-predict_quali_round(new_data = generate_next_race_data(), quali_models = NULL)
+predict_quali_round(
+  new_data = generate_next_race_data(),
+  quali_models = NULL,
+  engine = NULL
+)
 }
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
@@ -12,8 +16,10 @@ predict_quali_round(new_data = generate_next_race_data(), quali_models = NULL)
 \item{quali_models}{A list of fitted `workflow` objects for qualifying prediction.
 If `NULL` (default), the function will attempt to load the "early"
 qualifying models using `load_models()`. Otherwise, it should be a list as
-returned by `model_quali_early()` or `model_quali_late()`, containing
-`quali_pole`, `quali_pos`, and `quali_pos_class`.}
+returned by `model_quali_early()` or `model_quali_late()`.}
+
+\item{engine}{The model engine to use. Can be an individual engine like
+`"ranger"` or `"glmnet"`, or `"ensemble"` (default) to load stacked models.}
 }
 \value{
 A tibble with predictions for pole probability and qualifying position

@@ -4,13 +4,13 @@
 \alias{model_quali_early}
 \title{Train Early Qualifying Prediction Models}
 \usage{
-model_quali_early(data = clean_data(), engine = "xgboost", save_model = TRUE)
+model_quali_early(data = clean_data(), engine = "ranger", save_model = TRUE)
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to the output of `clean_data()`.}
 
-\item{engine}{A character string specifying the model engine. One of "xgboost"
-(default) or "glmnet".}
+\item{engine}{A character string specifying the model engine. One of `"ranger"`
+(default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
 
 \item{save_model}{A logical value. If `TRUE` (default), the trained models
 are automatically butchered and saved to the path specified in
@@ -25,9 +25,12 @@ data available before any practice sessions have occurred for a race weekend. It
 is a wrapper around `train_quali_models(use_practice_data = FALSE)`.
 }
 \details{
+The function first filters the input data to include seasons from 2018
+onwards. Both models are built using the specified engine. Hyperparameters
+are tuned via `tune::tune_grid()` with a grid search. For the `ranger`,
+`glmnet`, and `nnet` engines, this is a regular grid.
+
 The function first filters the input data to include seasons from 2018 onwards.
-Both models are built using the `xgboost` engine. Hyperparameters are tuned
-via `tune::tune_grid()` with a Latin hypercube grid search.
 
 The pole position model is optimized by selecting the best model based on the
 `mn_log_loss` metric. The qualifying position model is optimized based on the

@@ -4,13 +4,20 @@
 \alias{predict_quali_pos}
 \title{Predict Qualifying Position}
 \usage{
-predict_quali_pos(new_data = generate_next_race_data(), quali_pos_model)
+predict_quali_pos(
+  new_data = generate_next_race_data(),
+  quali_pos_model,
+  is_ensemble = FALSE
+)
 }
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
 
 \item{quali_pos_model}{A `workflow` object for predicting qualifying position,
-such as `model_quali_early()$quali_pos`.}
+such as `model_quali_early()$quali_pos`. Can also be a `model_stack` ensemble object.}
+
+\item{is_ensemble}{A logical indicating if the provided model is a `stacks`
+ensemble. Defaults to `FALSE`.}
 }
 \value{
 A tibble with `driver_id`, `round`, `season`, and

@@ -4,7 +4,11 @@
 \alias{predict_round}
 \title{Predict Race Results for a Round}
 \usage{
-predict_round(new_data = generate_next_race_data(), results_models = NULL)
+predict_round(
+  new_data = generate_next_race_data(),
+  results_models = NULL,
+  engine = NULL
+)
 }
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
@@ -14,6 +18,9 @@ If `NULL` (default), the function will attempt to load the "early" results
 models using `load_models()`. Otherwise, it should be a list as returned by
 a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
 and `position`.}
+
+\item{engine}{The model engine to use if loading models from disk. Defaults
+to `"ranger"`. Can also be `"ensemble"`.}
 }
 \value{
 A tibble with predictions for all race outcomes for each driver,

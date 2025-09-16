@@ -6,15 +6,15 @@
 \usage{
 model_results_after_quali(
   data = clean_data(),
-  engine = "xgboost",
+  engine = "ranger",
   save_model = TRUE
 )
 }
 \arguments{
 \item{data}{A data frame containing the modeling data. Defaults to `clean_data()`.}
 
-\item{engine}{A character string specifying the model engine. One of "xgboost"
-(default) or "glmnet".}
+\item{engine}{A character string specifying the model engine. One of `"ranger"`
+(default), `"glmnet"`, `"nnet"`, `"kernlab"``, or `"kknn"`.}
 
 \item{save_model}{A logical value. If `TRUE` (default), the trained models
 are automatically butchered and saved to the path specified in
@@ -37,9 +37,9 @@ The function produces:
 5. `position`: A regression model to predict a driver's exact finishing position.
 }
 \details{
-The function filters data for seasons from 2018 onwards. All five models are
-built using the `xgboost` engine, with hyperparameters tuned via a Latin
-hypercube grid search.
+The function filters data for seasons from 2018 onwards. All models are
+built using the specified engine, with hyperparameters tuned via a grid
+search.
 
 The four binary models (`win`, `podium`, `t10`, `finish`) are optimized on
 the `mn_log_loss` metric. The `position` regression model is optimized

@@ -10,7 +10,7 @@ predict_quali_pole(new_data = generate_next_race_data(), quali_pole_model)
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
 
 \item{quali_pole_model}{A `workflow` object for predicting pole position,
-such as `model_quali_early()$quali_pole`.}
+such as `model_quali_early()$quali_pole`. Can also be a `model_stack` ensemble object}
 }
 \value{
 A tibble with `driver_id`, `round`, `season`, and `pole_odd` (the

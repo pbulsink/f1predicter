@@ -571,11 +571,14 @@ predict_quali_pole <- function(
   new_data = generate_next_race_data(),
   quali_pole_model
 ) {
-
   pred_call <- if (inherits(quali_pole_model, "model_stack")) {
     stats::predict(quali_pole_model, new_data, type = "prob")
   } else {
-    stats::predict(tune::extract_workflow(quali_pole_model), new_data, type = "prob")
+    stats::predict(
+      tune::extract_workflow(quali_pole_model),
+      new_data,
+      type = "prob"
+    )
   }
 
   preds <- new_data %>%
@@ -610,15 +613,17 @@ predict_quali_pole <- function(
 #' @export
 predict_quali_pos <- function(
   new_data = generate_next_race_data(),
-  quali_pos_model
-  new_data = generate_next_race_data(), quali_pos_model,
+  quali_pos_model,
   is_ensemble = FALSE
 ) {
-
   pred_call <- if (inherits(quali_pos_model, "model_stack")) {
     stats::predict(quali_pos_model, new_data, type = "numeric")
   } else {
-    stats::predict(tune::extract_workflow(quali_pos_model), new_data, type = "numeric")
+    stats::predict(
+      tune::extract_workflow(quali_pos_model),
+      new_data,
+      type = "numeric"
+    )
   }
 
   preds <- new_data %>%
@@ -722,7 +727,9 @@ predict_quali_round <- function(
         quali_pos = load_ensemble_model("Quali Position Early")
       )
       # Load the default 'ranger' models to get the polr model
-      cli::cli_inform("Loading default 'ranger' model to get ordinal classification model.")
+      cli::cli_inform(
+        "Loading default 'ranger' model to get ordinal classification model."
+      )
       default_models <- load_models(
         model_type = "quali",
         model_timing = "early",
@@ -803,7 +810,11 @@ predict_podium <- function(
   pred_call <- if (inherits(podium_model, "model_stack")) {
     stats::predict(podium_model, new_data, type = "prob")
   } else {
-    stats::predict(tune::extract_workflow(podium_model), new_data, type = "prob")
+    stats::predict(
+      tune::extract_workflow(podium_model),
+      new_data,
+      type = "prob"
+    )
   }
 
   preds <- new_data %>%
@@ -851,7 +862,11 @@ predict_finish <- function(
   pred_call <- if (inherits(finish_model, "model_stack")) {
     stats::predict(finish_model, new_data, type = "prob")
   } else {
-    stats::predict(tune::extract_workflow(finish_model), new_data, type = "prob")
+    stats::predict(
+      tune::extract_workflow(finish_model),
+      new_data,
+      type = "prob"
+    )
   }
 
   preds <- new_data %>%
@@ -913,10 +928,10 @@ predict_position <- function(
 predict_round <- function(
   new_data = generate_next_race_data(),
   results_models = NULL,
-  engine = "ranger"
+  engine = NULL
 ) {
   if (is.null(results_models)) {
-    if (engine == "ensemble") {
+    if (is.null(engine) || engine == "ensemble") {
       cli::cli_inform("Loading 'early' results ENSEMBLE models from disk.")
       # Assuming you save your ensembles with descriptive names
       results_models <- list(
@@ -927,7 +942,9 @@ predict_round <- function(
         position = load_ensemble_model("Position Early")
       )
       # Load the default 'ranger' models to get the polr model
-      cli::cli_inform("Loading default 'ranger' model to get ordinal classification model.")
+      cli::cli_inform(
+        "Loading default 'ranger' model to get ordinal classification model."
+      )
       default_models <- load_models(
         model_type = "results",
         model_timing = "early",
@@ -947,7 +964,14 @@ predict_round <- function(
   }
 
   # Check if all required models are in the list
-  required_models <- c("win", "podium", "t10", "finish", "position", "position_class")
+  required_models <- c(
+    "win",
+    "podium",
+    "t10",
+    "finish",
+    "position",
+    "position_class"
+  )
   if (!all(required_models %in% names(results_models))) {
     cli::cli_abort(
       "The {.arg results_models} list must contain: {.val {required_models}}"

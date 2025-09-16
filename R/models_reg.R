@@ -181,6 +181,7 @@ train_quali_models <- function(
     future::plan("multisession")
   }
 
+  model_timing <- ifelse(use_practice_data, "late", "early")
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Used later for position model
 
@@ -246,6 +247,58 @@ train_quali_models <- function(
     yardstick::mae,
     yardstick::rsq
   )
+
+  # ---- Ensemble Model Training ----
+  if (engine == "ensemble") {
+    cli::cli_inform("Using ensemble training process.")
+
+    # Get hyperparameters for all models
+    all_hyperparams <- get_hyperparameters("quali", model_timing)
+
+    # Train Pole Model
+    pole_predictor_vars <- setdiff(
+      pole_cols,
+      c("quali_position", "pole", id_cols)
+    )
+    pole_final_fit <- train_stacked_model(
+      outcome_var = "pole",
+      model_name = paste("Quali Pole", tools::toTitleCase(model_timing)),
+      train_data = train_data_pole,
+      data_split = data_split_pole,
+      data_folds = data_folds_pole,
+      predictor_vars = pole_predictor_vars,
+      hyperparams = all_hyperparams$pole_hyperparameters,
+      model_mode = "classification",
+      save_model = FALSE # Saving is handled by the wrapper
+    )
+
+    # Train Position Model
+    pos_cols <- pole_cols[pole_cols != "pole"]
+    pos_data <- p_mod_data %>%
+      dplyr::filter(!is.na(.data$quali_position)) %>%
+      dplyr::select(dplyr::all_of(pos_cols))
+
+    pos_splits <- prepare_and_split_data(pos_data)
+    pos_predictor_vars <- setdiff(pos_cols, c("quali_position", id_cols))
+
+    position_final_fit <- train_stacked_model(
+      outcome_var = "quali_position",
+      model_name = paste("Quali Position", tools::toTitleCase(model_timing)),
+      train_data = pos_splits$train_data,
+      data_split = pos_splits$data_split,
+      data_folds = pos_splits$data_folds,
+      predictor_vars = pos_predictor_vars,
+      hyperparams = all_hyperparams$position_hyperparameters,
+      model_mode = "regression",
+      save_model = FALSE # Saving is handled by the wrapper
+    )
+
+    # The ordinal model is not part of the ensemble, so we train it separately
+    # regardless of the engine.
+  } else {
+    # ---- Single-Engine Model Training ----
+    cli::cli_inform("Using single-engine training process.")
+  }
 
   # ---- Pole Model Training ----
   cli::cli_rule("Training Pole Position Model ({.val {engine}})")
@@ -373,7 +426,7 @@ train_quali_models <- function(
     c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
   )
 
-  # ---- Quali Position Model Setup ----
+  # ---- Quali Position Model (Regression) Setup ----
   pos_cols <- pole_cols[pole_cols != "pole"]
 
   # The data for the position model should not be filtered or mutated based on
@@ -387,7 +440,7 @@ train_quali_models <- function(
   data_folds_pos <- pos_splits$data_folds
   data_split_pos <- pos_splits$data_split
 
-  # ---- Quali Position Model Training ----
+  # ---- Quali Position Model (Regression) Training ----
   cli::cli_rule(
     "Training Qualifying Position Model (Regression, {.val {engine}})"
   )
@@ -518,6 +571,35 @@ train_quali_models <- function(
     dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
+
+  if (engine == "ensemble") {
+    cli::cli_inform(
+      "Adding ensemble predictions as features for the ordinal model."
+    )
+
+    # Predict pole probability and quali position using the trained ensembles
+    pole_ensemble_preds <- predict(
+      pole_final_fit,
+      new_data = pos_class_data,
+      type = "prob"
+    )
+    pos_ensemble_preds <- predict(
+      position_final_fit,
+      new_data = pos_class_data,
+      type = "numeric"
+    )
+
+    # Add predictions as new columns
+    pos_class_data <- pos_class_data %>%
+      dplyr::mutate(
+        ensemble_pole_pred = pole_ensemble_preds$.pred_1,
+        ensemble_pos_pred = pos_ensemble_preds$.pred
+      )
+
+    # Re-split the data now that it has the new features
+    pos_class_splits <- prepare_and_split_data(pos_class_data)
+  }
+
   train_data_pos_class <- pos_class_splits$train_data
   data_split_pos_class <- pos_class_splits$data_split
 
@@ -922,47 +1004,109 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     )
   }
 
-  # ---- Train Binary Models ----
-  win_final <- train_binary_result_model(
-    "win",
-    "Win Model",
-    train_data,
-    data_split,
-    data_folds,
-    class_mod_spec,
-    grid,
-    predictor_vars
-  )
-  podium_final <- train_binary_result_model(
-    "podium",
-    "Podium Model",
-    train_data,
-    data_split,
-    data_folds,
-    class_mod_spec,
-    grid,
-    predictor_vars
-  )
-  t10_final <- train_binary_result_model(
-    "t10",
-    "T10 Model",
-    train_data,
-    data_split,
-    data_folds,
-    class_mod_spec,
-    grid,
-    predictor_vars
-  )
-  finish_final <- train_binary_result_model(
-    "finished",
-    "Finishing Model",
-    train_data,
-    data_split,
-    data_folds,
-    class_mod_spec,
-    grid,
-    predictor_vars
-  )
+  # ---- Ensemble Model Training ----
+  if (engine == "ensemble") {
+    cli::cli_inform("Using ensemble training process.")
+    all_hyperparams <- get_hyperparameters("results", scenario)
+
+    win_final <- train_stacked_model(
+      outcome_var = "win",
+      model_name = paste("Win", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$win_hyperparameters,
+      model_mode = "classification",
+      save_model = FALSE
+    )
+    podium_final <- train_stacked_model(
+      outcome_var = "podium",
+      model_name = paste("Podium", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$podium_hyperparameters,
+      model_mode = "classification",
+      save_model = FALSE
+    )
+    t10_final <- train_stacked_model(
+      outcome_var = "t10",
+      model_name = paste("T10", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$t10_hyperparameters,
+      model_mode = "classification",
+      save_model = FALSE
+    )
+    finish_final <- train_stacked_model(
+      outcome_var = "finished",
+      model_name = paste("Finish", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$finish_hyperparameters,
+      model_mode = "classification",
+      save_model = FALSE
+    )
+    position_final_fit <- train_stacked_model(
+      outcome_var = "position",
+      model_name = paste("Position", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$position_hyperparameters,
+      model_mode = "regression",
+      save_model = FALSE
+    )
+  } else {
+    # ---- Train Binary Models ----
+    win_final <- train_binary_result_model(
+      "win",
+      "Win Model",
+      train_data,
+      data_split,
+      data_folds,
+      class_mod_spec,
+      grid,
+      predictor_vars
+    )
+    podium_final <- train_binary_result_model(
+      "podium",
+      "Podium Model",
+      train_data,
+      data_split,
+      data_folds,
+      class_mod_spec,
+      grid,
+      predictor_vars
+    )
+    t10_final <- train_binary_result_model(
+      "t10",
+      "T10 Model",
+      train_data,
+      data_split,
+      data_folds,
+      class_mod_spec,
+      grid,
+      predictor_vars
+    )
+    finish_final <- train_binary_result_model(
+      "finished",
+      "Finishing Model",
+      train_data,
+      data_split,
+      data_folds,
+      class_mod_spec,
+      grid,
+      predictor_vars
+    )
+  }
 
   # ---- Train Position Model (Regression) ----
   cli::cli_rule("Training Position Model (Regression, {.val {engine}})")
@@ -1025,6 +1169,35 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 
   pos_class_data <- pos_data %>%
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+
+  if (engine == "ensemble") {
+    cli::cli_inform(
+      "Adding ensemble predictions as features for the ordinal model."
+    )
+
+    # Predict win probability and finishing position using the trained ensembles
+    win_ensemble_preds <- predict(
+      win_final,
+      new_data = pos_class_data,
+      type = "prob"
+    )
+    pos_ensemble_preds <- predict(
+      position_final_fit,
+      new_data = pos_class_data,
+      type = "numeric"
+    )
+
+    # Add predictions as new columns
+    pos_class_data <- pos_class_data %>%
+      dplyr::mutate(
+        ensemble_win_pred = win_ensemble_preds$.pred_1,
+        ensemble_pos_pred = pos_ensemble_preds$.pred
+      )
+
+    # Re-split the data now that it has the new features.
+    # This is important to ensure the new features are in the training set.
+    pos_class_splits <- prepare_and_split_data(pos_class_data)
+  }
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
   train_data_pos_class <- pos_class_splits$train_data
@@ -1302,7 +1475,7 @@ save_models <- function(model_list, model_timing) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
   is_quali <- any(grepl("quali", model_names, fixed = TRUE))
-  is_results <- any(
+  is_results <- all(
     model_names %in% c("win", "podium", "t10", "finish", "position")
   )
 
@@ -1324,7 +1497,13 @@ save_models <- function(model_list, model_timing) {
   }
 
   # Infer engine from model_list
-  engine <- model_list[[1]]$.workflow[[1]]$fit$actions$model$spec$engine # known to work for glmnet
+  first_model <- model_list[[1]]
+  if (inherits(first_model, "model_stack")) {
+    engine <- "ensemble"
+  } else {
+    # known to work for glmnet and other single-engine models
+    engine <- first_model$.workflow[[1]]$fit$actions$model$spec$engine
+  }
 
   file_path <- construct_model_path(
     model_type = model_type,
