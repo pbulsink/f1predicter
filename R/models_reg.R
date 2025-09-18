@@ -166,9 +166,15 @@ train_quali_models <- function(
         "Error in f1predicter:::train_quali_models: Package {.code kknn} needs to be installed"
       )
     }
+  } else if (engine == "ensemble") {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to use the {.val ensemble} engine."
+      )
+    }
   } else {
     cli::cli_abort(
-      "Parameter {.param engine} must be one of {.val {c('ranger', 'glmnet', 'nnet', 'kernlab', 'kknn')}}, not {.val {engine}}."
+      "Parameter {.param engine} must be one of {.val {c('ranger', 'glmnet', 'nnet', 'kernlab', 'kknn', 'ensemble')}}, not {.val {engine}}."
     )
   }
 
@@ -842,6 +848,33 @@ train_binary_result_model <- function(
 train_results_models <- function(data, scenario, engine = "ranger") {
   cli::cli_h1("Training Race Results Models")
   cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
+
+  # Engine and package checks
+  valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
+  if (!engine %in% valid_engines) {
+    cli::cli_abort(
+      "Parameter {.param engine} must be one of {.val {valid_engines}}, not {.val {engine}}."
+    )
+  }
+
+  if (engine != "ensemble") {
+    if (!requireNamespace(engine, quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg {engine}} must be installed to use the {.val {engine}} engine."
+      )
+    }
+  } else {
+    # engine == "ensemble"
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to use the {.val ensemble} engine."
+      )
+    }
+  }
+
+  if (!requireNamespace('future', quietly = TRUE)) {
+    future::plan("multisession")
+  }
   # ---- Common Data Prep ----
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Keep original for position model
