@@ -327,7 +327,7 @@ generate_new_data <- function(
     new_data$driver_practice_optimal_rank_avg <- nrow(new_data) * 3 / 4
     new_data$practice_avg_rank <- round(nrow(new_data) * 3 / 4)
     new_data$practice_best_rank <- round(nrow(new_data) / 2)
-    new_data$practice_optimal_rank <- round(nrew(new_data) / 2)
+    new_data$practice_optimal_rank <- round(nrow(new_data) / 2)
     new_data$practice_avg_gap <- 1.5
     new_data$practice_best_gap <- 1
   }
@@ -716,36 +716,22 @@ predict_quali_pos_class <- function(
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
   quali_models = NULL,
-  engine = NULL
+  engine = "ensemble"
 ) {
   if (is.null(quali_models)) {
-    if (is.null(engine) | engine == "ensemble") {
-      cli::cli_inform("Loading 'early' qualifying ENSEMBLE models from disk.")
-      # Assuming you save your ensembles with descriptive names
-      quali_models <- list(
-        quali_pole = load_ensemble_model("Quali Pole Early"),
-        quali_pos = load_ensemble_model("Quali Position Early")
-      )
-      # Load the default 'ranger' models to get the polr model
-      cli::cli_inform(
-        "Loading default 'ranger' model to get ordinal classification model."
-      )
-      default_models <- load_models(
-        model_type = "quali",
-        model_timing = "early",
-        engine = "ranger"
-      )
-      quali_models$quali_pos_class <- default_models$quali_pos_class
+    model_timing <- if (any(grepl("practice", names(new_data)))) {
+      "late"
     } else {
-      cli::cli_inform(
-        "Loading 'early' qualifying models for engine {.val {engine}} from disk."
-      )
-      quali_models <- load_models(
-        model_type = "quali",
-        model_timing = "early",
-        engine = engine
-      )
+      "early"
     }
+    cli::cli_inform(
+      "Loading '{model_timing}' qualifying models for engine {.val {engine}} from disk."
+    )
+    quali_models <- load_models(
+      model_type = "quali",
+      model_timing = model_timing,
+      engine = engine
+    )
   }
 
   # Check if all required models are in the list
@@ -758,8 +744,39 @@ predict_quali_round <- function(
 
   pole_preds <- predict_quali_pole(new_data, quali_models$quali_pole)
   pos_preds <- predict_quali_pos(new_data, quali_models$quali_pos)
+
+  # For ensemble models, the ordinal classification model (polr) was trained
+  # using the predictions from the other ensemble models as features. We need
+  # to replicate that here by adding those predictions to the new_data frame.
+  data_for_class_model <- if (engine == "ensemble") {
+    cli::cli_inform(
+      "Adding ensemble predictions as features for the ordinal model."
+    )
+    # Get the raw probability for pole and numeric prediction for position
+    pole_ensemble_preds <- stats::predict(
+      quali_models$quali_pole,
+      new_data,
+      type = "prob"
+    )
+    pos_ensemble_preds <- stats::predict(
+      quali_models$quali_pos,
+      new_data,
+      type = "numeric"
+    )
+
+    # Add them as new columns with the names expected by the polr model's recipe
+    new_data %>%
+      dplyr::mutate(
+        ensemble_pole_pred = pole_ensemble_preds$.pred_1,
+        ensemble_pos_pred = pos_ensemble_preds$.pred
+      )
+  } else {
+    # For single-engine models, no extra features are needed
+    new_data
+  }
+
   pos_class_preds <- predict_quali_pos_class(
-    new_data,
+    data_for_class_model,
     quali_models$quali_pos_class
   )
 
@@ -903,6 +920,45 @@ predict_position <- function(
   return(preds)
 }
 
+#' Predict Finishing Position (Classification)
+#'
+#' @param new_data A data frame of new data, typically from `generate_new_data()`.
+#' @param position_class_model A list containing the `polr` fit and recipe.
+#' @return A tibble with `driver_id`, `round`, `season`, and `likely_position_class`.
+#' @keywords internal
+predict_position_class <- function(
+  new_data = generate_next_race_data(),
+  position_class_model
+) {
+  # The polr model is not a workflow, so it needs special handling.
+  # It's a list containing the fit and the prepped recipe.
+  baked_new_data <- recipes::bake(
+    position_class_model$recipe,
+    new_data = new_data
+  )
+
+  preds <- new_data %>%
+    dplyr::mutate(
+      .pred = stats::predict(
+        position_class_model$fit,
+        newdata = baked_new_data,
+        type = "class"
+      ),
+      .probs = stats::predict(
+        position_class_model$fit,
+        newdata = baked_new_data,
+        type = "probs"
+      )
+    ) %>%
+    # The prediction is a factor, convert to numeric for sorting/comparison
+    dplyr::mutate(
+      likely_position_class = as.numeric(as.character(.data$.pred))
+    ) %>%
+    dplyr::select("driver_id", "round", "season", "likely_position_class") %>%
+    dplyr::arrange(.data$likely_position_class)
+  return(preds)
+}
+
 #' Predict Race Results for a Round
 #'
 #' @description
@@ -928,39 +984,25 @@ predict_position <- function(
 predict_round <- function(
   new_data = generate_next_race_data(),
   results_models = NULL,
-  engine = NULL
+  engine = "ensemble"
 ) {
   if (is.null(results_models)) {
-    if (is.null(engine) || engine == "ensemble") {
-      cli::cli_inform("Loading 'early' results ENSEMBLE models from disk.")
-      # Assuming you save your ensembles with descriptive names
-      results_models <- list(
-        win = load_ensemble_model("Win Early"),
-        podium = load_ensemble_model("Podium Early"),
-        t10 = load_ensemble_model("T10 Early"),
-        finish = load_ensemble_model("Finish Early"),
-        position = load_ensemble_model("Position Early")
-      )
-      # Load the default 'ranger' models to get the polr model
-      cli::cli_inform(
-        "Loading default 'ranger' model to get ordinal classification model."
-      )
-      default_models <- load_models(
-        model_type = "results",
-        model_timing = "early",
-        engine = "ranger"
-      )
-      results_models$position_class <- default_models$position_class
+    model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
+      "after_quali"
+    } else if (any(grepl("practice", names(new_data)))) {
+      "late"
     } else {
-      cli::cli_inform(
-        "Loading 'early' results models for engine {.val {engine}} from disk."
-      )
-      results_models <- load_models(
-        model_type = "results",
-        model_timing = "early",
-        engine = engine
-      )
+      "early"
     }
+
+    cli::cli_inform(
+      "Loading '{model_timing}' results models for engine {.val {engine}} from disk."
+    )
+    results_models <- load_models(
+      model_type = "results",
+      model_timing = model_timing,
+      engine = engine
+    )
   }
 
   # Check if all required models are in the list
@@ -984,13 +1026,49 @@ predict_round <- function(
   finish_preds <- predict_finish(new_data, results_models$finish)
   position_preds <- predict_position(new_data, results_models$position)
 
-  # The ordinal classification model is handled separately
-  # position_class_preds <- predict_position_class(new_data, results_models$position_class)
+  # For ensemble models, the ordinal classification model (polr) was trained
+  # using the predictions from the other ensemble models as features. We need
+  # to replicate that here by adding those predictions to the new_data frame.
+  data_for_class_model <- if (engine == "ensemble") {
+    cli::cli_inform(
+      "Adding ensemble predictions as features for the ordinal model."
+    )
+    # Get the raw probability for win and numeric prediction for position
+    win_ensemble_preds <- stats::predict(
+      results_models$win,
+      new_data,
+      type = "prob"
+    )
+    pos_ensemble_preds <- stats::predict(
+      results_models$position,
+      new_data,
+      type = "numeric"
+    )
+
+    # Add them as new columns with the names expected by the polr model's recipe
+    new_data %>%
+      dplyr::mutate(
+        ensemble_win_pred = win_ensemble_preds$.pred_1,
+        ensemble_pos_pred = pos_ensemble_preds$.pred
+      )
+  } else {
+    # For single-engine models, no extra features are needed
+    new_data
+  }
+
+  position_class_preds <- predict_position_class(
+    data_for_class_model,
+    results_models$position_class
+  )
 
   all_preds <- win_preds %>%
     dplyr::left_join(podium_preds, by = c("driver_id", "round", "season")) %>%
     dplyr::left_join(t10_preds, by = c("driver_id", "round", "season")) %>%
     dplyr::left_join(finish_preds, by = c("driver_id", "round", "season")) %>%
-    dplyr::left_join(position_preds, by = c("driver_id", "round", "season"))
+    dplyr::left_join(position_preds, by = c("driver_id", "round", "season")) %>%
+    dplyr::left_join(
+      position_class_preds,
+      by = c("driver_id", "round", "season")
+    )
   return(all_preds)
 }

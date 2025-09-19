@@ -202,7 +202,7 @@ train_stacked_model <- function(
   tictoc::toc()
 
   cli::cli_inform("Ensemble weights:")
-  print(autoplot(blended_ensemble, type = "weights"))
+  print(stacks::autoplot(blended_ensemble, type = "weights"))
 
   # Fit the final ensemble
   cli::cli_inform("Fitting final ensemble members on all training data...")
@@ -284,14 +284,39 @@ load_ensemble_model <- function(model_name) {
   return(model)
 }
 
-#' Get Optimal Model hyperparameters (2025-09)
-#' @description Model hyperparameters were determined in 2025-09
-#' and are conveniently returned by this function
+#' Get Pre-tuned Model Hyperparameters
 #'
-#' @param model What type of model to load hyperparameters for
-#' @param timing Early, late, or after-quali?
+#' @description
+#' Retrieves a list of pre-tuned hyperparameters for various model types and
+#' prediction scenarios. These hyperparameters were determined through a tuning
+#' process in September 2025 and are hard-coded into this function for
+#' convenience and reproducibility.
 #'
-#' @return a list of list of hyperparameters by engine.
+#' This function is a helper to avoid re-running computationally expensive
+#' tuning grids when training ensemble models.
+#'
+#' @param model A character string specifying the type of prediction model.
+#'   Valid options are:
+#'   \itemize{
+#'     \item `"quali"`: For qualifying prediction models (pole position and final position).
+#'     \item `"results"`: For race result prediction models (win, podium, top 10, finish status, and final position).
+#'   }
+#' @param timing A character string indicating the timing of the prediction
+#'   within a race weekend. This determines which set of features were
+#'   available for tuning. Valid options depend on `model`:
+#'   \itemize{
+#'     \item If `model = 'quali'`: `"early"` or `"late"`.
+#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after-quali"`.
+#'   }
+#'
+#' @return A named list. Each name corresponds to a specific prediction task
+#'   (e.g., `pole_hyperparameters`, `position_hyperparameters`), and each value
+#'   is another named list where keys are the `parsnip` engine (e.g., 'glmnet',
+#'   'ranger') and values are the corresponding optimal hyperparameters.
+#' @examples
+#' \dontrun{
+#'   get_hyperparameters(model = 'quali', timing = 'early')
+#' }
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
   if (model == 'quali') {
     if (timing == 'early') {

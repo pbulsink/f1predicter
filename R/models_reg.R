@@ -136,46 +136,26 @@ train_quali_models <- function(
   use_practice_data = FALSE,
   engine = "ranger"
 ) {
-  if (engine == 'ranger') {
-    if (!requireNamespace('ranger', quietly = TRUE)) {
+  valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
+  if (!engine %in% valid_engines) {
+    cli::cli_abort(
+      "Parameter {.param engine} must be one of {.val {valid_engines}}, not {.val {engine}}."
+    )
+  }
+
+  if (engine != "ensemble") {
+    if (!requireNamespace(engine, quietly = TRUE)) {
       cli::cli_abort(
-        "Error in f1predicter:::train_quali_models. Package {.code ranger} needs to be installed"
-      )
-    }
-  } else if (engine == "glmnet") {
-    if (!requireNamespace('glmnet', quietly = TRUE)) {
-      cli::cli_abort(
-        "Error in f1predicter:::train_quali_models. Package {.code glmnet} needs to be installed"
-      )
-    }
-  } else if (engine == "nnet") {
-    if (!requireNamespace('nnet', quietly = TRUE)) {
-      cli::cli_abort(
-        "Error in f1predicter:::train_quali_models. Package {.code nnet} needs to be installed"
-      )
-    }
-  } else if (engine == "kernlab") {
-    if (!requireNamespace('kernlab', quietly = TRUE)) {
-      cli::cli_abort(
-        "Error in f1predicter:::train_quali_models: Package {.code kernlab} needs to be installed"
-      )
-    }
-  } else if (engine == "kknn") {
-    if (!requireNamespace('kknn', quietly = TRUE)) {
-      cli::cli_abort(
-        "Error in f1predicter:::train_quali_models: Package {.code kknn} needs to be installed"
+        "Package {.pkg {engine}} must be installed to use the {.val {engine}} engine."
       )
     }
   } else if (engine == "ensemble") {
+    # engine == "ensemble"
     if (!requireNamespace("stacks", quietly = TRUE)) {
       cli::cli_abort(
         "Package {.pkg stacks} must be installed to use the {.val ensemble} engine."
       )
     }
-  } else {
-    cli::cli_abort(
-      "Parameter {.param engine} must be one of {.val {c('ranger', 'glmnet', 'nnet', 'kernlab', 'kknn', 'ensemble')}}, not {.val {engine}}."
-    )
   }
 
   cli::cli_h1("Training Qualifying Models")
@@ -303,267 +283,264 @@ train_quali_models <- function(
     # regardless of the engine.
   } else {
     # ---- Single-Engine Model Training ----
-    cli::cli_inform("Using single-engine training process.")
+    # ---- Pole Model Training ----
+    cli::cli_rule("Training Pole Position Model ({.val {engine}})")
+    formula <- reformulate(
+      pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
+      response = "pole"
+    )
+    pole_recipe <- recipes::recipe(
+      formula,
+      data = train_data_pole
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+
+    if (engine == "ranger") {
+      pole_model_spec <- parsnip::rand_forest(
+        trees = 1000,
+        mtry = tune::tune(),
+        min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
+
+      pole_grid <- dials::grid_regular(
+        dials::finalize(
+          dials::mtry(),
+          train_data_pole[, setdiff(
+            pole_cols,
+            c(id_cols, "pole", "quali_position")
+          )]
+        ),
+        dials::finalize(
+          dials::min_n(),
+          train_data_pole[, setdiff(
+            pole_cols,
+            c(id_cols, "pole", "quali_position")
+          )]
+        ),
+        levels = 5
+      )
+    } else if (engine == "glmnet") {
+      pole_model_spec <- parsnip::logistic_reg(
+        penalty = tune::tune(),
+        mixture = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("glmnet")
+
+      pole_grid <- dials::grid_regular(
+        dials::penalty(),
+        dials::mixture(),
+        levels = 5
+      )
+    } else if (engine == "nnet") {
+      pole_model_spec <- parsnip::mlp(
+        hidden_units = tune::tune(),
+        penalty = tune::tune(),
+        epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("nnet")
+
+      pole_grid <- dials::grid_regular(
+        dials::hidden_units(),
+        dials::penalty(),
+        dials::epochs(),
+        levels = 4
+      )
+    } else if (engine == "kernlab") {
+      pole_model_spec <- parsnip::svm_rbf(
+        cost = tune::tune(),
+        rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
+
+      pole_grid <- dials::grid_regular(
+        dials::cost(),
+        dials::rbf_sigma(),
+        levels = 4
+      )
+    } else if (engine == "kknn") {
+      pole_model_spec <- parsnip::nearest_neighbor(
+        neighbors = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kknn")
+
+      pole_grid <- dials::grid_regular(
+        dials::neighbors(range = c(5, 25)),
+        levels = 5
+      )
+    } else {
+      # This case should be caught by the initial check, but is here for safety.
+      cli::cli_abort("Invalid engine specified: {.val {engine}}.")
+    }
+
+    pole_wflow <- workflows::workflow() %>%
+      workflows::add_model(pole_model_spec) %>%
+      workflows::add_recipe(pole_recipe)
+
+    tictoc::tic("Trained Pole Model")
+    pole_res <- pole_wflow %>%
+      tune::tune_grid(
+        resamples = data_folds_pole,
+        grid = pole_grid,
+        metrics = metrics_binary
+      )
+
+    tictoc::toc()
+
+    pole_best <- pole_res %>%
+      tune::select_best(metric = "mn_log_loss")
+
+    pole_final <- pole_wflow %>%
+      tune::finalize_workflow(pole_best)
+
+    pole_final_fit <- pole_final %>%
+      tune::last_fit(data_split_pole, metrics = metrics_binary)
+
+    report_model_metrics(
+      pole_final_fit,
+      "Pole Quali Model",
+      c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
+    )
+
+    # ---- Quali Position Model (Regression) Setup ----
+    pos_cols <- pole_cols[pole_cols != "pole"]
+
+    # The data for the position model should not be filtered or mutated based on
+    # the race result 'position'. We are predicting 'quali_position'.
+    pos_data <- p_mod_data %>%
+      dplyr::filter(!is.na(.data$quali_position)) %>% # Ensure we have a quali result
+      dplyr::select(dplyr::all_of(pos_cols))
+
+    pos_splits <- prepare_and_split_data(pos_data)
+    train_data_pos <- pos_splits$train_data
+    data_folds_pos <- pos_splits$data_folds
+    data_split_pos <- pos_splits$data_split
+
+    # ---- Quali Position Model (Regression) Training ----
+    cli::cli_rule(
+      "Training Qualifying Position Model (Regression, {.val {engine}})"
+    )
+    formula <- reformulate(
+      pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
+      response = "quali_position"
+    )
+    position_recipe <- recipes::recipe(
+      formula,
+      data = train_data_pos
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+
+    if (engine == "ranger") {
+      position_model_spec <- parsnip::rand_forest(
+        trees = 1000,
+        mtry = tune::tune(),
+        min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
+
+      position_grid <- dials::grid_regular(
+        dials::finalize(
+          dials::mtry(),
+          train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
+        ),
+        dials::finalize(
+          dials::min_n(),
+          train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
+        ),
+        levels = 5
+      )
+    } else if (engine == "glmnet") {
+      position_model_spec <- parsnip::linear_reg(
+        penalty = tune::tune(),
+        mixture = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("glmnet")
+
+      position_grid <- dials::grid_regular(
+        dials::penalty(),
+        dials::mixture(),
+        levels = 5
+      )
+    } else if (engine == "nnet") {
+      position_model_spec <- parsnip::mlp(
+        hidden_units = tune::tune(),
+        penalty = tune::tune(),
+        epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("nnet")
+
+      position_grid <- dials::grid_regular(
+        dials::hidden_units(),
+        dials::penalty(),
+        dials::epochs(),
+        levels = 4
+      )
+    } else if (engine == "kernlab") {
+      position_model_spec <- parsnip::svm_rbf(
+        cost = tune::tune(),
+        rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
+
+      position_grid <- dials::grid_regular(
+        dials::cost(),
+        dials::rbf_sigma(),
+        levels = 4
+      )
+    } else if (engine == "kknn") {
+      position_model_spec <- parsnip::nearest_neighbor(
+        neighbors = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kknn")
+
+      position_grid <- dials::grid_regular(
+        dials::neighbors(range = c(5, 25)),
+        levels = 5
+      )
+    }
+
+    position_wflow <- workflows::workflow() %>%
+      workflows::add_model(position_model_spec) %>%
+      workflows::add_recipe(position_recipe)
+
+    tictoc::tic("Trained Position Model")
+    position_res <- position_wflow %>%
+      tune::tune_grid(
+        resamples = data_folds_pos,
+        grid = position_grid,
+        metrics = metrics_reg
+      )
+    tictoc::toc()
+
+    position_best <- position_res %>%
+      tune::select_best(metric = "rmse")
+
+    position_final <- position_wflow %>%
+      tune::finalize_workflow(position_best)
+
+    position_final_fit <- position_final %>%
+      tune::last_fit(data_split_pos, metrics = metrics_reg)
+
+    report_model_metrics(
+      position_final_fit,
+      "Quali Position Model",
+      c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+    )
   }
-
-  # ---- Pole Model Training ----
-  cli::cli_rule("Training Pole Position Model ({.val {engine}})")
-  formula <- reformulate(
-    pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
-    response = "pole"
-  )
-  pole_recipe <- recipes::recipe(
-    formula,
-    data = train_data_pole
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  if (engine == "ranger") {
-    pole_model_spec <- parsnip::rand_forest(
-      trees = 1000,
-      mtry = tune::tune(),
-      min_n = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
-      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
-
-    pole_grid <- dials::grid_regular(
-      dials::finalize(
-        dials::mtry(),
-        train_data_pole[, setdiff(
-          pole_cols,
-          c(id_cols, "pole", "quali_position")
-        )]
-      ),
-      dials::finalize(
-        dials::min_n(),
-        train_data_pole[, setdiff(
-          pole_cols,
-          c(id_cols, "pole", "quali_position")
-        )]
-      ),
-      levels = 5
-    )
-  } else if (engine == "glmnet") {
-    pole_model_spec <- parsnip::logistic_reg(
-      penalty = tune::tune(),
-      mixture = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
-      parsnip::set_engine("glmnet")
-
-    pole_grid <- dials::grid_regular(
-      dials::penalty(),
-      dials::mixture(),
-      levels = 5
-    )
-  } else if (engine == "nnet") {
-    pole_model_spec <- parsnip::mlp(
-      hidden_units = tune::tune(),
-      penalty = tune::tune(),
-      epochs = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
-      parsnip::set_engine("nnet")
-
-    pole_grid <- dials::grid_regular(
-      dials::hidden_units(),
-      dials::penalty(),
-      dials::epochs(),
-      levels = 4
-    )
-  } else if (engine == "kernlab") {
-    pole_model_spec <- parsnip::svm_rbf(
-      cost = tune::tune(),
-      rbf_sigma = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
-      parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
-
-    pole_grid <- dials::grid_regular(
-      dials::cost(),
-      dials::rbf_sigma(),
-      levels = 4
-    )
-  } else if (engine == "kknn") {
-    pole_model_spec <- parsnip::nearest_neighbor(
-      neighbors = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
-      parsnip::set_engine("kknn")
-
-    pole_grid <- dials::grid_regular(
-      dials::neighbors(range = c(5, 25)),
-      levels = 5
-    )
-  } else {
-    # This case should be caught by the initial check, but is here for safety.
-    cli::cli_abort("Invalid engine specified: {.val {engine}}.")
-  }
-
-  pole_wflow <- workflows::workflow() %>%
-    workflows::add_model(pole_model_spec) %>%
-    workflows::add_recipe(pole_recipe)
-
-  tictoc::tic("Trained Pole Model")
-  pole_res <- pole_wflow %>%
-    tune::tune_grid(
-      resamples = data_folds_pole,
-      grid = pole_grid,
-      metrics = metrics_binary
-    )
-
-  tictoc::toc()
-
-  pole_best <- pole_res %>%
-    tune::select_best(metric = "mn_log_loss")
-
-  pole_final <- pole_wflow %>%
-    tune::finalize_workflow(pole_best)
-
-  pole_final_fit <- pole_final %>%
-    tune::last_fit(data_split_pole, metrics = metrics_binary)
-
-  report_model_metrics(
-    pole_final_fit,
-    "Pole Quali Model",
-    c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
-  )
-
-  # ---- Quali Position Model (Regression) Setup ----
-  pos_cols <- pole_cols[pole_cols != "pole"]
-
-  # The data for the position model should not be filtered or mutated based on
-  # the race result 'position'. We are predicting 'quali_position'.
-  pos_data <- p_mod_data %>%
-    dplyr::filter(!is.na(.data$quali_position)) %>% # Ensure we have a quali result
-    dplyr::select(dplyr::all_of(pos_cols))
-
-  pos_splits <- prepare_and_split_data(pos_data)
-  train_data_pos <- pos_splits$train_data
-  data_folds_pos <- pos_splits$data_folds
-  data_split_pos <- pos_splits$data_split
-
-  # ---- Quali Position Model (Regression) Training ----
-  cli::cli_rule(
-    "Training Qualifying Position Model (Regression, {.val {engine}})"
-  )
-  formula <- reformulate(
-    pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
-    response = "quali_position"
-  )
-  position_recipe <- recipes::recipe(
-    formula,
-    data = train_data_pos
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
-
-  if (engine == "ranger") {
-    position_model_spec <- parsnip::rand_forest(
-      trees = 1000,
-      mtry = tune::tune(),
-      min_n = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
-      parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
-
-    position_grid <- dials::grid_regular(
-      dials::finalize(
-        dials::mtry(),
-        train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
-      ),
-      dials::finalize(
-        dials::min_n(),
-        train_data_pos[, setdiff(pos_cols, c(id_cols, "quali_position"))]
-      ),
-      levels = 5
-    )
-  } else if (engine == "glmnet") {
-    position_model_spec <- parsnip::linear_reg(
-      penalty = tune::tune(),
-      mixture = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
-      parsnip::set_engine("glmnet")
-
-    position_grid <- dials::grid_regular(
-      dials::penalty(),
-      dials::mixture(),
-      levels = 5
-    )
-  } else if (engine == "nnet") {
-    position_model_spec <- parsnip::mlp(
-      hidden_units = tune::tune(),
-      penalty = tune::tune(),
-      epochs = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
-      parsnip::set_engine("nnet")
-
-    position_grid <- dials::grid_regular(
-      dials::hidden_units(),
-      dials::penalty(),
-      dials::epochs(),
-      levels = 4
-    )
-  } else if (engine == "kernlab") {
-    position_model_spec <- parsnip::svm_rbf(
-      cost = tune::tune(),
-      rbf_sigma = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
-      parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
-
-    position_grid <- dials::grid_regular(
-      dials::cost(),
-      dials::rbf_sigma(),
-      levels = 4
-    )
-  } else if (engine == "kknn") {
-    position_model_spec <- parsnip::nearest_neighbor(
-      neighbors = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
-      parsnip::set_engine("kknn")
-
-    position_grid <- dials::grid_regular(
-      dials::neighbors(range = c(5, 25)),
-      levels = 5
-    )
-  }
-
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(position_model_spec) %>%
-    workflows::add_recipe(position_recipe)
-
-  tictoc::tic("Trained Position Model")
-  position_res <- position_wflow %>%
-    tune::tune_grid(
-      resamples = data_folds_pos,
-      grid = position_grid,
-      metrics = metrics_reg
-    )
-  tictoc::toc()
-
-  position_best <- position_res %>%
-    tune::select_best(metric = "rmse")
-
-  position_final <- position_wflow %>%
-    tune::finalize_workflow(position_best)
-
-  position_final_fit <- position_final %>%
-    tune::last_fit(data_split_pos, metrics = metrics_reg)
-
-  report_model_metrics(
-    position_final_fit,
-    "Quali Position Model",
-    c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
-  )
-
   # ---- Quali Position Classification Model (Ordered Logistic) ----
   cli::cli_rule("Training Qualifying Position Model (Ordinal, polr)")
 
@@ -577,6 +554,11 @@ train_quali_models <- function(
     dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
+
+  formula <- reformulate(
+    pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
+    response = "quali_position"
+  )
 
   if (engine == "ensemble") {
     cli::cli_inform(
@@ -604,13 +586,23 @@ train_quali_models <- function(
 
     # Re-split the data now that it has the new features
     pos_class_splits <- prepare_and_split_data(pos_class_data)
+
+    # Add those columns to the formulas
+    formula <- reformulate(
+      c(
+        pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
+        "ensemble_pole_pred",
+        "ensemble_pos_pred"
+      ),
+      response = "quali_position"
+    )
   }
 
   train_data_pos_class <- pos_class_splits$train_data
   data_split_pos_class <- pos_class_splits$data_split
 
   pos_class_recipe <- recipes::recipe(
-    quali_position ~ .,
+    formula,
     data = train_data_pos_class
   ) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
@@ -863,7 +855,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
         "Package {.pkg {engine}} must be installed to use the {.val {engine}} engine."
       )
     }
-  } else {
+  } else if (engine == "ensemble") {
     # engine == "ensemble"
     if (!requireNamespace("stacks", quietly = TRUE)) {
       cli::cli_abort(
@@ -926,6 +918,8 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     "late" = c(base_cols, practice_cols, outcome_cols),
     "after_quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
   )
+
+  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
 
   # ---- Data Splits ----
   splits <- prepare_and_split_data(data, columns = results_cols)
@@ -1030,11 +1024,6 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       dials::neighbors(range = c(5, 25)),
       levels = 5
     )
-  } else {
-    # This case should be caught by an initial check if added, but is here for safety.
-    cli::cli_abort(
-      "Invalid engine specified: {.val {engine}}. Must be one of {.val {c('ranger', 'glmnet', 'nnet', 'kernlab', 'kknn')}}."
-    )
   }
 
   # ---- Ensemble Model Training ----
@@ -1097,8 +1086,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       model_mode = "regression",
       save_model = FALSE
     )
-  } else {
-    # ---- Train Binary Models ----
+  } else { # ---- Train Individual engine Binary Models ----
     win_final <- train_binary_result_model(
       "win",
       "Win Model",
@@ -1139,68 +1127,73 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       grid,
       predictor_vars
     )
-  }
 
-  # ---- Train Position Model (Regression) ----
-  cli::cli_rule("Training Position Model (Regression, {.val {engine}})")
-  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
-  pos_data <- p_mod_data %>%
-    dplyr::select(dplyr::all_of(pos_cols))
+    # ---- Train Position Model (Regression) ----
+    cli::cli_rule("Training Position Model (Regression, {.val {engine}})")
+    pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
+    pos_data <- data %>%
+      dplyr::select(dplyr::all_of(pos_cols))
 
-  pos_splits <- prepare_and_split_data(pos_data)
-  pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
+    pos_splits <- prepare_and_split_data(pos_data)
+    train_data <- pos_splits$train_data
+    data_split <- pos_splits$data_split
+    data_folds <- pos_splits$data_folds
 
-  position_formula <- reformulate(pos_predictor_vars, response = "position")
+    pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
 
-  position_recipe <- recipes::recipe(
-    position_formula,
-    data = train_data
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
+    position_formula <- reformulate(pos_predictor_vars, response = "position")
 
-  position_wflow <- workflows::workflow() %>%
-    workflows::add_model(reg_mod_spec) %>%
-    workflows::add_recipe(position_recipe)
+    position_recipe <- recipes::recipe(
+      position_formula,
+      data = train_data
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
 
-  metrics_reg <- yardstick::metric_set(
-    yardstick::rmse,
-    yardstick::mae,
-    yardstick::rsq
-  )
-  tictoc::tic("Trained Position Model")
-  position_res <- tune::tune_grid(
-    position_wflow,
-    resamples = pos_splits$data_folds,
-    grid = grid,
-    metrics = metrics_reg
-  )
-  tictoc::toc()
+    position_wflow <- workflows::workflow() %>%
+      workflows::add_model(reg_mod_spec) %>%
+      workflows::add_recipe(position_recipe)
 
-  position_best <- position_res %>%
-    tune::select_best(metric = "rmse")
-  tictoc::toc(log = T)
-
-  position_final_wflow <- position_wflow %>%
-    tune::finalize_workflow(position_best)
-
-  position_final_fit <- position_final_wflow %>%
-    tune::last_fit(
-      pos_splits$data_split,
+    metrics_reg <- yardstick::metric_set(
+      yardstick::rmse,
+      yardstick::mae,
+      yardstick::rsq
+    )
+    tictoc::tic("Trained Position Model")
+    position_res <- tune::tune_grid(
+      position_wflow,
+      resamples = pos_splits$data_folds,
+      grid = grid,
       metrics = metrics_reg
     )
+    tictoc::toc()
 
-  report_model_metrics(
-    position_final_fit,
-    "Position Model",
-    c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
-  )
+    position_best <- position_res %>%
+      tune::select_best(metric = "rmse")
+    tictoc::toc(log = T)
+
+    position_final_wflow <- position_wflow %>%
+      tune::finalize_workflow(position_best)
+
+    position_final_fit <- position_final_wflow %>%
+      tune::last_fit(
+        pos_splits$data_split,
+        metrics = metrics_reg
+      )
+
+    report_model_metrics(
+      position_final_fit,
+      "Position Model",
+      c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+    )
+  }
 
   # ---- Train Position Model (Ordinal Classification) ----
   cli::cli_rule("Training Position Model (Ordinal, polr)")
 
-  pos_class_data <- pos_data %>%
+  pos_class_data <- data %>%
+    dplyr::select(dplyr::all_of(pos_cols)) %>%
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
 
   if (engine == "ensemble") {
@@ -1230,6 +1223,10 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     # Re-split the data now that it has the new features.
     # This is important to ensure the new features are in the training set.
     pos_class_splits <- prepare_and_split_data(pos_class_data)
+    position_formula <- reformulate(
+      c(pos_predictor_vars, 'ensemble_win_pred', 'ensemble_pos_pred'),
+      response = "position"
+    )
   }
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
@@ -1554,14 +1551,6 @@ save_models <- function(model_list, model_timing) {
       cli::cli_inform("Saving polr model object for: {.val {model_name}}")
       final_list[[model_name]] <- model_object
       next # Skip to the next model
-    }
-
-    # Proceed with butchering for standard last_fit objects
-    if (!inherits(model_object, "last_fit")) {
-      cli::cli_warn(
-        "Object {.val {model_name}} is not a 'last_fit' object or a recognized custom model and will be skipped."
-      )
-      next
     }
 
     # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness

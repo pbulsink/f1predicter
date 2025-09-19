@@ -174,7 +174,9 @@ format_quali_skeet_predictions <- function(predictions) {
     )
 
   race_name <- get_race_name(current_season, current_round)
-  race_hashtag <- stringr::str_replace_all(race_name, " ", "")
+  race_hashtag <- stringr::str_replace_all(race_name, "Grand", "G")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, " ", "")
 
   # Top 5 for Pole
   pole_preds <- predictions_formatted %>%
@@ -190,7 +192,7 @@ format_quali_skeet_predictions <- function(predictions) {
 
   # Top 5 likely qualifying positions (ordered by pole probability)
   position_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$pole_odd)) %>%
+    dplyr::arrange(.data$pole_odd) %>%
     dplyr::slice_head(n = 5) %>%
     dplyr::mutate(
       text = glue::glue(
@@ -207,7 +209,7 @@ format_quali_skeet_predictions <- function(predictions) {
     "Pole Position Chance:",
     "{pole_preds}",
     "",
-    "🔮 Likely Qualifying Position (Top 5):",
+    "🔮 Most Likely Qualifying Position (Top 5):",
     "{position_preds}",
     .sep = "\n"
   )
@@ -330,19 +332,16 @@ format_quali_prob_table <- function(predictions) {
 
   race_name <- get_race_name(current_season, current_round)
 
-  probs <- as.data.frame(prob_data$.probs)
+  probs <- as.data.frame(predictions_formatted$.probs)
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted %>%
-    dplyr::select(
-      .data$driver_name,
-      .data$likely_quali_position_class
-    ) %>%
+    dplyr::select("driver_name", "likely_quali_position_class") %>%
     dplyr::bind_cols(probs) %>%
-    dplyr::arrange(-.data$`1`) %>%
-    dplyr::select(.data$driver_name, dplyr::matches("^\\d+$"))
+    dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
 
   # Create the gt table
-  prob_data %>%
+  prob_table <- prob_data %>%
+    dplyr::select(-"likely_quali_position_class") %>%
     gt::gt() %>%
     gt::tab_header(
       title = gt::md("**Qualifying Position Probabilities**"),
@@ -353,15 +352,20 @@ format_quali_prob_table <- function(predictions) {
       columns = -driver_name
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
-    gt::data_color(
-      columns = -driver_name,
-      palette = "viridis",
-      domain = range(as.matrix(prob_data[, -1]), na.rm = TRUE)
-    ) %>%
+    #gt::data_color(
+    #  columns = -driver_name,
+    #  palette = "viridis",
+    #  domain = range(as.matrix(prob_data[, 3:ncol(prob_data)]), na.rm = TRUE)
+    #) %>%
     gt::cols_label(driver_name = "Driver") %>%
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
     )
+  for(i in seq_len(nrow(prob_data))){
+    prob_table <- gt::data_color(prob_table, columns = -driver_name, rows = i, direction = 'row',palette = "viridis")
+  }
+  prob_table
+
 }

@@ -2,19 +2,43 @@
 % Please edit documentation in R/models_ensemble.R
 \name{get_hyperparameters}
 \alias{get_hyperparameters}
-\title{Get Optimal Model hyperparameters (2025-09)}
+\title{Get Pre-tuned Model Hyperparameters}
 \usage{
 get_hyperparameters(model = "quali", timing = "early")
 }
 \arguments{
-\item{model}{What type of model to load hyperparameters for}
+\item{model}{A character string specifying the type of prediction model.
+Valid options are:
+\itemize{
+  \item `"quali"`: For qualifying prediction models (pole position and final position).
+  \item `"results"`: For race result prediction models (win, podium, top 10, finish status, and final position).
+}}
 
-\item{timing}{Early, late, or after-quali?}
+\item{timing}{A character string indicating the timing of the prediction
+within a race weekend. This determines which set of features were
+available for tuning. Valid options depend on `model`:
+\itemize{
+  \item If `model = 'quali'`: `"early"` or `"late"`.
+  \item If `model = 'results'`: `"early"`, `"late"`, or `"after-quali"`.
+}}
 }
 \value{
-a list of list of hyperparameters by engine.
+A named list. Each name corresponds to a specific prediction task
+  (e.g., `pole_hyperparameters`, `position_hyperparameters`), and each value
+  is another named list where keys are the `parsnip` engine (e.g., 'glmnet',
+  'ranger') and values are the corresponding optimal hyperparameters.
 }
 \description{
-Model hyperparameters were determined in 2025-09
-and are conveniently returned by this function
+Retrieves a list of pre-tuned hyperparameters for various model types and
+prediction scenarios. These hyperparameters were determined through a tuning
+process in September 2025 and are hard-coded into this function for
+convenience and reproducibility.
+
+This function is a helper to avoid re-running computationally expensive
+tuning grids when training ensemble models.
+}
+\examples{
+\dontrun{
+  get_hyperparameters(model = 'quali', timing = 'early')
+}
 }

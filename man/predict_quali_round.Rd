@@ -7,7 +7,7 @@
 predict_quali_round(
   new_data = generate_next_race_data(),
   quali_models = NULL,
-  engine = NULL
+  engine = "ensemble"
 )
 }
 \arguments{

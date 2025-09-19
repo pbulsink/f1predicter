@@ -7,7 +7,7 @@
 predict_round(
   new_data = generate_next_race_data(),
   results_models = NULL,
-  engine = NULL
+  engine = "ensemble"
 )
 }
 \arguments{
