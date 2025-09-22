@@ -1075,18 +1075,8 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       model_mode = "classification",
       save_model = FALSE
     )
-    position_final_fit <- train_stacked_model(
-      outcome_var = "position",
-      model_name = paste("Position", tools::toTitleCase(scenario)),
-      train_data = train_data,
-      data_split = data_split,
-      data_folds = data_folds,
-      predictor_vars = predictor_vars,
-      hyperparams = all_hyperparams$position_hyperparameters,
-      model_mode = "regression",
-      save_model = FALSE
-    )
-  } else { # ---- Train Individual engine Binary Models ----
+  } else {
+    # ---- Train Individual engine Binary Models ----
     win_final <- train_binary_result_model(
       "win",
       "Win Model",
@@ -1127,21 +1117,36 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       grid,
       predictor_vars
     )
+  }
 
+  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
+  pos_data <- data %>%
+    dplyr::select(dplyr::all_of(pos_cols))
+
+  pos_splits <- prepare_and_split_data(pos_data)
+  train_data <- pos_splits$train_data
+  data_split <- pos_splits$data_split
+  data_folds <- pos_splits$data_folds
+
+  pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
+
+  position_formula <- reformulate(pos_predictor_vars, response = "position")
+
+  if (engine == 'ensemble') {
+    position_final_fit <- train_stacked_model(
+      outcome_var = "position",
+      model_name = paste("Position", tools::toTitleCase(scenario)),
+      train_data = train_data,
+      data_split = data_split,
+      data_folds = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams = all_hyperparams$position_hyperparameters,
+      model_mode = "regression",
+      save_model = FALSE
+    )
+  } else {
     # ---- Train Position Model (Regression) ----
     cli::cli_rule("Training Position Model (Regression, {.val {engine}})")
-    pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
-    pos_data <- data %>%
-      dplyr::select(dplyr::all_of(pos_cols))
-
-    pos_splits <- prepare_and_split_data(pos_data)
-    train_data <- pos_splits$train_data
-    data_split <- pos_splits$data_split
-    data_folds <- pos_splits$data_folds
-
-    pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
-
-    position_formula <- reformulate(pos_predictor_vars, response = "position")
 
     position_recipe <- recipes::recipe(
       position_formula,
@@ -1505,8 +1510,8 @@ save_models <- function(model_list, model_timing) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
   is_quali <- any(grepl("quali", model_names, fixed = TRUE))
-  is_results <- all(
-    model_names %in% c("win", "podium", "t10", "finish", "position")
+  is_results <- any(
+    model_names %in% c("win", "podium", "t10", "finish")
   )
 
   if (is_quali && is_results) {
@@ -1547,8 +1552,10 @@ save_models <- function(model_list, model_timing) {
     model_object <- model_list[[model_name]]
 
     # Handle the special case for the polr model, which is a list(fit, recipe)
+    # TODO: Update butcher to handle polr models.
     if (inherits(model_object$fit, "polr")) {
-      cli::cli_inform("Saving polr model object for: {.val {model_name}}")
+      attr(model_object$terms, ".Environment") <- rlang::base_env()
+      cli::cli_inform("Saving butchered polr model object for: {.val {model_name}}")
       final_list[[model_name]] <- model_object
       next # Skip to the next model
     }
@@ -1556,15 +1563,10 @@ save_models <- function(model_list, model_timing) {
     # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness
     tryCatch(
       {
-        # Extract the fitted workflow from the last_fit object
-        fitted_wf <- model_object$.workflow[[1]]
-        # Butcher the workflow
-        butchered_wf <- butcher::butcher(fitted_wf)
-        # Replace the original workflow with the butchered one
-        model_object$.workflow[[1]] <- butchered_wf
+        butchered_model <- butcher::butcher(model_object)
 
         cli::cli_inform("Butchered workflow for model: {.val {model_name}}")
-        final_list[[model_name]] <- model_object
+        final_list[[model_name]] <- butchered_model
       },
       error = function(e) {
         cli::cli_warn(
