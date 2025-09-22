@@ -295,7 +295,7 @@ post_quali_predictions <- function(predictions) {
 #' qualifying position.
 #'
 #' @details
-#' The table is formatted with a color heatmap, where darker/more colorful
+#' The table is formatted with a color heatmap, where brighter/more colorful
 #' cells indicate a higher probability. It requires the `gt` package to be
 #' installed. The function returns a `gt` object which can be printed or saved
 #' using `gt::gtsave()`.
@@ -352,16 +352,14 @@ format_quali_prob_table <- function(predictions) {
       columns = -driver_name
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
-    #gt::data_color(
-    #  columns = -driver_name,
-    #  palette = "viridis",
-    #  domain = range(as.matrix(prob_data[, 3:ncol(prob_data)]), na.rm = TRUE)
-    #) %>%
     gt::cols_label(driver_name = "Driver") %>%
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
+    ) %>%
+    gt::tab_source_note(
+      source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
     )
   for(i in seq_len(nrow(prob_data))){
     prob_table <- gt::data_color(prob_table, columns = -driver_name, rows = i, direction = 'row',palette = "viridis")

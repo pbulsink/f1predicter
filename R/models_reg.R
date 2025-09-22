@@ -916,7 +916,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     scenario,
     "early" = c(base_cols, outcome_cols),
     "late" = c(base_cols, practice_cols, outcome_cols),
-    "after_quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
+    "after-quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
   )
 
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
@@ -1354,7 +1354,7 @@ model_results_after_quali <- function(
 ) {
   models <- train_results_models(
     data,
-    scenario = "after_quali",
+    scenario = "after-quali",
     engine = engine
   )
   if (save_model) {

@@ -59,6 +59,7 @@ generate_new_data <- function(
     ]
   }
 
+  cli::cli_inform("Building next race data tibbles")
   new_data <- tibble::as_tibble(drivers) %>%
     dplyr::mutate(
       season = season,
@@ -280,6 +281,7 @@ generate_new_data <- function(
 
   # TODO Refactor processing code to subfunctions to do the same laps calculations for practice there as here
   # Try to load laps and quali for the round to get up-to-date data
+  cli::cli_inform("Checking for mid-weekend data")
   laps <- tryCatch(
     get_laps(season = season, round = round),
     error = function(e) NULL
@@ -290,8 +292,11 @@ generate_new_data <- function(
       "Found lap data for {season} round {round}. Calculating practice stats."
     )
     practice_results <- laps %>%
+      dplyr::mutate(season = season, round = round) %>%
+      add_drivers_to_laps(season = season) %>%
       process_lap_times() %>%
-      summarize_practice_laps()
+      summarize_practice_laps() %>%
+      dplyr::select(-c('season', 'round'))
     # d_ids <- f1dataR::load_drivers(season = season) %>%
     #   dplyr::select("driver_id", "code")
     # practice_laps <- laps %>%

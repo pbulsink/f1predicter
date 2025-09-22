@@ -359,7 +359,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
 
   if (season >= 2011) {
     if (!any(!is.na(pitstops))) {
-      pitstops <- f1dataR::load_pitstops(season = season, round = round)
+      pitstops <- try(f1dataR::load_pitstops(season = season, round = round))
       if (!is.null(pitstops)) {
         if (length(pitstops) == 0) {
           pitstops <- NULL
@@ -427,9 +427,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
     }
 
     if (!any(!is.na(quali))) {
-      quali <- f1dataR::load_quali(season = season, round = round)
+      try(quali <- f1dataR::load_quali(season = season, round = round))
       if (!is.null(quali)) {
-        if (length(quali) == 0) {
+        if (is.na(quali) | length(quali) == 0) {
           quali <- NULL
         } else {
           quali <- quali %>%
@@ -462,9 +462,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
 
   if (season >= 2018) {
     if (!any(!is.na(laps))) {
-      drivers <- f1dataR::load_drivers(season = season) %>%
-        dplyr::select("driver_id", "code")
       laps <- get_laps(season = season, round = round)
+      laps <- add_drivers_to_laps(laps, season = season)
       xresults <- FALSE
       if (is.null(results)) {
         xresults <- TRUE
@@ -476,8 +475,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         }
       }
       if (!is.null(laps) && nrow(laps) > 0) {
-        laps <- laps %>%
-          dplyr::left_join(drivers, by = c(driver = "code")) %>%
+        laps <-
           dplyr::left_join(
             results[, c("driver_id", "constructor_id")],
             by = c("driver_id")
@@ -590,7 +588,7 @@ get_season_data <- function(season, force = FALSE) {
   qualis <- NULL
 
   for (round in schedule[
-    schedule$season == season & schedule$date <= Sys.Date(),
+    schedule$season == season & schedule$date <= (Sys.Date()-3),
   ]$round) {
     cat(
       "Getting data for", season, "round",
@@ -1199,4 +1197,13 @@ janitor_data <- function() {
     }
     closeAllConnections()
   }
+}
+
+#' Assign drivers to laps
+#'
+add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
+  drivers <- f1dataR::load_drivers(season = season) %>%
+    dplyr::select("driver_id", "code")
+  laps %>%
+    dplyr::left_join(drivers, by = c(driver = "code"))
 }
