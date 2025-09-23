@@ -1547,34 +1547,9 @@ save_models <- function(model_list, model_timing) {
   )
   dir.create(dirname(file_path), showWarnings = FALSE, recursive = TRUE)
 
-  final_list <- list()
-  for (model_name in names(model_list)) {
-    model_object <- model_list[[model_name]]
+  final_list <- butcher_model_list(model_list)
 
-    # Handle the special case for the polr model, which is a list(fit, recipe)
-    # TODO: Update butcher to handle polr models.
-    if (inherits(model_object$fit, "polr")) {
-      attr(model_object$terms, ".Environment") <- rlang::base_env()
-      cli::cli_inform("Saving butchered polr model object for: {.val {model_name}}")
-      final_list[[model_name]] <- model_object
-      next # Skip to the next model
-    }
-
-    # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness
-    tryCatch(
-      {
-        butchered_model <- butcher::butcher(model_object)
-
-        cli::cli_inform("Butchered workflow for model: {.val {model_name}}")
-        final_list[[model_name]] <- butchered_model
-      },
-      error = function(e) {
-        cli::cli_warn(
-          "Failed to butcher model {.val {model_name}}: {e$message}"
-        )
-      }
-    )
-  }
+  cli::cli_inform("Writing {.param model_list} to file.")
 
   if (length(final_list) > 0) {
     saveRDS(final_list, file = file_path)
@@ -1585,7 +1560,7 @@ save_models <- function(model_list, model_timing) {
     cli::cli_warn("No valid models were found to save.")
   }
 
-  invisible(file_path)
+  invisible(final_list)
 }
 
 #' Load Models
@@ -1609,4 +1584,84 @@ load_models <- function(model_type, model_timing, engine = "ranger") {
   models <- readRDS(file_path)
   cli::cli_inform("Models loaded from {.path {file_path}}.")
   return(models)
+}
+
+butcher_model_list <- function(model_list) {
+  final_list <- list()
+  for (model_name in names(model_list)) {
+    model_object <- model_list[[model_name]]
+
+    # Handle the special case for the polr model, which is a list(fit, recipe)
+    # TODO: Update butcher to handle polr models.
+    if (inherits(model_object$fit, "polr")) {
+      attr(model_object$fit$terms, ".Environment") <- rlang::base_env()
+      model_object$recipe <- butcher::butcher(model_object$recipe)
+      cli::cli_inform("Butchering polr model object for: {.val {model_name}}")
+      final_list[[model_name]] <- model_object
+      next # Skip to the next model
+    }
+
+    # Handle the special case of model_stacks, which don't butcher by themselves
+    if (inherits(model_object, "model_stack")) {
+      for (model_type in names(model_object$model_defs)) {
+        model_object <- butcher::butcher(model_object)
+        model_object$fit <- butcher::butcher(model_object$fit)
+        model_object$model_defs[[
+          model_type
+        ]]$pre$actions$recipe$recipe <- butcher::butcher(
+          model_object$model_defs[[model_type]]$pre$actions$recipe$recipe
+        )
+        if (
+          paste0(model_type, 'pre0_mod0_post0') %in%
+            names(model_object$member_fits)
+        ) {
+          model_object$member_fits[[paste0(
+            model_type,
+            'pre0_mod0_post0'
+          )]] <- butcher::butcher(model_object$member_fits[[paste0(
+            model_type,
+            'pre0_mod0_post0'
+          )]])
+          model_object$member_fits[[paste0(
+            model_type,
+            'pre0_mod0_post0'
+          )]]$pre$actions$recipe$recipe <- butcher::butcher(
+            model_object$member_fits[[paste0(
+              model_type,
+              'pre0_mod0_post0'
+            )]]$pre$actions$recipe$recipe
+          )
+          model_object$member_fits[[paste0(
+            model_type,
+            'pre0_mod0_post0'
+          )]]$pre$mold$blueprint$recipe <- butcher::butcher(
+            model_object$member_fits[[paste0(
+              model_type,
+              'pre0_mod0_post0'
+            )]]$pre$mold$blueprint$recipe
+          )
+        }
+      }
+      cli::cli_inform(
+        "Butchering ensemble model object for: {.val {model_name}}"
+      )
+      final_list[[model_name]] <- model_object
+      next # Skip to the next model
+    }
+    # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness
+    tryCatch(
+      {
+        butchered_model <- butcher::butcher(model_object)
+
+        cli::cli_inform("Butchering model: {.val {model_name}}")
+        final_list[[model_name]] <- butchered_model
+      },
+      error = function(e) {
+        cli::cli_warn(
+          "Failed to butcher model {.val {model_name}}: {e$message}"
+        )
+      }
+    )
+  }
+  return(final_list)
 }
