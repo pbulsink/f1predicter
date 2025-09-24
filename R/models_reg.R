@@ -285,10 +285,16 @@ train_quali_models <- function(
     # ---- Single-Engine Model Training ----
     # ---- Pole Model Training ----
     cli::cli_rule("Training Pole Position Model ({.val {engine}})")
-    formula <- reformulate(
-      pole_cols[!(pole_cols %in% c("quali_position", "pole", id_cols))],
-      response = "pole"
-    )
+    predictor_vars <- pole_cols[
+      !(pole_cols %in% c("quali_position", "pole", id_cols))
+    ]
+    formula <- reformulate(predictor_vars, response = "pole")
+    # Set the formula environment to the base environment to prevent capturing
+    # large objects (like the full 'data' object) from the local function
+    # environment. This significantly reduces model size. `base_env()` is safer
+    # than `global_env()` as it's guaranteed to be free of user objects.
+    rlang::f_env(formula) <- rlang::base_env()
+
     pole_recipe <- recipes::recipe(
       formula,
       data = train_data_pole
@@ -427,10 +433,13 @@ train_quali_models <- function(
     cli::cli_rule(
       "Training Qualifying Position Model (Regression, {.val {engine}})"
     )
-    formula <- reformulate(
-      pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
-      response = "quali_position"
-    )
+    predictor_vars <- pos_cols[!(pos_cols %in% c("quali_position", id_cols))]
+    formula <- reformulate(predictor_vars, response = "quali_position")
+    # Set the formula environment to the base environment to prevent capturing
+    # large objects from the local function environment, which significantly
+    # reduces model size.
+    rlang::f_env(formula) <- rlang::base_env()
+
     position_recipe <- recipes::recipe(
       formula,
       data = train_data_pos
@@ -555,10 +564,12 @@ train_quali_models <- function(
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
 
-  formula <- reformulate(
-    pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
-    response = "quali_position"
-  )
+  predictor_vars <- pos_cols[!(pos_cols %in% c("quali_position", id_cols))]
+  formula <- reformulate(predictor_vars, response = "quali_position")
+  # Set the formula environment to the base environment to prevent capturing
+  # large objects from the local function environment, which significantly
+  # reduces model size.
+  rlang::f_env(formula) <- rlang::base_env()
 
   if (engine == "ensemble") {
     cli::cli_inform(
@@ -589,13 +600,11 @@ train_quali_models <- function(
 
     # Add those columns to the formulas
     formula <- reformulate(
-      c(
-        pos_cols[!(pos_cols %in% c("quali_position", id_cols))],
-        "ensemble_pole_pred",
-        "ensemble_pos_pred"
-      ),
+      c(predictor_vars, "ensemble_pole_pred", "ensemble_pos_pred"),
       response = "quali_position"
     )
+    # Reset the environment for the new formula as well
+    rlang::f_env(formula) <- rlang::base_env()
   }
 
   train_data_pos_class <- pos_class_splits$train_data
@@ -781,6 +790,10 @@ train_binary_result_model <- function(
 ) {
   cli::cli_rule("Training {model_name}")
   formula <- reformulate(predictor_vars, response = outcome_var)
+  # Set the formula environment to the base environment to prevent capturing
+  # large objects from the local function environment, which significantly
+  # reduces model size.
+  rlang::f_env(formula) <- rlang::base_env()
 
   recipe <- recipes::recipe(formula, data = train_data) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
@@ -1131,6 +1144,10 @@ train_results_models <- function(data, scenario, engine = "ranger") {
   pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
 
   position_formula <- reformulate(pos_predictor_vars, response = "position")
+  # Set the formula environment to the base environment to prevent capturing
+  # large objects from the local function environment, which significantly
+  # reduces model size.
+  rlang::f_env(position_formula) <- rlang::base_env()
 
   if (engine == 'ensemble') {
     position_final_fit <- train_stacked_model(
@@ -1228,10 +1245,12 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     # Re-split the data now that it has the new features.
     # This is important to ensure the new features are in the training set.
     pos_class_splits <- prepare_and_split_data(pos_class_data)
+
     position_formula <- reformulate(
       c(pos_predictor_vars, 'ensemble_win_pred', 'ensemble_pos_pred'),
       response = "position"
     )
+    rlang::f_env(position_formula) <- rlang::base_env()
   }
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
@@ -1586,6 +1605,23 @@ load_models <- function(model_type, model_timing, engine = "ranger") {
   return(models)
 }
 
+#' Butcher a List of Model Objects
+#'
+#' @description
+#' This internal helper function iterates through a list of trained model objects
+#' and applies `butcher::butcher()` to each one. This process removes unnecessary
+#' components from the model objects (like training data and environments) to
+#' significantly reduce their size, making them more efficient for storage and
+#' prediction.
+#'
+#' The function includes special handling for:
+#' - `polr` models: Manually butchers the recipe and resets the formula environment.
+#' - `model_stack` (ensemble) objects: Recursively butchers the components of the stack.
+#' - Standard `last_fit` objects from `tidymodels`.
+#'
+#' @param model_list A named list of model objects to be butchered.
+#' @return A named list containing the smaller, "butchered" model objects.
+#' @noRd
 butcher_model_list <- function(model_list) {
   final_list <- list()
   for (model_name in names(model_list)) {

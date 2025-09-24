@@ -721,7 +721,7 @@ predict_quali_pos_class <- function(
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
   quali_models = NULL,
-  engine = "ensemble"
+  engine = "ensemble"  # TODO: change to autodetect engine
 ) {
   if (is.null(quali_models)) {
     model_timing <- if (any(grepl("practice", names(new_data)))) {

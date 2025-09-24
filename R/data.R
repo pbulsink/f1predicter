@@ -25,6 +25,21 @@ get_laps <- function(season, round) {
   return(laps)
 }
 
+#' Safely Load and Clean Session Laps
+#'
+#' @description
+#' An internal helper that attempts to load lap data for a specific session using
+#' `f1dataR::load_session_laps`. It wraps the call in a `tryCatch` block to
+#' gracefully handle errors (e.g., when a session does not exist) by returning
+#' `NULL`. If data is loaded successfully, it performs basic cleaning, such as
+#' ensuring specific columns exist and unlisting list-columns returned by the API.
+#'
+#' @param season The numeric championship season.
+#' @param round The round number of the event.
+#' @param session The session identifier (e.g., "R", "Q", "FP1").
+#'
+#' @return A cleaned data frame of lap data if successful, otherwise `NULL`.
+#' @noRd
 get_laps_or_null <- function(season, round, session) {
   laps <- tryCatch(
     f1dataR::load_session_laps(
@@ -588,10 +603,12 @@ get_season_data <- function(season, force = FALSE) {
   qualis <- NULL
 
   for (round in schedule[
-    schedule$season == season & schedule$date <= (Sys.Date()-3),
+    schedule$season == season & schedule$date <= (Sys.Date() - 3),
   ]$round) {
     cat(
-      "Getting data for", season, "round",
+      "Getting data for",
+      season,
+      "round",
       round,
       "of",
       length(
@@ -861,6 +878,16 @@ load_all_data <- function() {
   ))
 }
 
+#' Get Drivers from the Most Recent Race
+#'
+#' @description
+#' This internal helper function retrieves the list of drivers and their
+#' constructors from the most recently completed race in the current season's
+#' cached data. It is useful for getting an up-to-date roster.
+#'
+#' @return A data frame with `driver_id` and `constructor_id` columns for the
+#'   drivers in the last recorded round.
+#' @noRd
 get_last_drivers <- function() {
   res <- tryCatch(
     utils::read.csv(file.path(
@@ -1019,6 +1046,18 @@ getWeather <- function(round_url) {
 #' @keywords data
 NULL
 
+#' Clean Column Names in Cached Data Files
+#'
+#' @description
+#' This is an internal maintenance function designed to be run manually. It
+#' iterates through all seasonally cached data files (e.g.,
+#' "2022_season_results.csv"), reads them, cleans their column names using
+#' `janitor::clean_names()`, and overwrites the original file with the cleaned
+#' version. This helps enforce a consistent snake_case naming convention across
+#' all data.
+#'
+#' @return This function does not return a value; it modifies files directly.
+#' @noRd
 janitor_data <- function() {
   rgrid <- NULL
   sgrid <- NULL
@@ -1199,8 +1238,22 @@ janitor_data <- function() {
   }
 }
 
-#' Assign drivers to laps
+#' Add Driver IDs to Lap Data
 #'
+#' @description
+#' This internal helper function enriches a lap data frame by adding the
+#' persistent `driver_id`. Lap data from `f1dataR` often identifies drivers
+#' by their three-letter code (e.g., "VER"). This function loads the driver
+#' list for a given season and performs a left join to map these codes to
+#' their corresponding `driver_id`.
+#'
+#' @param laps A data frame of lap data, as returned by `f1dataR`. It must
+#'   contain a `driver` column with the three-letter driver code.
+#' @param season The numeric championship season to load driver information for.
+#'   Defaults to the current season via `f1dataR::get_current_season()`.
+#'
+#' @return The input `laps` data frame with an added `driver_id` column.
+#' @noRd
 add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
   drivers <- f1dataR::load_drivers(season = season) %>%
     dplyr::select("driver_id", "code")
