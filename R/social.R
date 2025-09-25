@@ -91,7 +91,7 @@ get_race_name <- function(season, round) {
 #' @param predictions A data frame of predictions from `predict_round()`
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
-format_skeet_predictions <- function(predictions) {
+format_race_skeet_predictions <- function(predictions) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
 
@@ -155,7 +155,14 @@ format_skeet_predictions <- function(predictions) {
   # Bluesky tags are handled separately from the text and don't use '#'
   tags <- c("F1", "F1Predictions", race_hashtag)
 
-  return(list(text = skeet_body, tags = tags))
+  image <- format_results_prob_table(predictions, save_image = TRUE)
+
+  image_alt <- paste0("A table of F1 race predicted results Brighter/more yellow ",
+                      "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
+                      "less likely outcomes. For the ", race_name, ", the predictions have drivers most likely ",
+                      "in the following order: ", paste(predictions_formatted$driver_names, collapse = ", "), ".")
+
+  return(list(text = skeet_body, tags = tags, image = image$filename, image_alt = image_alt))
 }
 
 
@@ -217,7 +224,14 @@ format_quali_skeet_predictions <- function(predictions) {
   # Bluesky tags are handled separately from the text and don't use '#'
   tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
 
-  return(list(text = skeet_body, tags = tags))
+  image <- format_quali_prob_table(predictions, save_image = TRUE)
+
+  image_alt <- paste0("A table of F1 qualifying predicted outcomes. Brighter/more yellow ",
+    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
+    "less likely outcomes. For the ", race_name, ", the predictions have drivers most likely ",
+    "in the following order: ", paste(predictions_formatted$driver_names, collapse = ", "), ".")
+
+  return(list(text = skeet_body, tags = tags, image = image$filename, image_alt = image_alt))
 }
 
 
@@ -228,42 +242,43 @@ format_quali_skeet_predictions <- function(predictions) {
 #' See the bskyr documentation for details (e.g., BSKY_HANDLE, BSKY_APP_PASSWORD).
 #'
 #' @param text The text content of the skeet.
+#' @param image file path to a graphic image, if to be added
 #' @param tags A character vector of tags to apply to the post.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
-post_skeet_predictions <- function(text, tags = NULL) {
-  if (!requireNamespace("bskyr", quietly = TRUE)) {
+post_skeet_predictions <- function(text, image = NULL, image_alt = NULL, tags = NULL) {
+  if (!requireNamespace("atrrr", quietly = TRUE)) {
     stop(
-      "Package 'bskyr' is required. Please install it with install.packages('bskyr').",
+      "Package 'atrrr' is required. Please install it with install.packages('atrrr').",
       call. = FALSE
     )
   }
 
-  # bskyr can automatically use environment variables for authentication.
-  # Check if the handle and password variables are set.
-  if (
-    Sys.getenv("BSKY_HANDLE") == "" || Sys.getenv("BSKY_APP_PASSWORD") == ""
-  ) {
-    message(
-      "No Bluesky handle or app password found in environment variables.",
-      "See bskyr documentation for non-interactive setup.",
-      "Set BSKY_HANDLE and BSKY_APP_PASSWORD for this to work."
-    )
-    return(invisible(NULL))
-  }
+
 
   message("Posting skeet...")
-  response <- tryCatch(
-    {
-      # bskyr::login() will use env vars automatically
-      bskyr::login()
-      bskyr::post_post(text = text, tags = tags)
-    },
-    error = function(e) {
-      warning("Failed to post skeet: ", e$message, call. = FALSE)
-      return(NULL)
-    }
-  )
+  if(is.null(image)){
+    response <- tryCatch(
+      {
+        atrrr::post(text = text, tags = tags)
+      },
+      error = function(e) {
+        warning("Failed to post skeet: ", e$message, call. = FALSE)
+        return(NULL)
+      }
+    )
+  } else {
+    response <- tryCatch(
+      {
+        atrrr::post(text = text, image = image, image_alt = image_alt, tags = tags)
+      },
+      error = function(e) {
+        warning("Failed to post skeet: ", e$message, call. = FALSE)
+        return(NULL)
+      }
+    )
+  }
+
 
   if (!is.null(response)) {
     message("Skeet posted successfully!")
@@ -284,7 +299,28 @@ post_quali_predictions <- function(predictions) {
   formatted_post <- format_quali_skeet_predictions(predictions)
   post_skeet_predictions(
     text = formatted_post$text,
-    tags = formatted_post$tags
+    tags = formatted_post$tags,
+    image = formatted_post$image,
+    image_alt = formatted_post$image_alt
+  )
+}
+
+
+#' Post Race Predictions to Bluesky
+#'
+#' A wrapper function that formats race predictions and posts them to Bluesky.
+#'
+#' @param predictions A data frame of predictions from `predict_round()`.
+#'
+#' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
+#' @export
+post_race_predictions <- function(predictions) {
+  formatted_post <- format_race_skeet_predictions(predictions)
+  post_skeet_predictions(
+    text = formatted_post$text,
+    tags = formatted_post$tags,
+    image = formatted_post$image,
+    image_alt = formatted_post$image_alt
   )
 }
 
@@ -305,7 +341,7 @@ post_quali_predictions <- function(predictions) {
 #'
 #' @return A `gt_tbl` object.
 #' @export
-format_quali_prob_table <- function(predictions) {
+format_quali_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
     stop(
       "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
@@ -364,6 +400,12 @@ format_quali_prob_table <- function(predictions) {
   for(i in seq_len(nrow(prob_data))){
     prob_table <- gt::data_color(prob_table, columns = -driver_name, rows = i, direction = 'row',palette = "viridis")
   }
-  prob_table
-
+  if(!save_image){
+    return(prob_table)
+  } else {
+    tempdir <- tempdir(check = TRUE)
+    filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
+    gt::gtsave(prob_table, filename = filename)
+    return(list(prob_table = prob_table, filename = filename))
+  }
 }
