@@ -18,6 +18,7 @@ Imports:
     janitor,
     magrittr,
     parsnip,
+    purrr,
     RCurl,
     recipes,
     rlang,
@@ -44,5 +45,7 @@ Suggests:
     rmarkdown,
     ranger,
     kernlab,
-    kknn
+    kknn,
+    atrrr,
+    stacks
 VignetteBuilder: knitr

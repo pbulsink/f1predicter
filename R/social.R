@@ -157,12 +157,23 @@ format_race_skeet_predictions <- function(predictions) {
 
   image <- format_results_prob_table(predictions, save_image = TRUE)
 
-  image_alt <- paste0("A table of F1 race predicted results Brighter/more yellow ",
-                      "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
-                      "less likely outcomes. For the ", race_name, ", the predictions have drivers most likely ",
-                      "in the following order: ", paste(predictions_formatted$driver_names, collapse = ", "), ".")
+  image_alt <- paste0(
+    "A table of F1 race predicted results Brighter/more yellow ",
+    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
+    "less likely outcomes. For the ",
+    race_name,
+    ", the predictions have drivers most likely ",
+    "in the following order: ",
+    paste(predictions_formatted$driver_names, collapse = ", "),
+    "."
+  )
 
-  return(list(text = skeet_body, tags = tags, image = image$filename, image_alt = image_alt))
+  return(list(
+    text = skeet_body,
+    tags = tags,
+    image = image$filename,
+    image_alt = image_alt
+  ))
 }
 
 
@@ -226,12 +237,23 @@ format_quali_skeet_predictions <- function(predictions) {
 
   image <- format_quali_prob_table(predictions, save_image = TRUE)
 
-  image_alt <- paste0("A table of F1 qualifying predicted outcomes. Brighter/more yellow ",
+  image_alt <- paste0(
+    "A table of F1 qualifying predicted outcomes. Brighter/more yellow ",
     "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
-    "less likely outcomes. For the ", race_name, ", the predictions have drivers most likely ",
-    "in the following order: ", paste(predictions_formatted$driver_names, collapse = ", "), ".")
+    "less likely outcomes. For the ",
+    race_name,
+    ", the predictions have drivers most likely ",
+    "in the following order: ",
+    paste(predictions_formatted$driver_names, collapse = ", "),
+    "."
+  )
 
-  return(list(text = skeet_body, tags = tags, image = image$filename, image_alt = image_alt))
+  return(list(
+    text = skeet_body,
+    tags = tags,
+    image = image$filename,
+    image_alt = image_alt
+  ))
 }
 
 
@@ -243,10 +265,16 @@ format_quali_skeet_predictions <- function(predictions) {
 #'
 #' @param text The text content of the skeet.
 #' @param image file path to a graphic image, if to be added
+#' @param image_alt Alternative text for the image, for accessibility.
 #' @param tags A character vector of tags to apply to the post.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
-post_skeet_predictions <- function(text, image = NULL, image_alt = NULL, tags = NULL) {
+post_skeet_predictions <- function(
+  text,
+  image = NULL,
+  image_alt = NULL,
+  tags = NULL
+) {
   if (!requireNamespace("atrrr", quietly = TRUE)) {
     stop(
       "Package 'atrrr' is required. Please install it with install.packages('atrrr').",
@@ -254,10 +282,8 @@ post_skeet_predictions <- function(text, image = NULL, image_alt = NULL, tags = 
     )
   }
 
-
-
   message("Posting skeet...")
-  if(is.null(image)){
+  if (is.null(image)) {
     response <- tryCatch(
       {
         atrrr::post(text = text, tags = tags)
@@ -270,7 +296,12 @@ post_skeet_predictions <- function(text, image = NULL, image_alt = NULL, tags = 
   } else {
     response <- tryCatch(
       {
-        atrrr::post(text = text, image = image, image_alt = image_alt, tags = tags)
+        atrrr::post(
+          text = text,
+          image = image,
+          image_alt = image_alt,
+          tags = tags
+        )
       },
       error = function(e) {
         warning("Failed to post skeet: ", e$message, call. = FALSE)
@@ -278,7 +309,6 @@ post_skeet_predictions <- function(text, image = NULL, image_alt = NULL, tags = 
       }
     )
   }
-
 
   if (!is.null(response)) {
     message("Skeet posted successfully!")
@@ -338,8 +368,11 @@ post_race_predictions <- function(predictions) {
 #'
 #' @param predictions A data frame of predictions from `predict_quali_round()`.
 #'   This must contain the `.probs` list-column with position probabilities.
+#' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
+#'   and returns a list containing the table object and the file path. If `FALSE`
+#'   (default), returns only the `gt_tbl` object.
 #'
-#' @return A `gt_tbl` object.
+#' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 #' @export
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
@@ -397,10 +430,16 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     gt::tab_source_note(
       source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
     )
-  for(i in seq_len(nrow(prob_data))){
-    prob_table <- gt::data_color(prob_table, columns = -driver_name, rows = i, direction = 'row',palette = "viridis")
+  for (i in seq_len(nrow(prob_data))) {
+    prob_table <- gt::data_color(
+      prob_table,
+      columns = -driver_name,
+      rows = i,
+      direction = 'row',
+      palette = "viridis"
+    )
   }
-  if(!save_image){
+  if (!save_image) {
     return(prob_table)
   } else {
     tempdir <- tempdir(check = TRUE)

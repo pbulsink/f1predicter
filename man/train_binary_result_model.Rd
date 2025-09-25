@@ -30,8 +30,8 @@ train_binary_result_model(
 
 \item{grid}{The tuning grid.}
 
-\item{other_outcomes}{A character vector of other outcome variables to remove
-from the predictors in the recipe.}
+\item{predictor_vars}{A character vector of predictor variable names to be
+used in the model.}
 }
 \value{
 A fitted `workflow` object.

@@ -775,8 +775,8 @@ model_quali_late <- function(
 #' @param data_folds The cross-validation folds.
 #' @param model_spec The parsnip model specification.
 #' @param grid The tuning grid.
-#' @param other_outcomes A character vector of other outcome variables to remove
-#'   from the predictors in the recipe.
+#' @param predictor_vars A character vector of predictor variable names to be
+#'   used in the model.
 #' @return A fitted `workflow` object.
 train_binary_result_model <- function(
   outcome_var,
