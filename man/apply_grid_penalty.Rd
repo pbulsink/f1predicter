@@ -4,7 +4,7 @@
 \alias{apply_grid_penalty}
 \title{Apply a Grid Penalty to a Driver}
 \usage{
-apply_grid_penalty(race_data = get_next_race_data(), driver_id, penalty)
+apply_grid_penalty(race_data = generate_next_race_data(), driver_id, penalty)
 }
 \arguments{
 \item{race_data}{A data frame containing race participants. Must include
@@ -36,7 +36,7 @@ place start).
   # Assume `after_quali_data` is a data frame with quali results
   # Apply a 5-place penalty to 'max_verstappen'
   new_grid_data <- apply_grid_penalty(
-    race_data = get_next_race_data(),
+    race_data = generate_next_race_data(),
     driver_id = "max_verstappen",
     penalty = 5
   )

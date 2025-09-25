@@ -503,13 +503,13 @@ generate_next_race_data <- function(...) {
 #'   # Assume `after_quali_data` is a data frame with quali results
 #'   # Apply a 5-place penalty to 'max_verstappen'
 #'   new_grid_data <- apply_grid_penalty(
-#'     race_data = get_next_race_data(),
+#'     race_data = generate_next_race_data(),
 #'     driver_id = "max_verstappen",
 #'     penalty = 5
 #'   )
 #' }
 apply_grid_penalty <- function(
-  race_data = get_next_race_data(),
+  race_data = generate_next_race_data(),
   driver_id,
   penalty
 ) {
@@ -721,7 +721,7 @@ predict_quali_pos_class <- function(
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
   quali_models = NULL,
-  engine = "ensemble"  # TODO: change to autodetect engine
+  engine = "ensemble" # TODO: change to autodetect engine
 ) {
   if (is.null(quali_models)) {
     model_timing <- if (any(grepl("practice", names(new_data)))) {

@@ -418,7 +418,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     ) %>%
     gt::tab_spanner(
       label = "Odds of Qualifying at Each Position",
-      columns = -driver_name
+      columns = -"driver_name"
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
     gt::cols_label(driver_name = "Driver") %>%

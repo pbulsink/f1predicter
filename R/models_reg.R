@@ -288,7 +288,7 @@ train_quali_models <- function(
     predictor_vars <- pole_cols[
       !(pole_cols %in% c("quali_position", "pole", id_cols))
     ]
-    formula <- reformulate(predictor_vars, response = "pole")
+    formula <- stats::reformulate(predictor_vars, response = "pole")
     # Set the formula environment to the base environment to prevent capturing
     # large objects (like the full 'data' object) from the local function
     # environment. This significantly reduces model size. `base_env()` is safer
@@ -434,7 +434,7 @@ train_quali_models <- function(
       "Training Qualifying Position Model (Regression, {.val {engine}})"
     )
     predictor_vars <- pos_cols[!(pos_cols %in% c("quali_position", id_cols))]
-    formula <- reformulate(predictor_vars, response = "quali_position")
+    formula <- stats::reformulate(predictor_vars, response = "quali_position")
     # Set the formula environment to the base environment to prevent capturing
     # large objects from the local function environment, which significantly
     # reduces model size.
@@ -565,7 +565,7 @@ train_quali_models <- function(
   pos_class_splits <- prepare_and_split_data(pos_class_data)
 
   predictor_vars <- pos_cols[!(pos_cols %in% c("quali_position", id_cols))]
-  formula <- reformulate(predictor_vars, response = "quali_position")
+  formula <- stats::reformulate(predictor_vars, response = "quali_position")
   # Set the formula environment to the base environment to prevent capturing
   # large objects from the local function environment, which significantly
   # reduces model size.
@@ -577,12 +577,12 @@ train_quali_models <- function(
     )
 
     # Predict pole probability and quali position using the trained ensembles
-    pole_ensemble_preds <- predict(
+    pole_ensemble_preds <- stats::predict(
       pole_final_fit,
       new_data = pos_class_data,
       type = "prob"
     )
-    pos_ensemble_preds <- predict(
+    pos_ensemble_preds <- stats::predict(
       position_final_fit,
       new_data = pos_class_data,
       type = "numeric"
@@ -599,7 +599,7 @@ train_quali_models <- function(
     pos_class_splits <- prepare_and_split_data(pos_class_data)
 
     # Add those columns to the formulas
-    formula <- reformulate(
+    formula <- stats::reformulate(
       c(predictor_vars, "ensemble_pole_pred", "ensemble_pos_pred"),
       response = "quali_position"
     )
@@ -641,13 +641,13 @@ train_quali_models <- function(
   tictoc::toc()
   # --- Evaluate the model on the test set ---
   # Get class predictions
-  class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
+  class_preds <- stats::predict(polr_fit, newdata = baked_test, type = "class")
   # Get probability predictions
-  prob_preds <- predict(polr_fit, newdata = baked_test, type = "probs")
+  prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
 
   # Combine true values and predictions
   test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = quali_position),
+    baked_test %>% dplyr::select(truth = "quali_position"),
     .pred_class = class_preds,
     tibble::as_tibble(prob_preds)
   )
@@ -660,8 +660,16 @@ train_quali_models <- function(
       !(colnames(test_results) %in% c("truth", ".pred_class"))
     ]
   )
-  accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
-  kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)
+  accuracy_val <- yardstick::accuracy(
+    test_results,
+    truth = 'truth',
+    estimate = '.pred_class'
+  )
+  kap_val <- yardstick::kap(
+    test_results,
+    truth = 'truth',
+    estimate = '.pred_class'
+  )
 
   # Manually create a metrics object for reporting
   polr_metrics <- tibble::tribble(
@@ -789,7 +797,7 @@ train_binary_result_model <- function(
   predictor_vars
 ) {
   cli::cli_rule("Training {model_name}")
-  formula <- reformulate(predictor_vars, response = outcome_var)
+  formula <- stats::reformulate(predictor_vars, response = outcome_var)
   # Set the formula environment to the base environment to prevent capturing
   # large objects from the local function environment, which significantly
   # reduces model size.
@@ -1143,7 +1151,10 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 
   pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
 
-  position_formula <- reformulate(pos_predictor_vars, response = "position")
+  position_formula <- stats::reformulate(
+    pos_predictor_vars,
+    response = "position"
+  )
   # Set the formula environment to the base environment to prevent capturing
   # large objects from the local function environment, which significantly
   # reduces model size.
@@ -1224,12 +1235,12 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     )
 
     # Predict win probability and finishing position using the trained ensembles
-    win_ensemble_preds <- predict(
+    win_ensemble_preds <- stats::predict(
       win_final,
       new_data = pos_class_data,
       type = "prob"
     )
-    pos_ensemble_preds <- predict(
+    pos_ensemble_preds <- stats::predict(
       position_final_fit,
       new_data = pos_class_data,
       type = "numeric"
@@ -1246,7 +1257,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     # This is important to ensure the new features are in the training set.
     pos_class_splits <- prepare_and_split_data(pos_class_data)
 
-    position_formula <- reformulate(
+    position_formula <- stats::reformulate(
       c(pos_predictor_vars, 'ensemble_win_pred', 'ensemble_pos_pred'),
       response = "position"
     )
@@ -1282,8 +1293,8 @@ train_results_models <- function(data, scenario, engine = "ranger") {
   tictoc::toc()
 
   # --- Evaluate the model on the test set ---
-  class_preds <- predict(polr_fit, newdata = baked_test, type = "class")
-  prob_preds <- predict(polr_fit, newdata = baked_test, type = "probs")
+  class_preds <- stats::predict(polr_fit, newdata = baked_test, type = "class")
+  prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
 
   test_results <- dplyr::bind_cols(
     baked_test %>% dplyr::select(truth = position),
@@ -1299,8 +1310,16 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       !(colnames(test_results) %in% c("truth", ".pred_class"))
     ]
   )
-  accuracy_val <- yardstick::accuracy(test_results, truth = truth, .pred_class)
-  kap_val <- yardstick::kap(test_results, truth = truth, .pred_class)
+  accuracy_val <- yardstick::accuracy(
+    test_results,
+    truth = truth,
+    estimate = '.pred_class'
+  )
+  kap_val <- yardstick::kap(
+    test_results,
+    truth = truth,
+    estimate = '.pred_class'
+  )
 
   # Manually create a metrics object for reporting
   polr_metrics <- tibble::tribble(

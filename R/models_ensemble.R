@@ -63,7 +63,7 @@
 #' # )
 #'
 #' # # Make predictions
-#' # predictions <- predict(quali_pos_ensemble, new_data = my_test_data)
+#' # predictions <- stats::predict(quali_pos_ensemble, new_data = my_test_data)
 #' }
 train_stacked_model <- function(
   outcome_var,
@@ -95,7 +95,7 @@ train_stacked_model <- function(
   ctrl_stack <- stacks::control_stack_resamples()
 
   # Define the recipe once
-  formula <- reformulate(predictor_vars, response = outcome_var)
+  formula <- stats::reformulate(predictor_vars, response = outcome_var)
   base_recipe <- recipes::recipe(formula, data = train_data) %>%
     recipes::step_dummy(recipes::all_nominal_predictors()) %>%
     recipes::step_zv(recipes::all_predictors()) %>%

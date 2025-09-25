@@ -88,6 +88,6 @@ of the individual member models.
 # )
 
 # # Make predictions
-# predictions <- predict(quali_pos_ensemble, new_data = my_test_data)
+# predictions <- stats::predict(quali_pos_ensemble, new_data = my_test_data)
 }
 }

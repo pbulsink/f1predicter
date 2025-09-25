@@ -39,14 +39,14 @@ You can set these options at the beginning of your R script or in your .Rprofile
 
 ### 2\. Updating the Historical Data
 
-The prediction models rely on up-to-date historical data. The `data.R` file contains functions to pull data from a data source (e.g., FastF1). The `get_weekend_data()` function fetches the provided race (season & round) results, qualifying data, pit stops, and lap times and caches them locally as CSV files.
+The prediction models rely on up-to-date historical data. The `get_weekend_data()` function fetches the provided race (season & round) results, qualifying data, pit stops, and lap times and caches them locally as CSV files.
 
 To update the data for an entire year, use the `get_season_data()` function:
 
 ```r
 # Update data for the 2024 season
 # This will download and save data to the specified cache directory
-get_season_data(season = 2024))
+get_season_data(season = 2024)
 ```
 
 This function ensures the models have the most recent data to train on, which is crucial for capturing current performance trends.
@@ -88,7 +88,7 @@ train_models(
 )
 ```
 
-The `train_models` function saves the trained `butchered` `parsnip` model objects as `.RDS` files. Butchering removes the large training data from the model object to reduce file size.
+The training functions (`model_results_early`, `model_results_late`, `model_results_after_quali`) return `butchered` `parsnip` model objects. Butchering removes the large training data from the model object to reduce file size. These are then saved as `.RDS` files with `save_models()`.
 
 ### 4\. Making Predictions for the Next Race Weekend
 
@@ -97,25 +97,20 @@ With the data updated and the models trained, you can now generate predictions f
 1.  Generating the new data for the upcoming race.
 2.  Using the trained models to make predictions on this new data.
 
-The `predict.R` file contains functions to perform these tasks. The `generate_next_race_data` function creates a data frame with all the necessary features for the upcoming race. It can optionally take practice and qualifying data to create more accurate predictions after those sessions have occurred.
+The `generate_new_data` function creates a data frame with all the necessary features for the upcoming race. It can optionally take practice and qualifying data to create more accurate predictions after those sessions have occurred.
 
 Let's assume we want to predict the outcome of the next race (e.g., season 2024, round 14).
 
 ```r
 # Define the season and round
 season <- 2024
-round <- 14
-
-# Get the list of drivers for the next race.
-# This would typically be a scrape or a manual input.
-drivers_for_next_race <- get_drivers_for_round(season, round)
+round_num <- 14
 
 # Generate the data for prediction.
 # This will create features based on historical performance up to the current race.
-new_race_data <- generate_next_race_data(
+new_race_data <- generate_new_data(
   season = season,
-  round = round,
-  drivers = drivers_for_next_race
+  round_num = round_num
 )
 ```
 
