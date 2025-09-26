@@ -214,57 +214,7 @@ train_stacked_model <- function(
     "Stacked ensemble '{model_name}' trained successfully!"
   )
 
-  # Save the model if requested
-  if (save_model) {
-    cli::cli_rule("Saving Ensemble Model")
-    # Define a path for the ensemble model
-    ensemble_file_path <- construct_ensemble_model_path(model_name)
-
-    dir.create(
-      dirname(ensemble_file_path),
-      showWarnings = FALSE,
-      recursive = TRUE
-    )
-
-    tryCatch(
-      {
-        # Butcher the final_ensemble object to reduce its size
-        butchered_ensemble <- butcher::butcher(final_ensemble)
-        saveRDS(butchered_ensemble, file = ensemble_file_path)
-        cli::cli_alert_success(
-          "Ensemble model successfully butchered and saved to {.path {ensemble_file_path}}."
-        )
-      },
-      error = function(e) {
-        cli::cli_alert_danger(
-          "Failed to butcher and save ensemble model '{model_name}': {e$message}"
-        )
-      }
-    )
-  }
-
   return(final_ensemble)
-}
-
-#' Construct Ensemble Model File Path
-#'
-#' Internal helper to construct a standardized file path for saving/loading ensemble models.
-#'
-#' @param model_name The display name for the model (e.g., "Quali Position Ensemble").
-#' @return A full file path string.
-#' @noRd
-construct_ensemble_model_path <- function(model_name) {
-  base_path <- getOption("f1predicter.models")
-  if (is.null(base_path)) {
-    cli::cli_abort(c(
-      "Model directory path is not set.",
-      "i" = "Please set the path using `options(f1predicter.models = 'path/to/your/models')`."
-    ))
-  }
-  # Sanitize model_name for filename
-  safe_model_name <- gsub("[^a-zA-Z0-9_]", "_", tolower(model_name))
-  file_name <- paste0("ensemble_", safe_model_name, "_model.rds")
-  file.path(base_path, file_name)
 }
 
 #' Load a Stacked Ensemble Model
@@ -299,7 +249,7 @@ load_ensemble_model <- function(model_name) {
 #'   Valid options are:
 #'   \itemize{
 #'     \item `"quali"`: For qualifying prediction models (pole position and final position).
-#'     \item `"results"`: For race result prediction models (win, podium, top 10, finish status, and final position).
+#'     \item `"results"`: For race result prediction models (win, podium, top 10, and final position).
 #'   }
 #' @param timing A character string indicating the timing of the prediction
 #'   within a race weekend. This determines which set of features were
@@ -399,13 +349,6 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
             'ranger' = list(mtry = 1, min_n = 30), # trees = 1000
             'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
           ),
-          finish_hyperparameters = list(
-            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
-            'kknn' = list(neighbors = 25),
-            'nnet' = list(hidden_units = 7, penalty = 1, epochs = 10),
-            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
-            'kernlab' = list(cost = 32, rbf_sigma = 2.15443469003189e-07)
-          ),
           position_hyperparameters = list(
             'glmnet' = list(penalty = 1e-10, mixture = 0.25),
             'kknn' = list(neighbors = 25),
@@ -447,13 +390,6 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
             'ranger' = list(mtry = 1, min_n = 11), # trees = 1000
             'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
           ),
-          finish_hyperparameters = list(
-            'glmnet' = list(penalty = 0.00316227766016838, mixture = 1),
-            'kknn' = list(neighbors = 25),
-            'nnet' = list(hidden_units = 1, penalty = 1e-10, epochs = 670),
-            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
-            'kernlab' = list(cost = 1, rbf_sigma = 0.000464158883361278)
-          ),
           position_hyperparameters = list(
             'glmnet' = list(penalty = 1e-10, mixture = 0.25),
             'kknn' = list(neighbors = 25),
@@ -494,16 +430,6 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
             ),
             'ranger' = list(mtry = 1, min_n = 2), # trees = 1000
             'kernlab' = list(cost = 32, rbf_sigma = 0.000464158883361278)
-          ),
-          finish_hyperparameters = list(
-            'glmnet' = list(penalty = 1, mixture = 0),
-            'kknn' = list(neighbors = 25),
-            'nnet' = list(hidden_units = 1, penalty = 1e-10, epochs = 10),
-            'ranger' = list(mtry = 1, min_n = 40), # trees = 1000
-            'kernlab' = list(
-              cost = 0.0009765625,
-              rbf_sigma = 0.000464158883361278
-            )
           ),
           position_hyperparameters = list(
             'glmnet' = list(penalty = 1e-10, mixture = 0),

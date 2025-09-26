@@ -930,7 +930,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     "practice_best_gap"
   )
   quali_perf_cols <- c("q_min_perc", "q_avg_perc")
-  outcome_cols <- c("win", "podium", "t10", "finished", "position")
+  outcome_cols <- c("win", "podium", "t10", "position")
   id_cols <- c("season", "round", "round_id", "driver_id", "constructor_id")
 
   results_cols <- switch(
@@ -940,7 +940,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     "after-quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
   )
 
-  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
+  pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
 
   # ---- Data Splits ----
   splits <- prepare_and_split_data(data, columns = results_cols)
@@ -1085,17 +1085,6 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       model_mode = "classification",
       save_model = FALSE
     )
-    finish_final <- train_stacked_model(
-      outcome_var = "finished",
-      model_name = paste("Finish", tools::toTitleCase(scenario)),
-      train_data = train_data,
-      data_split = data_split,
-      data_folds = data_folds,
-      predictor_vars = predictor_vars,
-      hyperparams = all_hyperparams$finish_hyperparameters,
-      model_mode = "classification",
-      save_model = FALSE
-    )
   } else {
     # ---- Train Individual engine Binary Models ----
     win_final <- train_binary_result_model(
@@ -1128,19 +1117,9 @@ train_results_models <- function(data, scenario, engine = "ranger") {
       grid,
       predictor_vars
     )
-    finish_final <- train_binary_result_model(
-      "finished",
-      "Finishing Model",
-      train_data,
-      data_split,
-      data_folds,
-      class_mod_spec,
-      grid,
-      predictor_vars
-    )
   }
 
-  pos_cols <- setdiff(results_cols, c("win", "podium", "t10", "finished"))
+  pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
   pos_data <- data %>%
     dplyr::select(dplyr::all_of(pos_cols))
 
@@ -1351,7 +1330,6 @@ train_results_models <- function(data, scenario, engine = "ranger") {
     "win" = win_final,
     "podium" = podium_final,
     "t10" = t10_final,
-    'finish' = finish_final,
     'position' = position_final_fit,
     'position_class' = position_class_final_fit
   ))
@@ -1369,8 +1347,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 #' 1. `win`: A binary classification model to predict if a driver will win the race.
 #' 2. `podium`: A binary classification model to predict if a driver will finish in the top 3.
 #' 3. `t10`: A binary classification model to predict if a driver will finish in the top 10.
-#' 4. `finish`: A binary classification model to predict if a driver will finish the race (not DNF).
-#' 5. `position`: A regression model to predict a driver's exact finishing position.
+#' 4. `position`: A regression model to predict a driver's exact finishing position.
 #'
 #' @details
 #' The function filters data for seasons from 2018 onwards. All models are
@@ -1385,10 +1362,9 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"``, or `"kknn"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
-#'   are automatically butchered and saved to the path specified in
-#'   `options('f1predicter.models')`.
-#' @return A list containing five fitted `workflow` objects for `win`, `podium`,
-#'   `t10`, `finish`, and `position`.
+#'   are automatically saved to the path specified in `options('f1predicter.models')`.
+#' @return A list containing fitted `workflow` objects for `win`, `podium`,
+#'   `t10`, and `position`.
 #' @export
 model_results_after_quali <- function(
   data = clean_data(),
@@ -1548,9 +1524,7 @@ save_models <- function(model_list, model_timing) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
   is_quali <- any(grepl("quali", model_names, fixed = TRUE))
-  is_results <- any(
-    model_names %in% c("win", "podium", "t10", "finish")
-  )
+  is_results <- any(model_names %in% c("win", "podium", "t10"))
 
   if (is_quali && is_results) {
     cli::cli_abort(c(
@@ -1564,7 +1538,7 @@ save_models <- function(model_list, model_timing) {
   } else {
     cli::cli_abort(c(
       "Could not automatically determine {.arg model_type} from the names in {.arg model_list}.",
-      "i" = "Expected names to contain 'quali' for qualifying models, or be among {.val {c('win', 'podium', 't10', 'finish', 'position')}} for results models.",
+      "i" = "Expected names to contain 'quali' for qualifying models, or be among {.val {c('win', 'podium', 't10', 'position')}} for results models.",
       "x" = "Found names: {.val {model_names}}"
     ))
   }

@@ -871,34 +871,6 @@ predict_t10 <- function(
   return(preds)
 }
 
-#' Predict Race Finish (Not DNF)
-#'
-#' @param new_data A data frame of new data, typically from `generate_new_data()`.
-#' @param finish_model A `workflow` object for predicting finishing the race.
-#' @return A tibble with `driver_id`, `round`, `season`, and `finish_odd`.
-#' @keywords internal
-predict_finish <- function(
-  new_data = generate_next_race_data(),
-  finish_model
-) {
-  pred_call <- if (inherits(finish_model, "model_stack")) {
-    stats::predict(finish_model, new_data, type = "prob")
-  } else {
-    stats::predict(
-      tune::extract_workflow(finish_model),
-      new_data,
-      type = "prob"
-    )
-  }
-
-  preds <- new_data %>%
-    dplyr::mutate(
-      finish_odd = pred_call$.pred_1
-    ) %>%
-    dplyr::select("driver_id", "round", "season", "finish_odd")
-  return(preds)
-}
-
 #' Predict Finishing Position
 #'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
@@ -979,12 +951,11 @@ predict_position_class <- function(
 #' @param results_models A list of fitted `workflow` objects for race results prediction.
 #'   If `NULL` (default), the function will attempt to load the "early" results
 #'   models using `load_models()`. Otherwise, it should be a list as returned by
-#'   a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
-#'   and `position`.
+#'   a `model_results_*()` function, containing `win`, `podium`, `t10`, and `position`.
 #' @param engine The model engine to use if loading models from disk. Defaults
 #'   to `"ranger"`. Can also be `"ensemble"`.
 #' @return A tibble with predictions for all race outcomes for each driver,
-#'   including win/podium/t10/finish odds and the likely finishing position.
+#'   including win/podium/t10 odds and the likely finishing position.
 #' @export
 predict_round <- function(
   new_data = generate_next_race_data(),
@@ -1015,7 +986,6 @@ predict_round <- function(
     "win",
     "podium",
     "t10",
-    "finish",
     "position",
     "position_class"
   )
@@ -1028,7 +998,6 @@ predict_round <- function(
   win_preds <- predict_winner(new_data, results_models$win)
   podium_preds <- predict_podium(new_data, results_models$podium)
   t10_preds <- predict_t10(new_data, results_models$t10)
-  finish_preds <- predict_finish(new_data, results_models$finish)
   position_preds <- predict_position(new_data, results_models$position)
 
   # For ensemble models, the ordinal classification model (polr) was trained
@@ -1069,7 +1038,6 @@ predict_round <- function(
   all_preds <- win_preds %>%
     dplyr::left_join(podium_preds, by = c("driver_id", "round", "season")) %>%
     dplyr::left_join(t10_preds, by = c("driver_id", "round", "season")) %>%
-    dplyr::left_join(finish_preds, by = c("driver_id", "round", "season")) %>%
     dplyr::left_join(position_preds, by = c("driver_id", "round", "season")) %>%
     dplyr::left_join(
       position_class_preds,
