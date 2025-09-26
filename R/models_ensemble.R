@@ -217,22 +217,6 @@ train_stacked_model <- function(
   return(final_ensemble)
 }
 
-#' Load a Stacked Ensemble Model
-#'
-#' Loads a previously saved `model_stack` object.
-#'
-#' @param model_name The original name of the ensemble model (e.g., "Quali Position Ensemble").
-#' @return A loaded `model_stack` object.
-#' @export
-load_ensemble_model <- function(model_name) {
-  file_path <- construct_ensemble_model_path(model_name)
-  if (!file.exists(file_path)) {
-    cli::cli_abort("Ensemble model file not found at {.path {file_path}}.")
-  }
-  model <- readRDS(file_path)
-  cli::cli_inform("Ensemble model loaded from {.path {file_path}}.")
-  return(model)
-}
 
 #' Get Pre-tuned Model Hyperparameters
 #'

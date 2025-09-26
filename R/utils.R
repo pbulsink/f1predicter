@@ -95,13 +95,6 @@ wmean_two <- function(newval, x, ln) {
 #' @param x A numeric vector.
 #'
 #' @return A numeric vector of the same length as `x` where the elements sum to 1.
-#'
-#' @examples
-#' normalize_vector(c(1, 2, 3, 4))
-#' normalize_vector(c(10, 10))
-#' normalize_vector(c(1, 2, NA, 3))
-#' normalize_vector(c(0, 0, 0))
-#' normalize_vector(c(NA, NA))
 normalize_vector <- function(x) {
   if (!is.numeric(x)) {
     cli::cli_abort("{.arg x} must be a numeric vector.")

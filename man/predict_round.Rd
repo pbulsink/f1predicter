@@ -16,15 +16,14 @@ predict_round(
 \item{results_models}{A list of fitted `workflow` objects for race results prediction.
 If `NULL` (default), the function will attempt to load the "early" results
 models using `load_models()`. Otherwise, it should be a list as returned by
-a `model_results_*()` function, containing `win`, `podium`, `t10`, `finish`,
-and `position`.}
+a `model_results_*()` function, containing `win`, `podium`, `t10`, and `position`.}
 
 \item{engine}{The model engine to use if loading models from disk. Defaults
 to `"ranger"`. Can also be `"ensemble"`.}
 }
 \value{
 A tibble with predictions for all race outcomes for each driver,
-  including win/podium/t10/finish odds and the likely finishing position.
+  including win/podium/t10 odds and the likely finishing position.
 }
 \description{
 A wrapper function to predict all race outcomes for a given round.

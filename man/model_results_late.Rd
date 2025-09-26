@@ -16,8 +16,8 @@ are automatically butchered and saved to the path specified in
 `options('f1predicter.models')`.}
 }
 \value{
-A list containing five fitted `workflow` objects for `win`, `podium`,
-  `t10`, `finish`, and `position`.
+A list containing fitted `workflow` objects for `win`, `podium`,
+  `t10`, and `position`.
 }
 \description{
 This function trains a suite of five classification models to predict race

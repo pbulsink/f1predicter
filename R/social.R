@@ -433,7 +433,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -driver_name,
+      columns = -c('driver_name'), # Check this works instead of columns = -driver_name
       rows = i,
       direction = 'row',
       palette = "viridis"

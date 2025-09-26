@@ -11,7 +11,7 @@ get_hyperparameters(model = "quali", timing = "early")
 Valid options are:
 \itemize{
   \item `"quali"`: For qualifying prediction models (pole position and final position).
-  \item `"results"`: For race result prediction models (win, podium, top 10, finish status, and final position).
+  \item `"results"`: For race result prediction models (win, podium, top 10, and final position).
 }}
 
 \item{timing}{A character string indicating the timing of the prediction

@@ -54,7 +54,7 @@ generate_new_data <- function(
 
   if (is.null(drivers)) {
     drivers <- historical_data[
-      historical_data$round_id == tail(historical_data$round_id, 1),
+      historical_data$round_id == utils::tail(historical_data$round_id, 1),
       c('driver_id', 'constructor_id')
     ]
   }

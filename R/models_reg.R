@@ -655,7 +655,7 @@ train_quali_models <- function(
   # Calculate metrics
   log_loss_val <- yardstick::mn_log_loss(
     test_results,
-    truth = truth,
+    truth = 'truth',
     colnames(test_results)[
       !(colnames(test_results) %in% c("truth", ".pred_class"))
     ]
@@ -1284,19 +1284,19 @@ train_results_models <- function(data, scenario, engine = "ranger") {
   # Calculate metrics
   log_loss_val <- yardstick::mn_log_loss(
     test_results,
-    truth = truth,
+    truth = 'truth',
     colnames(test_results)[
       !(colnames(test_results) %in% c("truth", ".pred_class"))
     ]
   )
   accuracy_val <- yardstick::accuracy(
     test_results,
-    truth = truth,
+    truth = 'truth',
     estimate = '.pred_class'
   )
   kap_val <- yardstick::kap(
     test_results,
-    truth = truth,
+    truth = 'truth',
     estimate = '.pred_class'
   )
 

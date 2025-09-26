@@ -22,10 +22,3 @@ the function will return a vector of uniform values, where each element is
 `1 / length(x)`. Otherwise, each element is divided by the total sum of the
 vector after `NA`s have been converted to 0.
 }
-\examples{
-normalize_vector(c(1, 2, 3, 4))
-normalize_vector(c(10, 10))
-normalize_vector(c(1, 2, NA, 3))
-normalize_vector(c(0, 0, 0))
-normalize_vector(c(NA, NA))
-}
