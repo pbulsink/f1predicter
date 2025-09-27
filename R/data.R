@@ -444,7 +444,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
     if (!any(!is.na(quali))) {
       try(quali <- f1dataR::load_quali(season = season, round = round))
       if (!is.null(quali)) {
-        if (is.na(quali) | length(quali) == 0) {
+        if (all(is.na(quali)) | length(quali) == 0) {
           quali <- NULL
         } else {
           quali <- quali %>%
