@@ -185,11 +185,11 @@ train_stacked_model <- function(
 
   for (i in seq_along(candidate_resamples)) {
     cli::cli_inform("Adding candidate: {.val {names(candidate_resamples)[i]}}")
-    model_stack <- stacks::add_candidates(
-      model_stack,
-      candidate_resamples[[i]],
-      name = names(candidate_resamples)[i]
+    trycatch(
+      model_stack <- stacks::add_candidates(model_stack,candidate_resamples[[i]],name = names(candidate_resamples)[i]),
+      error = function(e){cli::cli_warn("Model stacking error: {e}. Continuing with one less model.")}
     )
+
   }
 
   cli::cli_inform("Stack members and their resampling performance:")
