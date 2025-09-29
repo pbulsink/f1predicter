@@ -171,27 +171,24 @@ format_race_skeet_predictions <- function(predictions) {
 
   # Top 5 likely positions (ordered by win probability)
   position_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$win_odd)) %>%
-    dplyr::slice_head(n = 5) %>%
+    dplyr::arrange(dplyr::desc(.data$t10_odd)) %>%
+    dplyr::slice_head(n = 10) %>%
     dplyr::mutate(
-      text = glue::glue("{.data$driver_name}: P{.data$likely_position}")
+      text = glue::glue(
+        "{dplyr::row_number()}: {stringr::word(.data$driver_name, -1)}"
+      )
     ) %>%
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
 
   # Combine into a single skeet body
-  skeet_body <- glue::glue(
-    "Predictions for the {race_name} 🏎️",
-    "",
-    "🏆 Win Chance:",
-    "{win_preds}",
-    "",
-    "🍾 Podium Chance:",
-    "{podium_preds}",
-    "",
-    "🔮 Likely Finishing Position (Top 5):",
-    "{position_preds}",
-    .sep = "\n"
+  skeet_texts <- c(
+    glue::glue("Predictions for the {race_name} 🏎️"),
+    glue::glue("🏆 Win Chance:\n{win_preds}"),
+    glue::glue("🍾 Podium Chance:\n{podium_preds}"),
+    glue::glue(
+      "🔮 Most Likely Top 10:\n{position_preds}"
+    )
   )
 
   # Bluesky tags are handled separately from the text and don't use '#'
@@ -200,7 +197,7 @@ format_race_skeet_predictions <- function(predictions) {
   image <- format_results_prob_table(predictions, save_image = TRUE)
 
   return(list(
-    text = skeet_body,
+    texts = skeet_texts,
     tags = tags,
     image = image$filename,
     image_alt = generate_image_alt_text(
@@ -237,26 +234,23 @@ format_quali_skeet_predictions <- function(predictions) {
 
   # Top 5 likely qualifying positions (ordered by pole probability)
   position_preds <- predictions_formatted %>%
-    dplyr::arrange(.data$pole_odd) %>%
-    dplyr::slice_head(n = 5) %>%
+    dplyr::arrange(dplyr::desc(.data$pole_odd)) %>%
+    dplyr::slice_head(n = 10) %>%
     dplyr::mutate(
       text = glue::glue(
-        "{.data$driver_name}: P{round(.data$likely_quali_position, 0)}"
+        "{dplyr::row_number()}: {stringr::word(.data$driver_name, -1)}"
       )
     ) %>%
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
 
   # Combine into a single skeet body
-  skeet_body <- glue::glue(
-    "Qualifying Predictions for the {race_name} 🏎️",
-    "",
-    "Pole Position Chance:",
-    "{pole_preds}",
-    "",
-    "🔮 Most Likely Qualifying Position (Top 5):",
-    "{position_preds}",
-    .sep = "\n"
+  skeet_texts <- c(
+    glue::glue("Qualifying Predictions for the {race_name} 🏎️"),
+    glue::glue("Pole Position Chance:\n{pole_preds}"),
+    glue::glue(
+      "🔮 Most Likely Top 10:\n{position_preds}"
+    )
   )
 
   # Bluesky tags are handled separately from the text and don't use '#'
@@ -265,7 +259,7 @@ format_quali_skeet_predictions <- function(predictions) {
   image <- format_quali_prob_table(predictions, save_image = TRUE)
 
   return(list(
-    text = skeet_body,
+    texts = skeet_texts,
     tags = tags,
     image = image$filename,
     image_alt = generate_image_alt_text(
@@ -283,14 +277,14 @@ format_quali_skeet_predictions <- function(predictions) {
 #' It requires credentials to be set as environment variables for `atrrr`.
 #' See the atrrr documentation for details.
 #'
-#' @param text The text content of the skeet.
+#' @param texts A character vector where each element is the text for a post in a thread.
 #' @param image file path to a graphic image, if to be added
 #' @param image_alt Alternative text for the image, for accessibility.
 #' @param tags A character vector of tags to apply to the post.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 post_skeet_predictions <- function(
-  text,
+  texts,
   image = NULL,
   image_alt = NULL,
   tags = NULL
@@ -302,39 +296,56 @@ post_skeet_predictions <- function(
     ))
   }
 
-  message("Posting skeet...")
-  if (is.null(image)) {
-    response <- tryCatch(
-      {
-        atrrr::post(text = text, tags = tags)
-      },
-      error = function(e) {
-        warning("Failed to post skeet: ", e$message, call. = FALSE)
-        return(NULL)
-      }
-    )
-  } else {
-    response <- tryCatch(
-      {
-        atrrr::post(
-          text = text,
-          image = image,
-          image_alt = image_alt,
-          tags = tags
-        )
-      },
-      error = function(e) {
-        warning("Failed to post skeet: ", e$message, call. = FALSE)
-        return(NULL)
-      }
+  if (!is.character(texts) || length(texts) == 0) {
+    cli::cli_abort(
+      "{.arg texts} must be a character vector with at least one element."
     )
   }
 
-  if (!is.null(response)) {
-    message("Skeet posted successfully!")
+  # Post the first skeet (root of the thread)
+  cli::cli_inform("Posting initial skeet...")
+  root_post <- tryCatch(
+    {
+      atrrr::post(
+        text = texts[1],
+        image = image,
+        image_alt = image_alt,
+        tags = tags
+      )
+    },
+    error = function(e) {
+      cli::cli_warn("Failed to post initial skeet: {e$message}")
+      return(NULL)
+    }
+  )
+
+  if (is.null(root_post)) {
+    cli::cli_warn("Aborting thread posting due to initial post failure.")
+    return(invisible(NULL))
   }
 
-  return(invisible(response))
+  cli::cli_inform("Initial skeet posted successfully!")
+  parent_post <- root_post
+
+  # Post subsequent skeets as replies
+  if (length(texts) > 1) {
+    for (i in 2:length(texts)) {
+      cli::cli_inform("Posting reply {i-1} of {length(texts)-1}...")
+      reply_post <- tryCatch(
+        atrrr::post(text = texts[i], reply_to = parent_post),
+        error = function(e) {
+          cli::cli_warn("Failed to post reply: {e$message}")
+          return(NULL) # Continue to next reply if one fails
+        }
+      )
+      if (!is.null(reply_post)) {
+        parent_post <- reply_post # Update parent for the next reply
+      }
+    }
+  }
+
+  cli::cli_inform("Thread posted successfully!")
+  return(invisible(root_post))
 }
 
 #' Post Qualifying Predictions to Bluesky
@@ -348,7 +359,7 @@ post_skeet_predictions <- function(
 post_quali_predictions <- function(predictions) {
   formatted_post <- format_quali_skeet_predictions(predictions)
   post_skeet_predictions(
-    text = formatted_post$text,
+    texts = formatted_post$texts,
     tags = formatted_post$tags,
     image = formatted_post$image,
     image_alt = formatted_post$image_alt
@@ -420,7 +431,7 @@ post_race_odds <- function(predictions) {
 post_race_predictions <- function(predictions) {
   formatted_post <- format_race_skeet_predictions(predictions)
   post_skeet_predictions(
-    text = formatted_post$text,
+    texts = formatted_post$texts,
     tags = formatted_post$tags,
     image = formatted_post$image,
     image_alt = formatted_post$image_alt
