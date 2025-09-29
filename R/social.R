@@ -1,8 +1,6 @@
 # This script provides functions to format and post F1 predictions to social media,
 # inspired by the pbulsink/HockeyModel repository.
 #
-# It requires the 'bskyr', 'glue', 'scales', and 'gt' packages.
-# install.packages(c("bskyr", "glue", "scales", "gt"))
 
 #' Get Driver Name from ID
 #'
@@ -18,10 +16,10 @@
 #' @noRd
 get_driver_name <- function(season, driver_ids) {
   if (!requireNamespace("f1dataR", quietly = TRUE)) {
-    stop(
-      "Package 'f1dataR' is required. Please install it.",
-      call. = FALSE
-    )
+    cli::cli_abort(c(
+      "Package {.pkg f1dataR} is required to fetch driver names.",
+      "i" = "Please install it with {.code install.packages('f1dataR')}."
+    ))
   }
 
   # Load drivers for the specified season
@@ -85,13 +83,13 @@ get_race_name <- function(season, round) {
   return(race_info$race_name[1])
 }
 
-
-#' Format Predictions for a Skeet
+#' Prepare Common Data for Skeet Formatting
 #'
-#' @param predictions A data frame of predictions from `predict_round()`
-#'
-#' @return A list containing the formatted string for the skeet body and a vector of tags.
-format_race_skeet_predictions <- function(predictions) {
+#' @param predictions A data frame of predictions.
+#' @param quali A logical indicating if it's for qualifying.
+#' @return A list with `predictions_formatted`, `race_name`, and `race_hashtag`.
+#' @noRd
+prepare_skeet_data <- function(predictions, quali = FALSE) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
 
@@ -102,6 +100,50 @@ format_race_skeet_predictions <- function(predictions) {
 
   race_name <- get_race_name(current_season, current_round)
   race_hashtag <- stringr::str_replace_all(race_name, " ", "")
+
+  race_hashtag <- stringr::str_replace_all(race_name, "Grand", "G")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, " ", "")
+
+  list(
+    predictions_formatted = predictions_formatted,
+    race_name = race_name,
+    race_hashtag = race_hashtag
+  )
+}
+
+#' Generate Alt Text for Prediction Images
+#'
+#' @param type "race" or "qualifying".
+#' @param race_name The name of the race.
+#' @param driver_names A character vector of driver names in order.
+#' @return A formatted string for image alt text.
+#' @noRd
+generate_image_alt_text <- function(type, race_name, driver_names) {
+  paste0(
+    "A table of F1 ",
+    tolower(type),
+    " predicted outcomes. Brighter/more yellow ",
+    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
+    "less likely outcomes. For the ",
+    race_name,
+    ", the predictions have drivers most likely ",
+    "in the following order: ",
+    paste(driver_names, collapse = ", "),
+    "."
+  )
+}
+
+#' Format Predictions for a Skeet
+#'
+#' @param predictions A data frame of predictions from `predict_round()`
+#'
+#' @return A list containing the formatted string for the skeet body and a vector of tags.
+format_race_skeet_predictions <- function(predictions) {
+  common_data <- prepare_skeet_data(predictions, quali = FALSE)
+  predictions_formatted <- common_data$predictions_formatted
+  race_name <- common_data$race_name
+  race_hashtag <- common_data$race_hashtag
 
   # Top 3 for Win
   win_preds <- predictions_formatted %>%
@@ -157,22 +199,15 @@ format_race_skeet_predictions <- function(predictions) {
 
   image <- format_results_prob_table(predictions, save_image = TRUE)
 
-  image_alt <- paste0(
-    "A table of F1 race predicted results Brighter/more yellow ",
-    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
-    "less likely outcomes. For the ",
-    race_name,
-    ", the predictions have drivers most likely ",
-    "in the following order: ",
-    paste(predictions_formatted$driver_name, collapse = ", "),
-    "."
-  )
-
   return(list(
     text = skeet_body,
     tags = tags,
     image = image$filename,
-    image_alt = image_alt
+    image_alt = generate_image_alt_text(
+      "race",
+      race_name,
+      predictions_formatted$driver_name
+    )
   ))
 }
 
@@ -183,18 +218,10 @@ format_race_skeet_predictions <- function(predictions) {
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
 format_quali_skeet_predictions <- function(predictions) {
-  current_season <- predictions$season[1]
-  current_round <- predictions$round[1]
-
-  predictions_formatted <- predictions %>%
-    dplyr::mutate(
-      driver_name = get_driver_name(current_season, .data$driver_id)
-    )
-
-  race_name <- get_race_name(current_season, current_round)
-  race_hashtag <- stringr::str_replace_all(race_name, "Grand", "G")
-  race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
-  race_hashtag <- stringr::str_replace_all(race_hashtag, " ", "")
+  common_data <- prepare_skeet_data(predictions, quali = TRUE)
+  predictions_formatted <- common_data$predictions_formatted
+  race_name <- common_data$race_name
+  race_hashtag <- common_data$race_hashtag
 
   # Top 5 for Pole
   pole_preds <- predictions_formatted %>%
@@ -237,22 +264,15 @@ format_quali_skeet_predictions <- function(predictions) {
 
   image <- format_quali_prob_table(predictions, save_image = TRUE)
 
-  image_alt <- paste0(
-    "A table of F1 qualifying predicted outcomes. Brighter/more yellow ",
-    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
-    "less likely outcomes. For the ",
-    race_name,
-    ", the predictions have drivers most likely ",
-    "in the following order: ",
-    paste(predictions_formatted$driver_name, collapse = ", "),
-    "."
-  )
-
   return(list(
     text = skeet_body,
     tags = tags,
     image = image$filename,
-    image_alt = image_alt
+    image_alt = generate_image_alt_text(
+      "Qualifying",
+      race_name,
+      predictions_formatted$driver_name
+    )
   ))
 }
 
@@ -260,8 +280,8 @@ format_quali_skeet_predictions <- function(predictions) {
 #' Post Predictions to Bluesky
 #'
 #' This function takes a status string and posts it to Bluesky.
-#' It requires credentials to be set as environment variables for `bskyr`.
-#' See the bskyr documentation for details (e.g., BSKY_HANDLE, BSKY_APP_PASSWORD).
+#' It requires credentials to be set as environment variables for `atrrr`.
+#' See the atrrr documentation for details.
 #'
 #' @param text The text content of the skeet.
 #' @param image file path to a graphic image, if to be added
@@ -276,10 +296,10 @@ post_skeet_predictions <- function(
   tags = NULL
 ) {
   if (!requireNamespace("atrrr", quietly = TRUE)) {
-    stop(
-      "Package 'atrrr' is required. Please install it with install.packages('atrrr').",
-      call. = FALSE
-    )
+    cli::cli_abort(c(
+      "Package {.pkg atrrr} is required to post to Bluesky.",
+      "i" = "Please install it with {.code install.packages('atrrr')}."
+    ))
   }
 
   message("Posting skeet...")
@@ -341,16 +361,10 @@ post_quali_predictions <- function(predictions) {
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
 format_race_skeet_odds <- function(predictions) {
-  current_season <- predictions$season[1]
-  current_round <- predictions$round[1]
-
-  predictions_formatted <- predictions %>%
-    dplyr::mutate(
-      driver_name = get_driver_name(current_season, .data$driver_id)
-    )
-
-  race_name <- get_race_name(current_season, current_round)
-  race_hashtag <- stringr::str_replace_all(race_name, " ", "")
+  common_data <- prepare_skeet_data(predictions, quali = FALSE)
+  predictions_formatted <- common_data$predictions_formatted
+  race_name <- common_data$race_name
+  race_hashtag <- common_data$race_hashtag
 
   # Combine into a single skeet body
   skeet_body <- glue::glue(
@@ -431,21 +445,29 @@ post_race_predictions <- function(predictions) {
 #' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
 #'   and returns a list containing the table object and the file path. If `FALSE`
 #'   (default), returns only the `gt_tbl` object.
+#' @param type The type of prediction, either "race" or "qualifying".
 #'
+#' @rdname format_position_prob_table
 #' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
-#' @export
-format_results_prob_table <- function(predictions, save_image = FALSE) {
+format_position_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
-    )
+    cli::cli_abort(c(
+      "Package {.pkg gt} is required to create tables.",
+      "i" = "Please install it with {.code install.packages('gt')}."
+    ))
   }
 
   if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
+    cli::cli_abort(
+      "The {.arg predictions} data frame must contain a {.val .probs} column."
+    )
+  }
+
+  type <- tolower(type)
+
+  if (!type %in% c("race", "qualifying")) {
+    cli::cli_abort(
+      "{.arg type} must be one of {.val race} or {.val qualifying}."
     )
   }
 
@@ -461,24 +483,37 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 
   race_name <- get_race_name(current_season, current_round)
 
-  probs <- as.data.frame(predictions_formatted$.probs)
-  # Wrangle the probability data into a wide format for the table
-  prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "win_odd", "likely_position_class") %>%
-    dplyr::bind_cols(probs) %>%
-    dplyr::arrange(.data$likely_position_class)
+  # Select and arrange based on type
+  if (type == "race") {
+    prob_data <- predictions_formatted %>%
+      dplyr::select(
+        "driver_name",
+        "win_odd",
+        "likely_position_class",
+        ".probs"
+      ) %>%
+      dplyr::bind_cols(as.data.frame(.$`.probs`)) %>%
+      dplyr::select(-".probs") %>%
+      dplyr::arrange(.data$likely_position_class)
+  } else {
+    # Qualifying
+    prob_data <- predictions_formatted %>%
+      dplyr::select("driver_name", "likely_quali_position_class", ".probs") %>%
+      dplyr::bind_cols(as.data.frame(.$`.probs`)) %>%
+      dplyr::select(-".probs") %>%
+      dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
+  }
 
+  probs <- as.data.frame(predictions_formatted$.probs)
   # Create the gt table
   prob_table <- prob_data %>%
-    dplyr::select(-"likely_position_class") %>%
+    dplyr::select(-dplyr::starts_with("likely_")) %>%
     gt::gt() %>%
     gt::tab_header(
-      title = gt::md("**Race Finishing Position Probabilities**"),
+      title = gt::md(tools::toTitleCase(glue::glue(
+        "**{type} Finishing Position Probabilities**"
+      ))),
       subtitle = race_name
-    ) %>%
-    gt::tab_spanner(
-      label = "Odds of Finishing at Each Position",
-      columns = -c("driver_name")
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
     gt::cols_label(
@@ -496,7 +531,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -c('driver_name'),
+      columns = -c("driver_name", "win_odd"),
       rows = i,
       direction = 'row',
       palette = "viridis"
@@ -512,99 +547,16 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   }
 }
 
-#' Format Qualifying Probabilities as a Table
-#'
-#' This function takes the results from `predict_quali_round()` and creates a
-#' `gt` table visualizing the probability of each driver achieving each
-#' qualifying position.
-#'
-#' @details
-#' The table is formatted with a color heatmap, where brighter/more colorful
-#' cells indicate a higher probability. It requires the `gt` package to be
-#' installed. The function returns a `gt` object which can be printed or saved
-#' using `gt::gtsave()`.
-#'
-#' @param predictions A data frame of predictions from `predict_quali_round()`.
-#'   This must contain the `.probs` list-column with position probabilities.
-#' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
-#'   and returns a list containing the table object and the file path. If `FALSE`
-#'   (default), returns only the `gt_tbl` object.
-#'
-#' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
+#' @rdname format_position_prob_table
+#' @export
+format_results_prob_table <- function(predictions, save_image = FALSE) {
+  format_position_prob_table(predictions, save_image, type = "race")
+}
+
+#' @rdname format_position_prob_table
 #' @export
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
-  if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
-    )
-  }
-
-  if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
-    )
-  }
-
-  # Get race info for the title
-  current_season <- predictions$season[1]
-  current_round <- predictions$round[1]
-
-  # Get driver names
-  predictions_formatted <- predictions %>%
-    dplyr::mutate(
-      driver_name = get_driver_name(current_season, .data$driver_id)
-    )
-
-  race_name <- get_race_name(current_season, current_round)
-
-  probs <- as.data.frame(predictions_formatted$.probs)
-  # Wrangle the probability data into a wide format for the table
-  prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "likely_quali_position_class") %>%
-    dplyr::bind_cols(probs) %>%
-    dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
-
-  # Create the gt table
-  prob_table <- prob_data %>%
-    dplyr::select(-"likely_quali_position_class") %>%
-    gt::gt() %>%
-    gt::tab_header(
-      title = gt::md("**Qualifying Position Probabilities**"),
-      subtitle = race_name
-    ) %>%
-    gt::tab_spanner(
-      label = "Odds of Qualifying at Each Position",
-      columns = -"driver_name"
-    ) %>%
-    gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
-    gt::cols_label(driver_name = "Driver") %>%
-    gt::tab_options(
-      column_labels.font.size = "small",
-      table.font.size = "small",
-      data_row.padding = gt::px(3)
-    ) %>%
-    gt::tab_source_note(
-      source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
-    )
-  for (i in seq_len(nrow(prob_data))) {
-    prob_table <- gt::data_color(
-      prob_table,
-      columns = -c('driver_name'),
-      rows = i,
-      direction = 'row',
-      palette = "viridis"
-    )
-  }
-  if (!save_image) {
-    return(prob_table)
-  } else {
-    tempdir <- tempdir(check = TRUE)
-    filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename)
-    return(list(prob_table = prob_table, filename = filename))
-  }
+  format_position_prob_table(predictions, save_image, type = "qualifying")
 }
 
 
@@ -630,17 +582,10 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 format_results_odds_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
-    )
-  }
-
-  if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
-    )
+    cli::cli_abort(c(
+      "Package {.pkg gt} is required to create tables.",
+      "i" = "Please install it with {.code install.packages('gt')}."
+    ))
   }
 
   # Get race info for the title
