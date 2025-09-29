@@ -931,7 +931,7 @@ predict_position_class <- function(
     dplyr::mutate(
       likely_position_class = as.numeric(as.character(.data$.pred))
     ) %>%
-    dplyr::select("driver_id", "round", "season", "likely_position_class") %>%
+    dplyr::select("driver_id", "round", "season", "likely_position_class", ".probs") %>%
     dplyr::arrange(.data$likely_position_class)
   return(preds)
 }
