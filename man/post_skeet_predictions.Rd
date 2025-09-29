@@ -4,10 +4,10 @@
 \alias{post_skeet_predictions}
 \title{Post Predictions to Bluesky}
 \usage{
-post_skeet_predictions(text, image = NULL, image_alt = NULL, tags = NULL)
+post_skeet_predictions(texts, image = NULL, image_alt = NULL, tags = NULL)
 }
 \arguments{
-\item{text}{The text content of the skeet.}
+\item{texts}{A character vector where each element is the text for a post in a thread.}
 
 \item{image}{file path to a graphic image, if to be added}
 
@@ -20,6 +20,6 @@ Invisibly returns the response from the Bluesky API, or NULL on failure.
 }
 \description{
 This function takes a status string and posts it to Bluesky.
-It requires credentials to be set as environment variables for `bskyr`.
-See the bskyr documentation for details (e.g., BSKY_HANDLE, BSKY_APP_PASSWORD).
+It requires credentials to be set as environment variables for `atrrr`.
+See the atrrr documentation for details.
 }
