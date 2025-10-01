@@ -735,7 +735,7 @@ model_quali_early <- function(
       error = function(e) paste0("Error saving models: ", e)
     )
   }
-  return(models)
+  invisible(models)
 }
 
 #' Train Late Qualifying Prediction Models
@@ -767,7 +767,7 @@ model_quali_late <- function(
       error = function(e) paste0("Error saving models: ", e)
     )
   }
-  return(models)
+  invisible(models)
 }
 
 
@@ -1382,7 +1382,7 @@ model_results_after_quali <- function(
       error = function(e) paste0("Error saving models: ", e)
     )
   }
-  return(models)
+  invisible(models)
 }
 
 #' Train Race Result Models (Post-Practice)
@@ -1415,7 +1415,7 @@ model_results_late <- function(
       error = function(e) paste0("Error saving models: ", e)
     )
   }
-  return(models)
+  invisible(models)
 }
 
 #' Train Race Result Models (Pre-Practice)
@@ -1448,7 +1448,7 @@ model_results_early <- function(
       error = function(e) paste0("Error saving models: ", e)
     )
   }
-  return(models)
+  invisible(models)
 }
 
 #' Construct Model File Path
@@ -1630,54 +1630,54 @@ butcher_model_list <- function(model_list) {
       next # Skip to the next model
     }
 
-    # Handle the special case of model_stacks, which don't butcher by themselves
-    if (inherits(model_object, "model_stack")) {
-      for (model_type in names(model_object$model_defs)) {
-        model_object <- butcher::butcher(model_object)
-        model_object$fit <- butcher::butcher(model_object$fit)
-        model_object$model_defs[[
-          model_type
-        ]]$pre$actions$recipe$recipe <- butcher::butcher(
-          model_object$model_defs[[model_type]]$pre$actions$recipe$recipe
-        )
-        if (
-          paste0(model_type, 'pre0_mod0_post0') %in%
-            names(model_object$member_fits)
-        ) {
-          model_object$member_fits[[paste0(
-            model_type,
-            'pre0_mod0_post0'
-          )]] <- butcher::butcher(model_object$member_fits[[paste0(
-            model_type,
-            'pre0_mod0_post0'
-          )]])
-          model_object$member_fits[[paste0(
-            model_type,
-            'pre0_mod0_post0'
-          )]]$pre$actions$recipe$recipe <- butcher::butcher(
-            model_object$member_fits[[paste0(
-              model_type,
-              'pre0_mod0_post0'
-            )]]$pre$actions$recipe$recipe
-          )
-          model_object$member_fits[[paste0(
-            model_type,
-            'pre0_mod0_post0'
-          )]]$pre$mold$blueprint$recipe <- butcher::butcher(
-            model_object$member_fits[[paste0(
-              model_type,
-              'pre0_mod0_post0'
-            )]]$pre$mold$blueprint$recipe
-          )
-        }
-      }
-      cli::cli_inform(
-        "Butchering ensemble model object for: {.val {model_name}}"
-      )
-      final_list[[model_name]] <- model_object
-      next # Skip to the next model
-    }
-    # Butcher the workflow to reduce size, wrapped in a tryCatch for robustness
+    # # Handle the special case of model_stacks, which don't butcher by themselves
+    # if (inherits(model_object, "model_stack")) {
+    #   for (model_type in names(model_object$model_defs)) {
+    #     model_object <- butcher::butcher(model_object)
+    #     model_object$fit <- butcher::butcher(model_object$fit)
+    #     model_object$model_defs[[
+    #       model_type
+    #     ]]$pre$actions$recipe$recipe <- butcher::butcher(
+    #       model_object$model_defs[[model_type]]$pre$actions$recipe$recipe
+    #     )
+    #     if (
+    #       paste0(model_type, 'pre0_mod0_post0') %in%
+    #         names(model_object$member_fits)
+    #     ) {
+    #       model_object$member_fits[[paste0(
+    #         model_type,
+    #         'pre0_mod0_post0'
+    #       )]] <- butcher::butcher(model_object$member_fits[[paste0(
+    #         model_type,
+    #         'pre0_mod0_post0'
+    #       )]])
+    #       model_object$member_fits[[paste0(
+    #         model_type,
+    #         'pre0_mod0_post0'
+    #       )]]$pre$actions$recipe$recipe <- butcher::butcher(
+    #         model_object$member_fits[[paste0(
+    #           model_type,
+    #           'pre0_mod0_post0'
+    #         )]]$pre$actions$recipe$recipe
+    #       )
+    #       model_object$member_fits[[paste0(
+    #         model_type,
+    #         'pre0_mod0_post0'
+    #       )]]$pre$mold$blueprint$recipe <- butcher::butcher(
+    #         model_object$member_fits[[paste0(
+    #           model_type,
+    #           'pre0_mod0_post0'
+    #         )]]$pre$mold$blueprint$recipe
+    #       )
+    #     }
+    #   }
+    #   cli::cli_inform(
+    #     "Butchering ensemble model object for: {.val {model_name}}"
+    #   )
+    #   final_list[[model_name]] <- model_object
+    #   next # Skip to the next model
+    # }
+    # Butcher the other models to reduce size, wrapped in a tryCatch for robustness
     tryCatch(
       {
         butchered_model <- butcher::butcher(model_object)

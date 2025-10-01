@@ -4,7 +4,7 @@
 \alias{post_quali_predictions}
 \title{Post Qualifying Predictions to Bluesky}
 \usage{
-post_quali_predictions(predictions)
+post_quali_predictions(predictions = predict_quali_round())
 }
 \arguments{
 \item{predictions}{A data frame of predictions from `predict_quali_round()`.}
