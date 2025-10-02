@@ -49,5 +49,6 @@ Suggests:
     kknn,
     atrrr,
     stacks, 
-    webshot
+    webshot2,
+    magick
 VignetteBuilder: knitr

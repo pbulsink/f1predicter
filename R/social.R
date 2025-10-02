@@ -156,6 +156,10 @@ format_race_skeet_predictions <- function(predictions) {
 
   image <- format_results_prob_table(predictions, save_image = TRUE)
 
+  driver_list <- predictions_formatted %>%
+    dplyr::arrange(.data$likely_quali_position) %>%
+    dplyr::pull(.data$driver_name)
+
   image_alt <- paste0(
     "A table of F1 race predicted results Brighter/more yellow ",
     "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
@@ -163,7 +167,7 @@ format_race_skeet_predictions <- function(predictions) {
     race_name,
     ", the predictions have drivers most likely ",
     "in the following order: ",
-    paste(predictions_formatted$driver_names, collapse = ", "),
+    paste(driver_list, collapse = ", "),
     "."
   )
 
@@ -209,8 +213,8 @@ format_quali_skeet_predictions <- function(predictions) {
 
   # Top 5 likely qualifying positions (ordered by pole probability)
   position_preds <- predictions_formatted %>%
-    dplyr::arrange(.data$pole_odd) %>%
-    dplyr::slice_head(n = 5) %>%
+    dplyr::arrange(.data$likely_quali_position) %>%
+    dplyr::filter(.data$likely_quali_position <= 5) %>%
     dplyr::mutate(
       text = glue::glue(
         "{.data$driver_name}: P{round(.data$likely_quali_position, 0)}"
@@ -226,7 +230,7 @@ format_quali_skeet_predictions <- function(predictions) {
     "Pole Position Chance:",
     "{pole_preds}",
     "",
-    "🔮 Most Likely Qualifying Position (Top 5):",
+    "🔮 Most Likely Drivers to qualify in top 5, with position:",
     "{position_preds}",
     .sep = "\n"
   )
@@ -235,6 +239,9 @@ format_quali_skeet_predictions <- function(predictions) {
   tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
 
   image <- format_quali_prob_table(predictions, save_image = TRUE)
+  driver_list <- predictions_formatted %>%
+    dplyr::arrange(.data$likely_quali_position) %>%
+    dplyr::pull(.data$driver_name)
 
   image_alt <- paste0(
     "A table of F1 qualifying predicted outcomes. Brighter/more yellow ",
@@ -243,7 +250,7 @@ format_quali_skeet_predictions <- function(predictions) {
     race_name,
     ", the predictions have drivers most likely ",
     "in the following order: ",
-    paste(predictions_formatted$driver_names, collapse = ", "),
+    paste(driver_list, collapse = ", "),
     "."
   )
 
