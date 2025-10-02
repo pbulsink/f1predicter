@@ -1,8 +1,8 @@
 # This script provides functions to format and post F1 predictions to social media,
 # inspired by the pbulsink/HockeyModel repository.
 #
-# It requires the 'bskyr', 'glue', 'scales', and 'gt' packages.
-# install.packages(c("bskyr", "glue", "scales", "gt"))
+# It requires the 'atrrr', 'glue', 'scales', and 'gt' packages.
+# install.packages(c("atrrr", "glue", "scales", "gt"))
 
 #' Get Driver Name from ID
 #'
@@ -18,10 +18,9 @@
 #' @noRd
 get_driver_name <- function(season, driver_ids) {
   if (!requireNamespace("f1dataR", quietly = TRUE)) {
-    stop(
-      "Package 'f1dataR' is required. Please install it.",
-      call. = FALSE
-    )
+    cli::cli_abort(c(
+      "Package {.pkg f1dataR} is required to get driver names."
+    ))
   }
 
   # Load drivers for the specified season
@@ -276,9 +275,8 @@ post_skeet_predictions <- function(
   tags = NULL
 ) {
   if (!requireNamespace("atrrr", quietly = TRUE)) {
-    stop(
-      "Package 'atrrr' is required. Please install it with install.packages('atrrr').",
-      call. = FALSE
+    cli::cli_abort(
+      "Package {.pkg atrrr} is required. Please install it with {.code install.packages('atrrr')}."
     )
   }
 
@@ -286,7 +284,7 @@ post_skeet_predictions <- function(
   if (is.null(image)) {
     response <- tryCatch(
       {
-        atrrr::post(text = text, tags = tags)
+        atrrr::post_skeet(text = text, tags = tags)
       },
       error = function(e) {
         warning("Failed to post skeet: ", e$message, call. = FALSE)
@@ -296,7 +294,7 @@ post_skeet_predictions <- function(
   } else {
     response <- tryCatch(
       {
-        atrrr::post(
+        atrrr::post_skeet(
           text = text,
           image = image,
           image_alt = image_alt,
@@ -376,16 +374,14 @@ post_race_predictions <- function(predictions) {
 #' @export
 format_results_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
+    cli::cli_abort(
+      "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
     )
   }
 
   if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
+    cli::cli_abort(
+      "The {.arg predictions} data frame must contain a {.val .probs} column."
     )
   }
 
@@ -422,7 +418,8 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
     gt::cols_label(
-      driver_name = "Driver") %>%
+      driver_name = "Driver"
+    ) %>%
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
@@ -473,16 +470,14 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
+    cli::cli_abort(
+      "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
     )
   }
 
   if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
+    cli::cli_abort(
+      "The {.arg predictions} data frame must contain a {.val .probs} column."
     )
   }
 
@@ -569,16 +564,14 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 format_results_odds_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
-    stop(
-      "Package 'gt' is required for this function. Please install it with `install.packages('gt')`.",
-      call. = FALSE
+    cli::cli_abort(
+      "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
     )
   }
 
   if (!".probs" %in% names(predictions)) {
-    stop(
-      "The `predictions` data frame must contain a '.probs' column.",
-      call. = FALSE
+    cli::cli_abort(
+      "The {.arg predictions} data frame must contain a {.val .probs} column."
     )
   }
 
@@ -610,7 +603,8 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
       driver_name = "Driver",
       win_odd = "Win Odds",
       podium_odd = "Podium Odds",
-      t10_odd = "Top 10 Odds") %>%
+      t10_odd = "Top 10 Odds"
+    ) %>%
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",

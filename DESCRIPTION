@@ -48,5 +48,6 @@ Suggests:
     kernlab,
     kknn,
     atrrr,
-    stacks
+    stacks, 
+    webshot
 VignetteBuilder: knitr

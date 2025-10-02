@@ -577,6 +577,11 @@ predict_quali_pole <- function(
   quali_pole_model
 ) {
   pred_call <- if (inherits(quali_pole_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(quali_pole_model, new_data, type = "prob")
   } else {
     stats::predict(
@@ -622,6 +627,11 @@ predict_quali_pos <- function(
   is_ensemble = FALSE
 ) {
   pred_call <- if (inherits(quali_pos_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(quali_pos_model, new_data, type = "numeric")
   } else {
     stats::predict(
@@ -723,11 +733,23 @@ predict_quali_round <- function(
   quali_models = NULL,
   engine = "ensemble" # TODO: change to autodetect engine
 ) {
-  if (is.null(quali_models)) {
-    model_timing <- if (any(grepl("practice", names(new_data)))) {
-      "late"
+  # If quali_models is NULL or a character string, load the appropriate models
+  if (is.null(quali_models) || is.character(quali_models)) {
+    if (is.character(quali_models)) {
+      valid_timings <- c("early", "late")
+      if (!quali_models %in% valid_timings) {
+        cli::cli_abort(
+          "{.arg quali_models} must be one of {.val {valid_timings}} when provided as a string."
+        )
+      }
+      model_timing <- quali_models
     } else {
-      "early"
+      # is.null(quali_models), so auto-detect
+      model_timing <- if (any(grepl("practice", names(new_data)))) {
+        "late"
+      } else {
+        "early"
+      }
     }
     cli::cli_inform(
       "Loading '{model_timing}' qualifying models for engine {.val {engine}} from disk."
@@ -806,6 +828,11 @@ predict_winner <- function(
   win_model
 ) {
   pred_call <- if (inherits(win_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(win_model, new_data, type = "prob")
   } else {
     stats::predict(tune::extract_workflow(win_model), new_data, type = "prob")
@@ -830,6 +857,11 @@ predict_podium <- function(
   podium_model
 ) {
   pred_call <- if (inherits(podium_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(podium_model, new_data, type = "prob")
   } else {
     stats::predict(
@@ -858,6 +890,11 @@ predict_t10 <- function(
   t10_model
 ) {
   pred_call <- if (inherits(t10_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(t10_model, new_data, type = "prob")
   } else {
     stats::predict(tune::extract_workflow(t10_model), new_data, type = "prob")
@@ -882,6 +919,11 @@ predict_position <- function(
   position_model
 ) {
   position_preds <- if (inherits(position_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
     stats::predict(position_model, new_data, type = "numeric")
   } else {
     stats::predict(
@@ -931,7 +973,13 @@ predict_position_class <- function(
     dplyr::mutate(
       likely_position_class = as.numeric(as.character(.data$.pred))
     ) %>%
-    dplyr::select("driver_id", "round", "season", "likely_position_class", ".probs") %>%
+    dplyr::select(
+      "driver_id",
+      "round",
+      "season",
+      "likely_position_class",
+      ".probs"
+    ) %>%
     dplyr::arrange(.data$likely_position_class)
   return(preds)
 }
@@ -962,15 +1010,26 @@ predict_round <- function(
   results_models = NULL,
   engine = "ensemble"
 ) {
-  if (is.null(results_models)) {
-    model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
-      "after_quali"
-    } else if (any(grepl("practice", names(new_data)))) {
-      "late"
+  # If results_models is NULL or a character string, load the appropriate models
+  if (is.null(results_models) || is.character(results_models)) {
+    if (is.character(results_models)) {
+      valid_timings <- c("early", "late", "after_quali")
+      if (!results_models %in% valid_timings) {
+        cli::cli_abort(
+          "{.arg results_models} must be one of {.val {valid_timings}} when provided as a string."
+        )
+      }
+      model_timing <- results_models
     } else {
-      "early"
+      # is.null(results_models), so auto-detect
+      model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
+        "after_quali"
+      } else if (any(grepl("practice", names(new_data)))) {
+        "late"
+      } else {
+        "early"
+      }
     }
-
     cli::cli_inform(
       "Loading '{model_timing}' results models for engine {.val {engine}} from disk."
     )
