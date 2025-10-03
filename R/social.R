@@ -126,9 +126,9 @@ format_race_skeet_predictions <- function(predictions) {
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
 
-  # Top 5 likely positions (ordered by win probability)
+  # Top 5 likely positions (ordered by predicted position)
   position_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$win_odd)) %>%
+    dplyr::arrange(.data$likely_position) %>%
     dplyr::slice_head(n = 5) %>%
     dplyr::mutate(
       text = glue::glue("{.data$driver_name}: P{.data$likely_position}")
@@ -136,28 +136,13 @@ format_race_skeet_predictions <- function(predictions) {
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
 
-  # Combine into a single skeet body
-  skeet_body <- glue::glue(
-    "Predictions for the {race_name} 🏎️",
-    "",
-    "🏆 Win Chance:",
-    "{win_preds}",
-    "",
-    "🍾 Podium Chance:",
-    "{podium_preds}",
-    "",
-    "🔮 Likely Finishing Position (Top 5):",
-    "{position_preds}",
-    .sep = "\n"
-  )
-
   # Bluesky tags are handled separately from the text and don't use '#'
   tags <- c("F1", "F1Predictions", race_hashtag)
 
   image <- format_results_prob_table(predictions, save_image = TRUE)
 
   driver_list <- predictions_formatted %>%
-    dplyr::arrange(.data$likely_quali_position) %>%
+    dplyr::arrange(.data$likely_position) %>%
     dplyr::pull(.data$driver_name)
 
   image_alt <- paste0(
@@ -171,11 +156,35 @@ format_race_skeet_predictions <- function(predictions) {
     "."
   )
 
+  skeet1_body <- glue::glue(
+    "#F1 Predictions for the {race_name} 🏎️",
+    "",
+    "🏆 Win Chance:",
+    "{win_preds}",
+    .sep = "\n"
+  )
+
+  skeet2_body <- glue::glue(
+    "🍾 Podium Chance (Top 5):",
+    "{podium_preds}",
+    .sep = "\n"
+  )
+
+  skeet3_body <- glue::glue(
+    "🔮 Most Likely Drivers to finish in top 5, with position:",
+    "{position_preds}",
+    .sep = "\n"
+  )
+
   return(list(
-    text = skeet_body,
-    tags = tags,
-    image = image$filename,
-    image_alt = image_alt
+    list(
+      text = skeet1_body,
+      tags = tags,
+      image = image$filename,
+      image_alt = image_alt
+    ),
+    list(text = skeet2_body),
+    list(text = skeet3_body)
   ))
 }
 
@@ -223,21 +232,6 @@ format_quali_skeet_predictions <- function(predictions) {
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
 
-  # Combine into a single skeet body
-  skeet_body <- glue::glue(
-    "Qualifying Predictions for the {race_name} 🏎️",
-    "",
-    "Pole Position Chance:",
-    "{pole_preds}",
-    "",
-    "🔮 Most Likely Drivers to qualify in top 5, with position:",
-    "{position_preds}",
-    .sep = "\n"
-  )
-
-  # Bluesky tags are handled separately from the text and don't use '#'
-  tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
-
   image <- format_quali_prob_table(predictions, save_image = TRUE)
   driver_list <- predictions_formatted %>%
     dplyr::arrange(.data$likely_quali_position) %>%
@@ -254,11 +248,26 @@ format_quali_skeet_predictions <- function(predictions) {
     "."
   )
 
+  # Bluesky tags are handled separately from the text and don't use '#'
+  tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
+
+  skeet1_body <- glue::glue(
+    "#F1 Qualifying Predictions for the {race_name} 🏎️",
+    "",
+    "Pole Position Chance:",
+    "{pole_preds}",
+    .sep = "\n"
+  )
+
+  skeet2_body <- glue::glue(
+    "🔮 Most Likely Drivers to qualify in top 5, with position:",
+    "{position_preds}",
+    .sep = "\n"
+  )
+
   return(list(
-    text = skeet_body,
-    tags = tags,
-    image = image$filename,
-    image_alt = image_alt
+    list(text = skeet1_body, tags = tags),
+    list(text = skeet2_body, image = image$filename, image_alt = image_alt)
   ))
 }
 
@@ -269,57 +278,66 @@ format_quali_skeet_predictions <- function(predictions) {
 #' It requires credentials to be set as environment variables for `bskyr`.
 #' See the bskyr documentation for details (e.g., BSKY_HANDLE, BSKY_APP_PASSWORD).
 #'
-#' @param text The text content of the skeet.
-#' @param image file path to a graphic image, if to be added
-#' @param image_alt Alternative text for the image, for accessibility.
-#' @param tags A character vector of tags to apply to the post.
+#' @param skeets A list of skeets to post. Each element of the list should be
+#'   another list containing `text`, and optionally `image`, `image_alt`, and `tags`.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
-post_skeet_predictions <- function(
-  text,
-  image = NULL,
-  image_alt = NULL,
-  tags = NULL
-) {
+post_skeet_predictions <- function(skeets) {
   if (!requireNamespace("atrrr", quietly = TRUE)) {
     cli::cli_abort(
       "Package {.pkg atrrr} is required. Please install it with {.code install.packages('atrrr')}."
     )
   }
 
-  message("Posting skeet...")
-  if (is.null(image)) {
-    response <- tryCatch(
-      {
-        atrrr::post_skeet(text = text, tags = tags)
-      },
-      error = function(e) {
-        warning("Failed to post skeet: ", e$message, call. = FALSE)
-        return(NULL)
-      }
-    )
-  } else {
+  if (!is.list(skeets) || !is.list(skeets[[1]])) {
+    cli::cli_abort("{.arg skeets} must be a list of lists.")
+  }
+
+  last_post_response <- NULL
+  all_responses <- list()
+
+  for (i in seq_along(skeets)) {
+    skeet <- skeets[[i]]
+
+    # Determine if this is a reply
+    reply_to_arg <- if (i > 1 && !is.null(last_post_response)) {
+      last_post_response$uri
+    } else {
+      NULL
+    }
+
+    cli::cli_inform("Posting skeet {i} of {length(skeets)}...")
+
     response <- tryCatch(
       {
         atrrr::post_skeet(
-          text = text,
-          image = image,
-          image_alt = image_alt,
-          tags = tags
+          text = skeet$text,
+          image = skeet$image,
+          image_alt = skeet$image_alt,
+          tags = skeet$tags,
+          in_reply_to = reply_to_arg
         )
       },
       error = function(e) {
-        warning("Failed to post skeet: ", e$message, call. = FALSE)
+        cli::cli_warn("Failed to post skeet {i}: {e$message}")
         return(NULL)
       }
     )
+
+    if (is.null(response)) {
+      cli::cli_warn("Aborting thread due to posting failure.")
+      break
+    }
+
+    cli::cli_inform("Skeet {i} posted successfully!")
+    last_post_response <- response
+    all_responses[[i]] <- response
+
+    # Add a small delay between posts
+    if (i < length(skeets)) Sys.sleep(2)
   }
 
-  if (!is.null(response)) {
-    message("Skeet posted successfully!")
-  }
-
-  return(invisible(response))
+  invisible(all_responses)
 }
 
 #' Post Qualifying Predictions to Bluesky
@@ -331,13 +349,8 @@ post_skeet_predictions <- function(
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
 post_quali_predictions <- function(predictions = predict_quali_round()) {
-  formatted_post <- format_quali_skeet_predictions(predictions)
-  post_skeet_predictions(
-    text = formatted_post$text,
-    tags = formatted_post$tags,
-    image = formatted_post$image,
-    image_alt = formatted_post$image_alt
-  )
+  skeet_thread <- format_quali_skeet_predictions(predictions)
+  post_skeet_predictions(skeets = skeet_thread)
 }
 
 
@@ -350,13 +363,9 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
 post_race_predictions <- function(predictions) {
-  formatted_post <- format_race_skeet_predictions(predictions)
-  post_skeet_predictions(
-    text = formatted_post$text,
-    tags = formatted_post$tags,
-    image = formatted_post$image,
-    image_alt = formatted_post$image_alt
-  )
+  # Race predictions are shorter, so we post as a single skeet
+  skeet_list <- list(format_race_skeet_predictions(predictions))
+  post_skeet_predictions(skeets = skeet_list)
 }
 
 #' Format Results Probabilities as a Table
@@ -503,7 +512,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   probs <- as.data.frame(predictions_formatted$.probs)
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "likely_quali_position_class") %>%
+    dplyr::select("driver_name", "pole_odd", "likely_quali_position_class") %>%
     dplyr::bind_cols(probs) %>%
     dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
 
@@ -517,22 +526,42 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     ) %>%
     gt::tab_spanner(
       label = "Odds of Qualifying at Each Position",
-      columns = -"driver_name"
+      columns = -c("driver_name", "pole_odd")
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
-    gt::cols_label(driver_name = "Driver") %>%
+    gt::cols_label(driver_name = "Driver", pole_odd = "Pole Odds") %>%
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
     ) %>%
     gt::tab_source_note(
-      source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
+      source_note = paste0(
+        "Results from two separate models: odds of pole and likely finishing position.\n",
+        "Generated: ",
+        Sys.Date(),
+        " | @bot.bulsink.ca"
+      )
+    ) %>%
+    gt::data_color(
+      'pole_odd', # Check this works instead of columns = -driver_name
+      direction = 'column',
+      palette = "viridis"
+    ) %>%
+    gt::tab_style(
+      style = gt::cell_borders(
+        sides = c("right"),
+        color = "white",
+        weight = gt::px(3),
+        style = "solid"
+      ),
+      locations = gt::cells_body(columns = 'pole_odd')
     )
+
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -c('driver_name'), # Check this works instead of columns = -driver_name
+      columns = -c('driver_name', 'pole_odd'), # Check this works instead of columns = -driver_name
       rows = i,
       direction = 'row',
       palette = "viridis"
