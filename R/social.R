@@ -101,6 +101,8 @@ format_race_skeet_predictions <- function(predictions) {
 
   race_name <- get_race_name(current_season, current_round)
   race_hashtag <- stringr::str_replace_all(race_name, " ", "")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, "Grand", "G")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
 
   # Top 3 for Win
   win_preds <- predictions_formatted %>%
@@ -131,7 +133,9 @@ format_race_skeet_predictions <- function(predictions) {
     dplyr::arrange(.data$likely_position) %>%
     dplyr::slice_head(n = 5) %>%
     dplyr::mutate(
-      text = glue::glue("{.data$driver_name}: P{.data$likely_position}")
+      text = glue::glue(
+        "{.data$driver_name}: P{round(.data$likely_position, 1)}"
+      )
     ) %>%
     dplyr::pull(.data$text) %>%
     paste(collapse = "\n")
@@ -139,19 +143,34 @@ format_race_skeet_predictions <- function(predictions) {
   # Bluesky tags are handled separately from the text and don't use '#'
   tags <- c("F1", "F1Predictions", race_hashtag)
 
-  image <- format_results_prob_table(predictions, save_image = TRUE)
+  prob_image <- format_results_prob_table(predictions, save_image = TRUE)
+  odds_image <- format_results_odds_table(predictions, save_image = TRUE)
 
   driver_list <- predictions_formatted %>%
     dplyr::arrange(.data$likely_position) %>%
     dplyr::pull(.data$driver_name)
 
-  image_alt <- paste0(
+  prob_image_alt <- paste0(
     "A table of F1 race predicted results Brighter/more yellow ",
     "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
     "less likely outcomes. For the ",
     race_name,
     ", the predictions have drivers most likely ",
     "in the following order: ",
+    paste(driver_list, collapse = ", "),
+    "."
+  )
+
+  driver_list <- predictions_formatted %>%
+    dplyr::arrange(.data$win_odd) %>%
+    dplyr::pull(.data$driver_name)
+
+  odds_image_alt <- paste0(
+    "A table of F1 race predicted results Brighter/more yellow ",
+    "colours indicate more likely finishing positions. Darker/more purple colours indicate ",
+    "less likely outcomes. For the ",
+    race_name,
+    ", the predictions have drivers ranked with highest to lowest chance in this order: ",
     paste(driver_list, collapse = ", "),
     "."
   )
@@ -173,6 +192,7 @@ format_race_skeet_predictions <- function(predictions) {
   skeet3_body <- glue::glue(
     "🔮 Most Likely Drivers to finish in top 5, with position:",
     "{position_preds}",
+    "\n#F1 #{race_hashtag}",
     .sep = "\n"
   )
 
@@ -180,11 +200,15 @@ format_race_skeet_predictions <- function(predictions) {
     list(
       text = skeet1_body,
       tags = tags,
-      image = image$filename,
-      image_alt = image_alt
+      image = odds_image$filename,
+      image_alt = odds_image_alt
     ),
     list(text = skeet2_body),
-    list(text = skeet3_body)
+    list(
+      text = skeet3_body,
+      image = prob_image$filename,
+      image_alt = prob_image_alt
+    )
   ))
 }
 
@@ -262,6 +286,7 @@ format_quali_skeet_predictions <- function(predictions) {
   skeet2_body <- glue::glue(
     "🔮 Most Likely Drivers to qualify in top 5, with position:",
     "{position_preds}",
+    "\n#F1 #{race_hashtag}",
     .sep = "\n"
   )
 
@@ -434,7 +459,8 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
     gt::cols_label(
-      driver_name = "Driver"
+      driver_name = "Driver",
+      win_odd = "Chance of Winning"
     ) %>%
     gt::tab_options(
       column_labels.font.size = "small",
@@ -442,7 +468,12 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
       data_row.padding = gt::px(3)
     ) %>%
     gt::tab_source_note(
-      source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
+      source_note = paste0(
+        "Each result model trained independently.\n",
+        "Generated: ",
+        Sys.Date(),
+        " | @bot.bulsink.ca"
+      )
     )
 
   for (i in seq_len(nrow(prob_data))) {
@@ -459,7 +490,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename)
+    gt::gtsave(prob_table, filename = filename, vwidth = 1400)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
@@ -572,7 +603,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename)
+    gt::gtsave(prob_table, filename = filename, vwidth = 1400)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
