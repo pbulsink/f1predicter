@@ -439,11 +439,21 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   race_name <- get_race_name(current_season, current_round)
 
   probs <- as.data.frame(predictions_formatted$.probs)
+
+  sort_position<-c()
+  for(i in seq_len(nrow(probs))){
+    sort_position <- c(sort_position,
+                       weighted.mean(1:ncol(probs), probs[i,]))
+  }
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted %>%
     dplyr::select("driver_name", "win_odd", "likely_position_class") %>%
     dplyr::bind_cols(probs) %>%
-    dplyr::arrange(.data$likely_position_class)
+    dplyr::mutate(
+      sort_position = sort_position
+    ) %>%
+    dplyr::arrange(.data$sort_position) %>%
+    dplyr::select(-"sort_position")
 
   # Create the gt table
   prob_table <- prob_data %>%
@@ -455,7 +465,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     ) %>%
     gt::tab_spanner(
       label = "Odds of Finishing at Each Position",
-      columns = -c("driver_name")
+      columns = -c("driver_name", "win_odd")
     ) %>%
     gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
     gt::cols_label(
@@ -466,6 +476,15 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
+    ) %>%
+    gt::tab_style(
+      style = gt::cell_borders(
+        sides = c("right"),
+        color = "white",
+        weight = gt::px(3),
+        style = "solid"
+      ),
+      locations = gt::cells_body(columns = 'win_odd')
     ) %>%
     gt::tab_source_note(
       source_note = paste0(

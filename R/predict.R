@@ -342,11 +342,16 @@ generate_new_data <- function(
     error = function(e) NULL
   )
 
-  # TODO Refactor quali processing code to subfunctions to do the same laps calculations for quali there as here
-
   if (!is.null(quali) && nrow(quali) > 0) {
     cli::cli_inform("Found qualifying data for {season} round {round}.")
+    quali$round <- round
+    quali$season <- season
     quali_results <- process_quali_times(quali)
+    quali_results <- quali_results %>%
+      dplyr::mutate(
+        'quali_position' = dplyr::row_number()
+      ) %>%
+      dplyr::select(-"driver_avg_qgap")
 
     # If quali_position already exists, remove it before joining
     if ("quali_position" %in% names(new_data)) {
@@ -356,8 +361,12 @@ generate_new_data <- function(
       new_data$grid <- NULL
     }
     new_data <- new_data %>%
-      dplyr::left_join(quali_results, by = "driver_id") %>%
-      dplyr::mutate(grid = .data$quali_position)
+      dplyr::left_join(quali_results) %>%
+      dplyr::mutate(
+        grid = .data$quali_position,
+        driver_avg_qgap = 0.8*driver_avg_qgap + 0.2*qgap
+      )
+
   } else {
     # sort drivers by their average grid for an estimate
     new_data <- new_data %>%
@@ -370,6 +379,7 @@ generate_new_data <- function(
         last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
         driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
         grid = order(order(.data$driver_grid_avg)),
+        driver_avg_qgap = 1,
         quali_position = .data$grid,
         q_min_perc = 1.02,
         q_avg_perc = 1.02,
@@ -418,7 +428,7 @@ generate_new_data <- function(
       new_data <- apply_grid_penalty(
         new_data,
         names(penalties)[p],
-        penalties[p]
+        penalties[[p]]
       )
     }
   }
@@ -529,7 +539,9 @@ apply_grid_penalty <- function(
 
   # --- Apply Penalty ---
   # Establish the pre-penalty grid order based on qualifying
-  sorted_drivers <- race_data %>% dplyr::arrange(.data$quali_position)
+  sorted_drivers <- race_data %>%
+    dplyr::arrange(.data$grid) %>%
+    dplyr::mutate(driver_id = as.character(.data$driver_id))
   driver_order <- as.character(sorted_drivers$driver_id)
 
   original_pos <- which(driver_order == driver_id)
@@ -548,9 +560,11 @@ apply_grid_penalty <- function(
     grid = seq_along(driver_order)
   )
 
-  race_data %>%
+  race_data <- race_data %>%
     dplyr::select(-dplyr::any_of("grid")) %>%
     dplyr::left_join(new_grid_df, by = "driver_id")
+
+  return(race_data)
 }
 
 #' Predict Pole Position
