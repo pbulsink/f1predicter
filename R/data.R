@@ -490,7 +490,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         }
       }
       if (!is.null(laps) && nrow(laps) > 0) {
-        laps <-
+        laps <- laps %>%
           dplyr::left_join(
             results[, c("driver_id", "constructor_id")],
             by = c("driver_id")
@@ -603,7 +603,7 @@ get_season_data <- function(season, force = FALSE) {
   qualis <- NULL
 
   for (round in schedule[
-    schedule$season == season & schedule$date <= (Sys.Date() - 3),
+    schedule$season == season & schedule$date <= Sys.Date(),
   ]$round) {
     cat(
       "Getting data for",
