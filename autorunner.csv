@@ -1,0 +1,10 @@
+# This file contains the schedule for upcoming F1 races.
+# The `run_predictions.R` script uses this file to determine when to run predictions.
+season,round,Race,quali_dt,race_dt
+2025,19,United States Grand Prix,2025-10-18 17:00,2025-10-19 15:00
+2025,20,Mexico City Grand Prix,2025-10-25 17:00,2025-10-26 16:00
+2025,21,São Paulo Grand Prix,2025-11-08 13:00,2025-11-09 12:00
+2025,22,Las Vegas Grand Prix,2025-11-21 23:00,2025-11-22 23:00
+2025,23,Qatar Grand Prix,2025-11-29 13:00,2025-11-30 11:00
+2025,24,Abu Dhabi Grand Prix,2025-12-06 09:00,2025-12-07 08:00
+#
