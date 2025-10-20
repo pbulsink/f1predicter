@@ -410,6 +410,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       if (!is.null(rgrid)) {
         rgrid <- rgrid %>%
           dplyr::mutate(season = season, round = round) %>%
+          dplyr::mutate(position = as.integer(.data$position)) %>%
           janitor::clean_names()
         utils::write.csv(
           x = rgrid,
@@ -641,7 +642,7 @@ get_season_data <- function(season, force = FALSE) {
     if (!is.null(r$pitstops)) {
       pitstops <- dplyr::bind_rows(pitstops, r$pitstops)
     }
-    if (!is.null(r$qualis)) {
+    if (!is.null(r$quali)) {
       qualis <- dplyr::bind_rows(qualis, r$quali)
     }
   }

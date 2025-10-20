@@ -197,19 +197,11 @@ format_race_skeet_predictions <- function(predictions) {
   )
 
   return(list(
-    list(
-      text = skeet1_body,
-      tags = tags,
-      image = odds_image$filename,
-      image_alt = odds_image_alt
-    ),
+    list(text = skeet1_body,tags = tags,image = odds_image$filename,image_alt = odds_image_alt),
     list(text = skeet2_body),
-    list(
-      text = skeet3_body,
-      image = prob_image$filename,
-      image_alt = prob_image_alt
+    list(text = skeet3_body,image = prob_image$filename,image_alt = prob_image_alt)
     )
-  ))
+  )
 }
 
 
@@ -389,7 +381,7 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #' @export
 post_race_predictions <- function(predictions) {
   # Race predictions are shorter, so we post as a single skeet
-  skeet_list <- list(format_race_skeet_predictions(predictions))
+  skeet_list <- format_race_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_list)
 }
 
