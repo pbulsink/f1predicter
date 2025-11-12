@@ -460,6 +460,21 @@ generate_new_data <- function(
 #'   functions.
 #' @seealso [generate_new_data()]
 #' @export
+
+# driver_id constructor_id grid quali_position driver_experience driver_failure_avg
+# bortoleto           alfa   NA             NA                20         0.01822632
+# constructor_grid_avg constructor_finish_avg constructor_failure_avg driver_grid_avg
+#             11.95991               9.669619               0.1303822         13.3804
+# driver_position_avg driver_finish_avg driver_avg_qgap grid_pos_corr_avg
+#            12.70348          0.903266              NA         0.4974985
+# driver_failure_circuit_avg constructor_failure_circuit_avg
+#                  0.1174045                       0.1093079
+# driver_practice_optimal_rank_avg practice_avg_rank practice_best_rank
+#                         13.68768                 5                  5
+# practice_optimal_rank practice_avg_gap practice_best_gap q_min_perc q_avg_perc season
+#                     8            0.641             0.641         NA         NA   2025
+# round round_id
+#    21  2025-21
 generate_next_race_data <- function(...) {
   schedule <- f1predicter::schedule %>%
     dplyr::mutate(date = as.Date(.data$date))

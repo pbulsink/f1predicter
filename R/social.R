@@ -379,7 +379,7 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
-post_race_predictions <- function(predictions) {
+post_race_predictions <- function(predictions = predict_round()) {
   # Race predictions are shorter, so we post as a single skeet
   skeet_list <- format_race_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_list)
