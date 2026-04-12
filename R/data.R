@@ -87,7 +87,7 @@ get_laps_or_null <- function(season, round, session) {
 #' @return data frame
 get_grids <- function(season, round, session) {
   if (session == "R") {
-    # data frame Position (1-20), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
+    # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
     results <- NULL
     try(
       results <- f1dataR::load_results(season = season, round = round) %>%
