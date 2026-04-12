@@ -13,5 +13,5 @@ get_schedule(save_data = FALSE)
 Schedule data.frame
 }
 \description{
-Get the schedule
+Loads schedule data from 1990 through to the current season.
 }

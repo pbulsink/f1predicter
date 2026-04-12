@@ -1,17 +1,18 @@
-Package: f1predicter
 Type: Package
+Package: f1predicter
 Title: What the Package Does (Title Case)
 Version: 0.1.0
 Author: Who wrote it
 Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Description: More about what it does (maybe more than one line) Use four
+    spaces when indenting paragraphs within the Description.
 License: GPL (>= 3)
-Encoding: UTF-8
-LazyData: true
+BugReports: https://github.com/pbulsink/f1predicter/issues
+Depends: 
+    R (>= 3.5)
 Imports:
-    cli,
     butcher,
+    cli,
     dials,
     dplyr,
     f1dataR,
@@ -25,8 +26,9 @@ Imports:
     rlang,
     rsample,
     rvest,
-    stringr,
     slider,
+    stbl (>= 0.3.0),
+    stringr,
     tibble,
     tictoc,
     tidyr,
@@ -34,21 +36,23 @@ Imports:
     usethis,
     workflows,
     yardstick
-RoxygenNote: 7.3.3
-Depends: 
-    R (>= 3.5)
 Suggests: 
+    astgrepr,
+    atrrr,
     future,
     glmnet,
     gt,
-    knitr,
-    MASS,
-    rmarkdown,
-    ranger,
     kernlab,
     kknn,
-    atrrr,
-    stacks, 
-    webshot2,
-    magick
-VignetteBuilder: knitr
+    knitr,
+    magick,
+    MASS,
+    ranger,
+    rmarkdown,
+    stacks,
+    webshot2
+VignetteBuilder: 
+    knitr
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3

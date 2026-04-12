@@ -12,7 +12,7 @@ load_models(model_type, model_timing, engine = "ranger")
 \item{model_timing}{The timing context for the models, one of `"early"`,
 `"late"`, or (for "results" models only) `"after_quali"`.}
 
-\item{engine}{The engine used for the model, e.g., `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
+\item{engine}{The engine used for the model, e.g., `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.}
 }
 \value{
 A list of  model objects, ready for prediction.

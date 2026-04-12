@@ -14,7 +14,7 @@ performance metrics as predictors ("late" model). If `FALSE` (default),
 it uses data available before practice sessions ("early" model).}
 
 \item{engine}{A character string specifying the model engine. One of `"ranger"`
-(default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
+(default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.}
 }
 \value{
 A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.

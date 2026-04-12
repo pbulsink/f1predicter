@@ -129,7 +129,7 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #'   performance metrics as predictors ("late" model). If `FALSE` (default),
 #'   it uses data available before practice sessions ("early" model).
 #' @param engine A character string specifying the model engine. One of `"ranger"`
-#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 train_quali_models <- function(
   data,
@@ -717,7 +717,7 @@ train_quali_models <- function(
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of `"ranger"`
-#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -749,7 +749,7 @@ model_quali_early <- function(
 #' @inherit train_quali_models details
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of `"ranger"`
-#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -856,9 +856,9 @@ train_binary_result_model <- function(
 #' @param scenario A character string specifying the modeling context. One of
 #'   "early" (pre-practice), "late" (post-practice), or "after_quali".
 #' @param engine A character string specifying the model engine. One of `"ranger"`
-#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list containing five fitted `workflow` objects.
-train_results_models <- function(data, scenario, engine = "ranger") {
+train_results_models <- function(data = clean_data(), scenario, engine = "ranger") {
   cli::cli_h1("Training Race Results Models")
   cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
 
@@ -1360,7 +1360,7 @@ train_results_models <- function(data, scenario, engine = "ranger") {
 #'
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
 #' @param engine A character string specifying the model engine. One of `"ranger"`
-#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"``, or `"kknn"`.
+#'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"` or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically saved to the path specified in `options('f1predicter.models')`.
 #' @return A list containing fitted `workflow` objects for `win`, `podium`,
@@ -1397,7 +1397,7 @@ model_results_after_quali <- function(
 #'
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
-#' @param engine A character string specifying the model engine. One of `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#' @param engine A character string specifying the model engine. One of `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"emsemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -1430,7 +1430,7 @@ model_results_late <- function(
 #'
 #' @inherit model_results_after_quali details
 #' @param data A data frame containing the modeling data. Defaults to `clean_data()`.
-#' @param engine A character string specifying the model engine. One of `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#' @param engine A character string specifying the model engine. One of `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
@@ -1584,7 +1584,7 @@ save_models <- function(model_list, model_timing) {
 #' @param model_type The type of models to load, either `"quali"` or `"results"`.
 #' @param model_timing The timing context for the models, one of `"early"`,
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
-#' @param engine The engine used for the model, e.g., `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.
+#' @param engine The engine used for the model, e.g., `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list of  model objects, ready for prediction.
 #' @export
 load_models <- function(model_type, model_timing, engine = "ranger") {

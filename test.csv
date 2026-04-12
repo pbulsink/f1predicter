@@ -1,0 +1,23 @@
+driver_id,constructor_id,points,position,grid,laps,status,gap,fastest_rank,fastest,top_speed_kph,time_sec,season,round
+russell,mercedes,25,1,1,58,Finished,1:23:06.801,6,1:22.670,NA,82.67,2026,1
+antonelli,mercedes,18,2,2,58,Finished,+2.974,3,1:22.417,NA,82.417,2026,1
+leclerc,ferrari,15,3,4,58,Finished,+15.519,5,1:22.579,NA,82.579,2026,1
+hamilton,ferrari,12,4,7,58,Finished,+16.144,4,1:22.423,NA,82.423,2026,1
+norris,mclaren,10,5,6,58,Finished,+51.741,2,1:22.358,NA,82.358,2026,1
+max_verstappen,red_bull,8,6,20,58,Finished,+54.617,1,1:22.091,NA,82.091,2026,1
+bearman,haas,6,7,12,57,Lapped,+4.593,11,1:24.020,NA,84.02,2026,1
+arvid_lindblad,rb,4,8,9,57,Lapped,+11.816,12,1:24.182,NA,84.182,2026,1
+bortoleto,audi,2,9,10,57,Lapped,+12.775,8,1:23.257,NA,83.257,2026,1
+gasly,alpine,1,10,14,57,Lapped,+29.027,15,1:24.486,NA,84.486,2026,1
+ocon,haas,0,11,13,57,Lapped,+29.850,14,1:24.424,NA,84.424,2026,1
+albon,williams,0,12,15,57,Lapped,+56.075,13,1:24.375,NA,84.375,2026,1
+lawson,rb,0,13,8,57,Lapped,+57.173,10,1:23.783,NA,83.783,2026,1
+colapinto,alpine,0,14,16,56,Lapped,+8.487,7,1:22.926,NA,82.926,2026,1
+sainz,williams,0,15,21,56,Lapped,+36.886,9,1:23.590,NA,83.59,2026,1
+perez,cadillac,0,16,18,55,Lapped,+7.850,19,1:26.070,NA,86.07,2026,1
+stroll,aston_martin,0,17,22,43,Lapped,NA,17,1:25.410,NA,85.41,2026,1
+alonso,aston_martin,0,18,17,21,Retired,NA,18,1:25.713,NA,85.713,2026,1
+bottas,cadillac,0,19,19,15,Retired,NA,20,1:27.364,NA,87.364,2026,1
+hadjar,red_bull,0,20,3,10,Retired,NA,16,1:25.239,NA,85.239,2026,1
+piastri,mclaren,0,21,5,0,Did not start,NA,NA,NA,NA,NA,2026,1
+hulkenberg,audi,0,22,11,0,Did not start,NA,NA,NA,NA,NA,2026,1

@@ -14,7 +14,7 @@ model_results_after_quali(
 \item{data}{A data frame containing the modeling data. Defaults to `clean_data()`.}
 
 \item{engine}{A character string specifying the model engine. One of `"ranger"`
-(default), `"glmnet"`, `"nnet"`, `"kernlab"``, or `"kknn"`.}
+(default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"` or `"ensemble"`.}
 
 \item{save_model}{A logical value. If `TRUE` (default), the trained models
 are automatically saved to the path specified in `options('f1predicter.models')`.}

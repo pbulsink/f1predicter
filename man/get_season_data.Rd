@@ -4,7 +4,7 @@
 \alias{get_season_data}
 \title{Get Season Data}
 \usage{
-get_season_data(season, force = FALSE)
+get_season_data(season = f1dataR::get_current_season(), force = FALSE)
 }
 \arguments{
 \item{season}{a season, from 2018 onward}

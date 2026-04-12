@@ -4,16 +4,11 @@
 \alias{post_skeet_predictions}
 \title{Post Predictions to Bluesky}
 \usage{
-post_skeet_predictions(text, image = NULL, image_alt = NULL, tags = NULL)
+post_skeet_predictions(skeets)
 }
 \arguments{
-\item{text}{The text content of the skeet.}
-
-\item{image}{file path to a graphic image, if to be added}
-
-\item{image_alt}{Alternative text for the image, for accessibility.}
-
-\item{tags}{A character vector of tags to apply to the post.}
+\item{skeets}{A list of skeets to post. Each element of the list should be
+another list containing `text`, and optionally `image`, `image_alt`, and `tags`.}
 }
 \value{
 Invisibly returns the response from the Bluesky API, or NULL on failure.

@@ -198,7 +198,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
   if (!force) {
     rgrid <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_rgrid.csv")
       )),
       error = function(e) return(NA),
@@ -207,7 +207,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ensure_tidy()
     sgrid <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_sgrid.csv")
       )),
       error = function(e) return(NA),
@@ -216,7 +216,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ensure_tidy()
     results <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_results.csv")
       )),
       error = function(e) return(NA),
@@ -225,7 +225,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ensure_tidy()
     sprint_results <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_sptrint_results.csv")
       )),
       error = function(e) return(NA),
@@ -234,7 +234,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ensure_tidy()
     pitstops <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_pitstops.csv")
       )),
       error = function(e) return(NA),
@@ -243,7 +243,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ensure_tidy()
     quali <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(season, "_", round, "_quali.csv")
       )),
       error = function(e) return(NA),
@@ -253,7 +253,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
     laps <- tryCatch(
       utils::read.csv(
         file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_", round, "_laps.csv")
         ),
         colClasses = c(
@@ -327,7 +327,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       utils::write.csv(
         x = results,
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_", round, "_results.csv")
         ),
         quote = F,
@@ -359,7 +359,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           utils::write.csv(
             x = sprint_results,
             file = file.path(
-              options("f1predicter.cache"),
+              getOption("f1predicter.cache"),
               paste0(season, "_", round, "_sprint_results.csv")
             ),
             quote = F,
@@ -391,7 +391,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           utils::write.csv(
             x = pitstops,
             file = file.path(
-              options("f1predicter.cache"),
+              getOption("f1predicter.cache"),
               paste0(season, "_", round, "_pitstops.csv")
             ),
             quote = F,
@@ -415,7 +415,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         utils::write.csv(
           x = rgrid,
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(season, "_", round, "_rgrid.csv")
           ),
           quote = F,
@@ -433,7 +433,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         utils::write.csv(
           x = sgrid,
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(season, "_", round, "_sgrid.csv")
           ),
           quote = F,
@@ -455,13 +455,15 @@ get_weekend_data <- function(season, round, force = FALSE) {
               round = round
             ) %>%
             dplyr::mutate(
-              q1_sec = expand_val(unlist(.data$q1_sec), dplyr::n())
+              q1_sec = expand_val(unlist(.data$q1_sec), dplyr::n()),
+              q2_sec = expand_val(unlist(.data$q2_sec), dplyr::n()),
+              q3_sec = expand_val(unlist(.data$q3_sec), dplyr::n())
             ) %>%
             janitor::clean_names()
           utils::write.csv(
             x = quali,
             file = file.path(
-              options("f1predicter.cache"),
+              getOption("f1predicter.cache"),
               paste0(season, "_", round, "_quali.csv")
             ),
             quote = F,
@@ -536,7 +538,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         utils::write.csv(
           x = laps,
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(season, "_", round, "_laps.csv")
           ),
           quote = F,
@@ -561,6 +563,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
 
 #' Get the schedule
 #'
+#' @description
+#' Loads schedule data from 1990 through to the current season.
+#'
+#'
 #' @param save_data whether or not to update the saved schedule object
 #'
 #' @return Schedule data.frame
@@ -570,6 +576,9 @@ get_schedule <- function(save_data = FALSE) {
   for (y in c(1990:f1dataR::get_current_season())) {
     schedule <- dplyr::bind_rows(schedule, f1dataR::load_schedule(season = y))
   }
+
+  # Sometimes cancelled races exit in schedule -- this is not useful for predictions
+  schedule <- schedule[complete.cases(schedule[,c('season', 'round')]),]
 
   if (save_data) {
     usethis::use_data(schedule, overwrite = TRUE)
@@ -590,7 +599,7 @@ get_schedule <- function(save_data = FALSE) {
 #'
 #' @return None, writes to file
 #' @export
-get_season_data <- function(season, force = FALSE) {
+get_season_data <- function(season = f1dataR::get_current_season(), force = FALSE) {
   stopifnot(season <= f1dataR::get_current_season())
 
   schedule <- f1predicter::schedule
@@ -652,7 +661,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_rgrid.csv")
         ),
         quote = F,
@@ -665,7 +674,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_sgrid.csv")
         ),
         quote = F,
@@ -678,7 +687,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_laps.csv")
         ),
         quote = F,
@@ -691,7 +700,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_sprint_results.csv")
         ),
         quote = F,
@@ -704,7 +713,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_results.csv")
         ),
         quote = F,
@@ -717,7 +726,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_pitstops.csv")
         ),
         quote = F,
@@ -730,7 +739,7 @@ get_season_data <- function(season, force = FALSE) {
       janitor::clean_names() %>%
       utils::write.csv(
         file = file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(season, "_season_qualis.csv")
         ),
         quote = F,
@@ -763,7 +772,7 @@ load_all_data <- function() {
     cat("Reading", y, "data...\n")
     rg <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_rgrid.csv")
       )),
       error = function(e) return(NULL)
@@ -772,7 +781,7 @@ load_all_data <- function() {
     rgrid <- dplyr::bind_rows(rgrid, rg)
     sg <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_sgrid.csv")
       )),
       error = function(e) return(NULL)
@@ -781,7 +790,7 @@ load_all_data <- function() {
     sgrid <- dplyr::bind_rows(sgrid, sg)
     res <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_results.csv")
       )),
       error = function(e) return(NULL)
@@ -790,7 +799,7 @@ load_all_data <- function() {
     results <- dplyr::bind_rows(results, res)
     q <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_qualis.csv")
       )),
       error = function(e) return(NULL)
@@ -800,7 +809,7 @@ load_all_data <- function() {
     if (y >= 2011) {
       pt <- tryCatch(
         utils::read.csv(file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(y, "_season_pitstops.csv")
         )),
         error = function(e) return(NULL)
@@ -811,7 +820,7 @@ load_all_data <- function() {
     if (y >= 2021) {
       sr <- tryCatch(
         utils::read.csv(file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(y, "_season_sprint_results.csv")
         )),
         error = function(e) return(NULL)
@@ -823,7 +832,7 @@ load_all_data <- function() {
       lp <- tryCatch(
         utils::read.csv(
           file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_laps.csv")
           ),
           colClasses = c(
@@ -892,7 +901,7 @@ load_all_data <- function() {
 get_last_drivers <- function() {
   res <- tryCatch(
     utils::read.csv(file.path(
-      options("f1predicter.cache"),
+      getOption("f1predicter.cache"),
       paste0(f1dataR::get_current_season(), "_season_results.csv")
     )),
     error = function(e) return(NULL)
@@ -1072,7 +1081,7 @@ janitor_data <- function() {
     cat("Reading", y, "data...\n")
     rg <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_rgrid.csv")
       )),
       error = function(e) return(NULL)
@@ -1080,7 +1089,7 @@ janitor_data <- function() {
       ensure_tidy()
     sg <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_sgrid.csv")
       )),
       error = function(e) return(NULL)
@@ -1088,7 +1097,7 @@ janitor_data <- function() {
       ensure_tidy()
     res <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_results.csv")
       )),
       error = function(e) return(NULL)
@@ -1096,7 +1105,7 @@ janitor_data <- function() {
       ensure_tidy()
     q <- tryCatch(
       utils::read.csv(file.path(
-        options("f1predicter.cache"),
+        getOption("f1predicter.cache"),
         paste0(y, "_season_qualis.csv")
       )),
       error = function(e) return(NULL)
@@ -1105,7 +1114,7 @@ janitor_data <- function() {
     if (y >= 2011) {
       pt <- tryCatch(
         utils::read.csv(file.path(
-          options("f1predicter.cache"),
+          getOption("f1predicter.cache"),
           paste0(y, "_season_pitstops.csv")
         )),
         error = function(e) return(NULL)
@@ -1116,7 +1125,7 @@ janitor_data <- function() {
       lp <- tryCatch(
         utils::read.csv(
           file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_laps.csv")
           ),
           colClasses = c(
@@ -1135,7 +1144,7 @@ janitor_data <- function() {
       sr <- tryCatch(
         utils::read.csv(
           file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_sprint_results.csv")
           ),
           colClasses = c(
@@ -1156,7 +1165,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_rgrid.csv")
           ),
           quote = F,
@@ -1168,7 +1177,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_sgrid.csv")
           ),
           quote = F,
@@ -1180,7 +1189,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_results.csv")
           ),
           quote = F,
@@ -1192,7 +1201,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_qualis.csv")
           ),
           quote = F,
@@ -1204,7 +1213,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_pitstops.csv")
           ),
           quote = F,
@@ -1216,7 +1225,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_laps.csv")
           ),
           quote = F,
@@ -1228,7 +1237,7 @@ janitor_data <- function() {
         janitor::clean_names() %>%
         utils::write.csv(
           file = file.path(
-            options("f1predicter.cache"),
+            getOption("f1predicter.cache"),
             paste0(y, "_season_sprint_results.csv")
           ),
           quote = F,

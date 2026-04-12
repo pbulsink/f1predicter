@@ -13,7 +13,7 @@ train_results_models(data, scenario, engine = "ranger")
 "early" (pre-practice), "late" (post-practice), or "after_quali".}
 
 \item{engine}{A character string specifying the model engine. One of `"ranger"`
-(default), `"glmnet"`, `"nnet"`, `"kernlab"`, or `"kknn"`.}
+(default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.}
 }
 \value{
 A list containing five fitted `workflow` objects.
