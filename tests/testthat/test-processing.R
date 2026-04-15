@@ -46,7 +46,7 @@ test_that("get_weekend_data() returns data for valid race", {
 
   expect_type(result, "list")
   result <- result$results
-  expect_class(result, 'data.frame')
+  expect_s3_class(result, 'data.frame')
   expect_gt(nrow(result), 0)
   expect_true(all(result$round == 1))
 })
