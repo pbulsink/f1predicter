@@ -19,7 +19,7 @@ save_gt_as_png_ragg <- function(gt_table, filename, width = 1400, height = 800, 
     )
   }
   # Render gt table to grid object
-  gt_grob <- gt::as_gt(gt_table)
+  gt_grob <- gt::as_gtable(gt_table)
   # Use ragg to save as PNG
   ragg::agg_png(filename, width = width, height = height, units = "px", scaling = scale)
   grid::grid.draw(gt_grob)
