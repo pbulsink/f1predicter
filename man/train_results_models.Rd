@@ -4,7 +4,7 @@
 \alias{train_results_models}
 \title{Train Race Result Models}
 \usage{
-train_results_models(data, scenario, engine = "ranger")
+train_results_models(data = clean_data(), scenario, engine = "ranger")
 }
 \arguments{
 \item{data}{A data frame containing the modeling data.}

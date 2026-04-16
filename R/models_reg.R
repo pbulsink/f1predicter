@@ -26,7 +26,7 @@ prepare_and_split_data <- function(
   group = "round_id"
 ) {
   if (!is.null(columns)) {
-    processed_data <- dplyr::select(data, dplyr::all_of(columns))
+    processed_data <- dplyr::select(data, dplyr::all_of(c(columns, group)))
   } else {
     processed_data <- data
   }

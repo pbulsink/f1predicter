@@ -395,7 +395,7 @@ post_race_predictions <- function(predictions = predict_round()) {
 #' The table is formatted with a color heatmap, where brighter/more colorful
 #' cells indicate a higher probability. It requires the `gt` package to be
 #' installed. The function returns a `gt` object which can be printed or saved
-#' using `gt::gtsave()`.
+#' using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
 #' @param predictions A data frame of predictions from `predict_quali_round()`.
 #'   This must contain the `.probs` list-column with position probabilities.
@@ -501,7 +501,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename, vwidth = 1400)
+    save_gt_as_png_ragg(prob_table, filename = filename, width = 1400, height = 800)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
@@ -516,7 +516,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #' The table is formatted with a color heatmap, where brighter/more colorful
 #' cells indicate a higher probability. It requires the `gt` package to be
 #' installed. The function returns a `gt` object which can be printed or saved
-#' using `gt::gtsave()`.
+#' using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
 #' @param predictions A data frame of predictions from `predict_quali_round()`.
 #'   This must contain the `.probs` list-column with position probabilities.
@@ -614,7 +614,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename, vwidth = 1400)
+    save_gt_as_png_ragg(prob_table, filename = filename, width = 1400, height = 800)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
@@ -630,7 +630,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 #' The table is formatted with a color heatmap, where brighter/more colorful
 #' cells indicate a higher probability. It requires the `gt` package to be
 #' installed. The function returns a `gt` object which can be printed or saved
-#' using `gt::gtsave()`.
+#' using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
 #' @param predictions A data frame of predictions from `predict_quali_round()`.
 #'   This must contain the `.probs` list-column with position probabilities.
@@ -712,7 +712,7 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    gt::gtsave(prob_table, filename = filename)
+    save_gt_as_png_ragg(prob_table, filename = filename, width = 1400, height = 800)
     return(list(prob_table = prob_table, filename = filename))
   }
 }

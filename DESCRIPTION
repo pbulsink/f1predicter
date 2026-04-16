@@ -45,10 +45,10 @@ Suggests:
     knitr,
     magick,
     MASS,
+    ragg,
     ranger,
     rmarkdown,
-    stacks,
-    webshot2
+    stacks
 VignetteBuilder: 
     knitr
 Encoding: UTF-8

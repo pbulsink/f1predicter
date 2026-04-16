@@ -87,7 +87,7 @@ get_laps_or_null <- function(season, round, session) {
 #' @return data frame
 get_grids <- function(season, round, session) {
   if (session == "R") {
-    # data frame Position (1-20), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
+    # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
     results <- NULL
     try(
       results <- f1dataR::load_results(season = season, round = round) %>%
@@ -580,6 +580,10 @@ get_schedule <- function(save_data = FALSE) {
   # Sometimes cancelled races exit in schedule -- this is not useful for predictions
   schedule <- schedule[complete.cases(schedule[,c('season', 'round')]),]
 
+  # Cast to numeric when useful
+  schedule$season <- as.numeric(schedule$season)
+  schedule$round <- as.numeric(schedule$round)
+
   if (save_data) {
     usethis::use_data(schedule, overwrite = TRUE)
   }
@@ -771,47 +775,52 @@ load_all_data <- function() {
   for (y in c(1990:f1dataR::get_current_season())) {
     cat("Reading", y, "data...\n")
     rg <- tryCatch(
+      suppressWarnings(
       utils::read.csv(file.path(
         getOption("f1predicter.cache"),
         paste0(y, "_season_rgrid.csv")
-      )),
+      ))),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     rgrid <- dplyr::bind_rows(rgrid, rg)
     sg <- tryCatch(
+      suppressWarnings(
       utils::read.csv(file.path(
         getOption("f1predicter.cache"),
         paste0(y, "_season_sgrid.csv")
-      )),
+      ))),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     sgrid <- dplyr::bind_rows(sgrid, sg)
     res <- tryCatch(
+      suppressWarnings(
       utils::read.csv(file.path(
         getOption("f1predicter.cache"),
         paste0(y, "_season_results.csv")
-      )),
+      ))),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     results <- dplyr::bind_rows(results, res)
     q <- tryCatch(
+      suppressWarnings(
       utils::read.csv(file.path(
         getOption("f1predicter.cache"),
         paste0(y, "_season_qualis.csv")
-      )),
+      ))),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     qualis <- dplyr::bind_rows(qualis, q)
     if (y >= 2011) {
       pt <- tryCatch(
+        suppressWarnings(
         utils::read.csv(file.path(
           getOption("f1predicter.cache"),
           paste0(y, "_season_pitstops.csv")
-        )),
+        ))),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
@@ -819,10 +828,11 @@ load_all_data <- function() {
     }
     if (y >= 2021) {
       sr <- tryCatch(
+        suppressWarnings(
         utils::read.csv(file.path(
           getOption("f1predicter.cache"),
           paste0(y, "_season_sprint_results.csv")
-        )),
+        ))),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
@@ -830,6 +840,7 @@ load_all_data <- function() {
     }
     if (y >= 2018) {
       lp <- tryCatch(
+        suppressWarnings(
         utils::read.csv(
           file.path(
             getOption("f1predicter.cache"),
@@ -868,7 +879,7 @@ load_all_data <- function() {
             "integer",
             "integer"
           )
-        ),
+        )),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
