@@ -119,51 +119,7 @@ expect_identical(x, y)                    # exact match
 
 ### Conditions
 
-**Errors thrown by this package** (via `.pkg_abort()`) should always be tested
-with `stbl::expect_pkg_error_snapshot()`, which captures both the error class
-hierarchy and the user-facing message in one snapshot:
-
-```r
-test_that("process_data() errors on empty input (#42)", {
-  stbl::expect_pkg_error_snapshot(
-    process_data(data.frame()),
-    "f1predicter",
-    "empty_input"
-  )
-})
-```
-
-Pass `transform = stbl::.transform_path(path)` to scrub volatile values (e.g. temp
-paths) from the snapshot before comparison.
-
-**Errors thrown by `stbl`** (via `stbl::to_*()` / `stbl::stabilize_*()`)
-should be tested with `stbl::expect_pkg_error_classes()`. Since the message
-text is controlled by `stbl`, only the class hierarchy needs to be asserted:
-
-```r
-test_that("process_data() errors on non-integer page_size (#43)", {
-  stbl::expect_pkg_error_classes(
-    process_data(sample_data, page_size = "abc"),
-    "stbl",
-    "incompatible_type"
-  )
-})
-```
-
-For **composite** stbl error classes (where the class name contains dashes,
-e.g. `stbl-error-coerce-character`), pass each dash-separated component as a
-separate argument. Underscores within a component are kept as-is:
-
-```r
-test_that("process_data() errors on non-coercible input (#43)", {
-  stbl::expect_pkg_error_classes(
-    process_data(sample_data, value = list(bad = "input")),
-    "stbl",
-    "coerce",
-    "character"
-  )
-})
-```
+**Errors thrown by this package** should always be tested with `expect_error()` and should catch the pattern.
 
 **Errors from other packages** can be tested with `expect_error()`, optionally
 wrapped in `expect_snapshot()` to lock down the message text:
