@@ -6,3 +6,4 @@
 cache/
 model*/
 inst/doc
+tests/testthat/Rplots.pdf
