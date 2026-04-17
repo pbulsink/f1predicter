@@ -30,7 +30,7 @@ prepare_and_split_data <- function(
   } else {
     processed_data <- data
   }
-  processed_data <- processed_data %>%
+  processed_data <- processed_data |>
     dplyr::mutate_if(is.character, as.factor)
 
   data_split <- rsample::group_initial_split(
@@ -67,8 +67,8 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
     names(metrics),
     metrics,
     function(metric_id, display_name) {
-      value <- collected_metrics %>%
-        dplyr::filter(.data$.metric == metric_id) %>%
+      value <- collected_metrics |>
+        dplyr::filter(.data$.metric == metric_id) |>
         dplyr::pull(.data$.estimate)
 
       # Return NULL if a metric wasn't found, so it can be filtered out
@@ -260,8 +260,8 @@ train_quali_models <- function(
 
     # Train Position Model
     pos_cols <- pole_cols[pole_cols != "pole"]
-    pos_data <- p_mod_data %>%
-      dplyr::filter(!is.na(.data$quali_position)) %>%
+    pos_data <- p_mod_data |>
+      dplyr::filter(!is.na(.data$quali_position)) |>
       dplyr::select(dplyr::all_of(pos_cols))
 
     pos_splits <- prepare_and_split_data(pos_data)
@@ -298,9 +298,9 @@ train_quali_models <- function(
     pole_recipe <- recipes::recipe(
       formula,
       data = train_data_pole
-    ) %>%
-      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-      recipes::step_zv(recipes::all_predictors()) %>%
+    ) |>
+      recipes::step_dummy(recipes::all_nominal_predictors()) |>
+      recipes::step_zv(recipes::all_predictors()) |>
       recipes::step_normalize(recipes::all_predictors())
 
     if (engine == "ranger") {
@@ -308,8 +308,8 @@ train_quali_models <- function(
         trees = 1000,
         mtry = tune::tune(),
         min_n = tune::tune()
-      ) %>%
-        parsnip::set_mode("classification") %>%
+      ) |>
+        parsnip::set_mode("classification") |>
         parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
       pole_grid <- dials::grid_regular(
@@ -333,8 +333,8 @@ train_quali_models <- function(
       pole_model_spec <- parsnip::logistic_reg(
         penalty = tune::tune(),
         mixture = tune::tune()
-      ) %>%
-        parsnip::set_mode("classification") %>%
+      ) |>
+        parsnip::set_mode("classification") |>
         parsnip::set_engine("glmnet")
 
       pole_grid <- dials::grid_regular(
@@ -347,8 +347,8 @@ train_quali_models <- function(
         hidden_units = tune::tune(),
         penalty = tune::tune(),
         epochs = tune::tune()
-      ) %>%
-        parsnip::set_mode("classification") %>%
+      ) |>
+        parsnip::set_mode("classification") |>
         parsnip::set_engine("nnet")
 
       pole_grid <- dials::grid_regular(
@@ -361,8 +361,8 @@ train_quali_models <- function(
       pole_model_spec <- parsnip::svm_rbf(
         cost = tune::tune(),
         rbf_sigma = tune::tune()
-      ) %>%
-        parsnip::set_mode("classification") %>%
+      ) |>
+        parsnip::set_mode("classification") |>
         parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
 
       pole_grid <- dials::grid_regular(
@@ -373,8 +373,8 @@ train_quali_models <- function(
     } else if (engine == "kknn") {
       pole_model_spec <- parsnip::nearest_neighbor(
         neighbors = tune::tune()
-      ) %>%
-        parsnip::set_mode("classification") %>%
+      ) |>
+        parsnip::set_mode("classification") |>
         parsnip::set_engine("kknn")
 
       pole_grid <- dials::grid_regular(
@@ -386,12 +386,12 @@ train_quali_models <- function(
       cli::cli_abort("Invalid engine specified: {.val {engine}}.")
     }
 
-    pole_wflow <- workflows::workflow() %>%
-      workflows::add_model(pole_model_spec) %>%
+    pole_wflow <- workflows::workflow() |>
+      workflows::add_model(pole_model_spec) |>
       workflows::add_recipe(pole_recipe)
 
     tictoc::tic("Trained Pole Model")
-    pole_res <- pole_wflow %>%
+    pole_res <- pole_wflow |>
       tune::tune_grid(
         resamples = data_folds_pole,
         grid = pole_grid,
@@ -400,13 +400,13 @@ train_quali_models <- function(
 
     tictoc::toc()
 
-    pole_best <- pole_res %>%
+    pole_best <- pole_res |>
       tune::select_best(metric = "mn_log_loss")
 
-    pole_final <- pole_wflow %>%
+    pole_final <- pole_wflow |>
       tune::finalize_workflow(pole_best)
 
-    pole_final_fit <- pole_final %>%
+    pole_final_fit <- pole_final |>
       tune::last_fit(data_split_pole, metrics = metrics_binary)
 
     report_model_metrics(
@@ -420,8 +420,8 @@ train_quali_models <- function(
 
     # The data for the position model should not be filtered or mutated based on
     # the race result 'position'. We are predicting 'quali_position'.
-    pos_data <- p_mod_data %>%
-      dplyr::filter(!is.na(.data$quali_position)) %>% # Ensure we have a quali result
+    pos_data <- p_mod_data |>
+      dplyr::filter(!is.na(.data$quali_position)) |> # Ensure we have a quali result
       dplyr::select(dplyr::all_of(pos_cols))
 
     pos_splits <- prepare_and_split_data(pos_data)
@@ -443,9 +443,9 @@ train_quali_models <- function(
     position_recipe <- recipes::recipe(
       formula,
       data = train_data_pos
-    ) %>%
-      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-      recipes::step_zv(recipes::all_predictors()) %>%
+    ) |>
+      recipes::step_dummy(recipes::all_nominal_predictors()) |>
+      recipes::step_zv(recipes::all_predictors()) |>
       recipes::step_normalize(recipes::all_predictors())
 
     if (engine == "ranger") {
@@ -453,8 +453,8 @@ train_quali_models <- function(
         trees = 1000,
         mtry = tune::tune(),
         min_n = tune::tune()
-      ) %>%
-        parsnip::set_mode("regression") %>%
+      ) |>
+        parsnip::set_mode("regression") |>
         parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
       position_grid <- dials::grid_regular(
@@ -472,8 +472,8 @@ train_quali_models <- function(
       position_model_spec <- parsnip::linear_reg(
         penalty = tune::tune(),
         mixture = tune::tune()
-      ) %>%
-        parsnip::set_mode("regression") %>%
+      ) |>
+        parsnip::set_mode("regression") |>
         parsnip::set_engine("glmnet")
 
       position_grid <- dials::grid_regular(
@@ -486,8 +486,8 @@ train_quali_models <- function(
         hidden_units = tune::tune(),
         penalty = tune::tune(),
         epochs = tune::tune()
-      ) %>%
-        parsnip::set_mode("regression") %>%
+      ) |>
+        parsnip::set_mode("regression") |>
         parsnip::set_engine("nnet")
 
       position_grid <- dials::grid_regular(
@@ -500,8 +500,8 @@ train_quali_models <- function(
       position_model_spec <- parsnip::svm_rbf(
         cost = tune::tune(),
         rbf_sigma = tune::tune()
-      ) %>%
-        parsnip::set_mode("regression") %>%
+      ) |>
+        parsnip::set_mode("regression") |>
         parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
 
       position_grid <- dials::grid_regular(
@@ -512,8 +512,8 @@ train_quali_models <- function(
     } else if (engine == "kknn") {
       position_model_spec <- parsnip::nearest_neighbor(
         neighbors = tune::tune()
-      ) %>%
-        parsnip::set_mode("regression") %>%
+      ) |>
+        parsnip::set_mode("regression") |>
         parsnip::set_engine("kknn")
 
       position_grid <- dials::grid_regular(
@@ -522,12 +522,12 @@ train_quali_models <- function(
       )
     }
 
-    position_wflow <- workflows::workflow() %>%
-      workflows::add_model(position_model_spec) %>%
+    position_wflow <- workflows::workflow() |>
+      workflows::add_model(position_model_spec) |>
       workflows::add_recipe(position_recipe)
 
     tictoc::tic("Trained Position Model")
-    position_res <- position_wflow %>%
+    position_res <- position_wflow |>
       tune::tune_grid(
         resamples = data_folds_pos,
         grid = position_grid,
@@ -535,13 +535,13 @@ train_quali_models <- function(
       )
     tictoc::toc()
 
-    position_best <- position_res %>%
+    position_best <- position_res |>
       tune::select_best(metric = "rmse")
 
-    position_final <- position_wflow %>%
+    position_final <- position_wflow |>
       tune::finalize_workflow(position_best)
 
-    position_final_fit <- position_final %>%
+    position_final_fit <- position_final |>
       tune::last_fit(data_split_pos, metrics = metrics_reg)
 
     report_model_metrics(
@@ -555,11 +555,11 @@ train_quali_models <- function(
 
   # Use the same data as the regression model, but with a factor outcome and
   # prepped for MASS:polr
-  pos_class_data <- pos_data %>%
-    dplyr::arrange(.data$quali_position) %>%
+  pos_class_data <- pos_data |>
+    dplyr::arrange(.data$quali_position) |>
     dplyr::mutate(
       quali_position = factor(.data$quali_position, ordered = TRUE)
-    ) %>%
+    ) |>
     dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
@@ -589,7 +589,7 @@ train_quali_models <- function(
     )
 
     # Add predictions as new columns
-    pos_class_data <- pos_class_data %>%
+    pos_class_data <- pos_class_data |>
       dplyr::mutate(
         ensemble_pole_pred = pole_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
@@ -613,9 +613,9 @@ train_quali_models <- function(
   pos_class_recipe <- recipes::recipe(
     formula,
     data = train_data_pos_class
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  ) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
   # Prep the recipe and bake the data
@@ -647,7 +647,7 @@ train_quali_models <- function(
 
   # Combine true values and predictions
   test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = "quali_position"),
+    baked_test |> dplyr::select(truth = "quali_position"),
     .pred_class = class_preds,
     tibble::as_tibble(prob_preds)
   )
@@ -803,13 +803,13 @@ train_binary_result_model <- function(
   # reduces model size.
   rlang::f_env(formula) <- rlang::base_env()
 
-  recipe <- recipes::recipe(formula, data = train_data) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  recipe <- recipes::recipe(formula, data = train_data) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
-  wflow <- workflows::workflow() %>%
-    workflows::add_model(model_spec) %>%
+  wflow <- workflows::workflow() |>
+    workflows::add_model(model_spec) |>
     workflows::add_recipe(recipe)
 
   metrics_binary <- yardstick::metric_set(
@@ -819,21 +819,21 @@ train_binary_result_model <- function(
   )
 
   tictoc::tic(paste("Trained", model_name))
-  res <- wflow %>%
+  res <- wflow |>
     tune::tune_grid(
       resamples = data_folds,
       grid = grid,
       metrics = metrics_binary
     )
 
-  best_params <- res %>%
+  best_params <- res |>
     tune::select_best(metric = "mn_log_loss")
   tictoc::toc()
 
-  final_wflow <- wflow %>%
+  final_wflow <- wflow |>
     tune::finalize_workflow(best_params)
 
-  final_fit <- final_wflow %>%
+  final_fit <- final_wflow |>
     tune::last_fit(data_split, metrics = metrics_binary)
 
   report_model_metrics(
@@ -957,16 +957,16 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
       trees = 1000,
       mtry = tune::tune(),
       min_n = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
+    ) |>
+      parsnip::set_mode("classification") |>
       parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
     reg_mod_spec <- parsnip::rand_forest(
       trees = 1000,
       mtry = tune::tune(),
       min_n = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
+    ) |>
+      parsnip::set_mode("regression") |>
       parsnip::set_engine("ranger", num.threads = 10, importance = "impurity")
 
     grid <- dials::grid_regular(
@@ -984,13 +984,13 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
     class_mod_spec <- parsnip::logistic_reg(
       penalty = tune::tune(),
       mixture = tune::tune()
-    ) %>%
+    ) |>
       parsnip::set_engine("glmnet")
 
     reg_mod_spec <- parsnip::linear_reg(
       penalty = tune::tune(),
       mixture = tune::tune()
-    ) %>%
+    ) |>
       parsnip::set_engine("glmnet")
 
     grid <- dials::grid_regular(dials::penalty(), dials::mixture(), levels = 5)
@@ -999,16 +999,16 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
       hidden_units = tune::tune(),
       penalty = tune::tune(),
       epochs = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
+    ) |>
+      parsnip::set_mode("classification") |>
       parsnip::set_engine("nnet")
 
     reg_mod_spec <- parsnip::mlp(
       hidden_units = tune::tune(),
       penalty = tune::tune(),
       epochs = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
+    ) |>
+      parsnip::set_mode("regression") |>
       parsnip::set_engine("nnet")
 
     grid <- dials::grid_regular(
@@ -1021,24 +1021,24 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
     class_mod_spec <- parsnip::svm_rbf(
       cost = tune::tune(),
       rbf_sigma = tune::tune()
-    ) %>%
-      parsnip::set_mode("classification") %>%
+    ) |>
+      parsnip::set_mode("classification") |>
       parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
 
     reg_mod_spec <- parsnip::svm_rbf(
       cost = tune::tune(),
       rbf_sigma = tune::tune()
-    ) %>%
-      parsnip::set_mode("regression") %>%
+    ) |>
+      parsnip::set_mode("regression") |>
       parsnip::set_engine("kernlab", kpar = list(maxiter = 20000))
     grid <- dials::grid_regular(dials::cost(), dials::rbf_sigma(), levels = 4)
   } else if (engine == "kknn") {
-    class_mod_spec <- parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
-      parsnip::set_mode("classification") %>%
+    class_mod_spec <- parsnip::nearest_neighbor(neighbors = tune::tune()) |>
+      parsnip::set_mode("classification") |>
       parsnip::set_engine("kknn")
 
-    reg_mod_spec <- parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
-      parsnip::set_mode("regression") %>%
+    reg_mod_spec <- parsnip::nearest_neighbor(neighbors = tune::tune()) |>
+      parsnip::set_mode("regression") |>
       parsnip::set_engine("kknn")
 
     grid <- dials::grid_regular(
@@ -1120,7 +1120,7 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
   }
 
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
-  pos_data <- data %>%
+  pos_data <- data |>
     dplyr::select(dplyr::all_of(pos_cols))
 
   pos_splits <- prepare_and_split_data(pos_data)
@@ -1158,13 +1158,13 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
     position_recipe <- recipes::recipe(
       position_formula,
       data = train_data
-    ) %>%
-      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-      recipes::step_zv(recipes::all_predictors()) %>%
+    ) |>
+      recipes::step_dummy(recipes::all_nominal_predictors()) |>
+      recipes::step_zv(recipes::all_predictors()) |>
       recipes::step_normalize(recipes::all_predictors())
 
-    position_wflow <- workflows::workflow() %>%
-      workflows::add_model(reg_mod_spec) %>%
+    position_wflow <- workflows::workflow() |>
+      workflows::add_model(reg_mod_spec) |>
       workflows::add_recipe(position_recipe)
 
     metrics_reg <- yardstick::metric_set(
@@ -1181,14 +1181,14 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
     )
     tictoc::toc()
 
-    position_best <- position_res %>%
+    position_best <- position_res |>
       tune::select_best(metric = "rmse")
     tictoc::toc(log = T)
 
-    position_final_wflow <- position_wflow %>%
+    position_final_wflow <- position_wflow |>
       tune::finalize_workflow(position_best)
 
-    position_final_fit <- position_final_wflow %>%
+    position_final_fit <- position_final_wflow |>
       tune::last_fit(
         pos_splits$data_split,
         metrics = metrics_reg
@@ -1204,8 +1204,8 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
   # ---- Train Position Model (Ordinal Classification) ----
   cli::cli_rule("Training Position Model (Ordinal, polr)")
 
-  pos_class_data <- data %>%
-    dplyr::select(dplyr::all_of(pos_cols)) %>%
+  pos_class_data <- data |>
+    dplyr::select(dplyr::all_of(pos_cols)) |>
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
 
   if (engine == "ensemble") {
@@ -1226,7 +1226,7 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
     )
 
     # Add predictions as new columns
-    pos_class_data <- pos_class_data %>%
+    pos_class_data <- pos_class_data |>
       dplyr::mutate(
         ensemble_win_pred = win_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
@@ -1250,9 +1250,9 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
   pos_class_recipe <- recipes::recipe(
     position_formula,
     data = train_data_pos_class
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  ) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
   prepped_recipe <- recipes::prep(
@@ -1276,7 +1276,7 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
   prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
 
   test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = position),
+    baked_test |> dplyr::select(truth = position),
     .pred_class = class_preds,
     tibble::as_tibble(prob_preds)
   )

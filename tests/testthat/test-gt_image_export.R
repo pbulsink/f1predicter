@@ -77,7 +77,7 @@ test_that("save_gt_as_png_ragg() works with styled gt tables", {
   )
   
   # Create a styled gt table
-  gt_table <- gt::gt(test_df) %>%
+  gt_table <- gt::gt(test_df) |>
     gt::tab_header(title = "Team Performance", subtitle = "Regular Season")
   
   temp_file <- withr::local_file(tempfile(fileext = ".png"))

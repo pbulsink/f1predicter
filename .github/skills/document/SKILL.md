@@ -170,3 +170,10 @@ method.class <- function(x, ...) { ... }
 Only use such headers in complex files. The need for section comment headers might indicate that the file should be split into multiple files.
 
 **Examples:** Exported functions include `@examples`. Use `@examplesIf interactive()` for network-dependent or slow functions. Use section-style comments (`# Section ---`) to organize longer example blocks. Internal functions do not get examples.
+
+# Pitfalls and Notes
+Don't troubleshoot Roxygen2 documentation issues by editing the generated `.Rd` files in `man/`. Always edit the roxygen comments in the source `R/` files and re-run `devtools::document()`. 
+
+Don't avoid Roxygen2 issues by calling @nord. Instead, fix the underlying problem in the roxygen comments. 
+
+If Roxygen2 fails please continue development but at the end notify the developer that there may be documentation issues to resolve. Please identify the function or functions having issues.

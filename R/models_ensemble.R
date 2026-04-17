@@ -96,9 +96,9 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
-  base_recipe <- recipes::recipe(formula, data = train_data) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  base_recipe <- recipes::recipe(formula, data = train_data) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
   # Define metrics based on model mode
@@ -153,8 +153,8 @@ train_stacked_model <- function(
       cli::cli_abort("Unsupported engine: {.val {engine}}")
     )
 
-    model_spec <- model_spec_tuned %>%
-      parsnip::set_mode(model_mode) %>%
+    model_spec <- model_spec_tuned |>
+      parsnip::set_mode(model_mode) |>
       parsnip::set_engine(engine)
 
     wflow <- workflows::workflow(base_recipe, model_spec)

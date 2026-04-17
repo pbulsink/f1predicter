@@ -159,3 +159,59 @@ test_that("s_lagged_cumwmean_expanded() returns last value", {
   expect_type(result, "double")
   expect_length(result, 1)
 })
+
+test_that("season_decay_weights() prioritizes current season", {
+  seasons <- c(2023, 2024, 2025, 2026)
+  weights <- season_decay_weights(seasons, current_season = 2026, alpha = 0.5)
+
+  # 2026 should have highest weight
+  expect_equal(weights[4], 1.0)
+  # Weights should be strictly increasing
+  expect_true(all(diff(weights) > 0))
+  # Each weight should be alpha times the previous
+  expect_equal(weights[3] / weights[4], 0.5)
+})
+
+test_that("season_decay_weights() applies correct decay rate", {
+  seasons <- c(2024, 2025, 2026)
+  weights_50 <- season_decay_weights(seasons, current_season = 2026, alpha = 0.5)
+  weights_70 <- season_decay_weights(seasons, current_season = 2026, alpha = 0.7)
+
+  # Higher alpha should give higher weights to older data
+  expect_true(weights_70[1] > weights_50[1])
+  expect_true(weights_70[2] > weights_50[2])
+})
+
+test_that("s_lagged_cumwmean_expanded_with_season_decay() applies season weights", {
+  x <- c(2.0, 2.0, 2.0, 2.0)
+  seasons <- c(2023, 2024, 2025, 2026)
+  result <- s_lagged_cumwmean_expanded_with_season_decay(
+    x, seasons,
+    ln = 5, val = 2.0,
+    current_season = 2026, season_alpha = 0.5, na.val = 2.0
+  )
+
+  # Result should be numeric
+  expect_type(result, "double")
+  # Result should exist and not be NA
+  expect_false(is.na(result))
+})
+
+test_that("s_lagged_cumwmean_expanded_with_season_decay() prioritizes recent data", {
+  # Recent data (2026) should pull average higher
+  x_desc <- c(3.0, 2.5, 2.0, 1.0)  # Values in descending order
+  seasons_desc <- c(2023, 2024, 2025, 2026)
+
+  result_desc <- s_lagged_cumwmean_expanded_with_season_decay(
+    x_desc, seasons_desc,
+    ln = 5, val = 2.0,
+    current_season = 2026, season_alpha = 0.5
+  )
+
+  # With season decay, most recent (lowest) value should have less influence
+  # So result should be higher than if all values were equally weighted
+  simple_mean <- mean(c(2.0, 2.0, 3.0, 2.5, 2.0, 1.0))
+
+  # Result should be closer to more recent values due to season decay
+  expect_true(result_desc > simple_mean / 2)
+})

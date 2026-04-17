@@ -26,6 +26,8 @@ devtools::test(filter = "name", reporter = "check")
 
 Testing functions load code automatically. You do not need to call `library()` or `devtools::load_all()` separately.
 
+Tests may take some time to run. Do not stop running tests to expedite development. Please wait for tests to finish. If you need to check that your changes are successful you can test a single file or a single test with `testthat::test_file()`.
+
 ## Coverage
 
 Goal: **100%** for every edited file. After editing `R/file_name.R`, verify:
