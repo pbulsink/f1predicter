@@ -26,5 +26,5 @@ qualifying position.
 The table is formatted with a color heatmap, where brighter/more colorful
 cells indicate a higher probability. It requires the `gt` package to be
 installed. The function returns a `gt` object which can be printed or saved
-using `gt::gtsave()`.
+using `save_gt_as_png_ragg()` (requires `ragg` package).
 }

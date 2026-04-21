@@ -578,7 +578,7 @@ get_schedule <- function(save_data = FALSE) {
   }
 
   # Sometimes cancelled races exit in schedule -- this is not useful for predictions
-  schedule <- schedule[complete.cases(schedule[,c('season', 'round')]),]
+  schedule <- schedule[stats::complete.cases(schedule[,c('season', 'round')]),]
 
   # Cast to numeric when useful
   schedule$season <- as.numeric(schedule$season)

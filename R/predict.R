@@ -364,7 +364,7 @@ generate_new_data <- function(
       dplyr::left_join(quali_results) %>%
       dplyr::mutate(
         grid = .data$quali_position,
-        driver_avg_qgap = 0.8*driver_avg_qgap + 0.2*qgap
+        driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
       )
 
   } else {
