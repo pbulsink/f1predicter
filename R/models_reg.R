@@ -1276,7 +1276,7 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
   prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
 
   test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = position),
+    baked_test %>% dplyr::select(truth = .data$position),
     .pred_class = class_preds,
     tibble::as_tibble(prob_preds)
   )

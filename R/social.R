@@ -176,21 +176,21 @@ format_race_skeet_predictions <- function(predictions) {
   )
 
   skeet1_body <- glue::glue(
-    "#F1 Predictions for the {race_name} 🏎️",
+    "#F1 Predictions for the {race_name} \\U0001F3CE\\ufe0f",
     "",
-    "🏆 Win Chance:",
+    "\\U0001F3C6 Win Chance:",
     "{win_preds}",
     .sep = "\n"
   )
 
   skeet2_body <- glue::glue(
-    "🍾 Podium Chance (Top 5):",
+    "\\U0001F37E Podium Chance (Top 5):",
     "{podium_preds}",
     .sep = "\n"
   )
 
   skeet3_body <- glue::glue(
-    "🔮 Most Likely Drivers to finish in top 5, with position:",
+    "\\U0001F52E Most Likely Drivers to finish in top 5, with position:",
     "{position_preds}",
     "\n#F1 #{race_hashtag}",
     .sep = "\n"
@@ -268,7 +268,7 @@ format_quali_skeet_predictions <- function(predictions) {
   tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
 
   skeet1_body <- glue::glue(
-    "#F1 Qualifying Predictions for the {race_name} 🏎️",
+    "#F1 Qualifying Predictions for the {race_name} \\U0001F3CE\\ufe0f",
     "",
     "Pole Position Chance:",
     "{pole_preds}",
@@ -276,7 +276,7 @@ format_quali_skeet_predictions <- function(predictions) {
   )
 
   skeet2_body <- glue::glue(
-    "🔮 Most Likely Drivers to qualify in top 5, with position:",
+    "\\U0001F52E Most Likely Drivers to qualify in top 5, with position:",
     "{position_preds}",
     "\n#F1 #{race_hashtag}",
     .sep = "\n"
@@ -435,7 +435,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   sort_position<-c()
   for(i in seq_len(nrow(probs))){
     sort_position <- c(sort_position,
-                       weighted.mean(1:ncol(probs), probs[i,]))
+                       stats::weighted.mean(1:ncol(probs), probs[i,]))
   }
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted %>%
@@ -459,7 +459,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
       label = "Odds of Finishing at Each Position",
       columns = -c("driver_name", "win_odd")
     ) %>%
-    gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
     gt::cols_label(
       driver_name = "Driver",
       win_odd = "Chance of Winning"
@@ -570,7 +570,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
       label = "Odds of Qualifying at Each Position",
       columns = -c("driver_name", "pole_odd")
     ) %>%
-    gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
     gt::cols_label(driver_name = "Driver", pole_odd = "Pole Odds") %>%
     gt::tab_options(
       column_labels.font.size = "small",
@@ -676,7 +676,7 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
       title = gt::md("**Race Results Odds**"),
       subtitle = race_name
     ) %>%
-    gt::fmt_percent(columns = -driver_name, decimals = 1) %>%
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
     gt::cols_label(
       driver_name = "Driver",
       win_odd = "Win Odds",
