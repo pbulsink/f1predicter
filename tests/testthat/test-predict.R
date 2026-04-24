@@ -64,7 +64,8 @@ test_that("generate_new_data() applies grid penalties", {
       season = 2025,
       round = 1,
       historical_data = historical_data
-    ))
+    )
+  )
 
   suppressWarnings(
     result_penalty <- generate_new_data(
@@ -72,15 +73,25 @@ test_that("generate_new_data() applies grid penalties", {
       round = 1,
       historical_data = historical_data,
       penalties = penalties
-  ))
+    )
+  )
 
   # Verify result was generated with penalty to Max Verstappen
   # Also promoted Russell to 3rd
-  expect_equal(as.integer(result_norm[result_norm$driver_id == "max_verstappen", "grid"]),
-            as.integer(result_penalty[result_penalty$driver_id == "max_verstappen", "grid"])-5)
+  expect_equal(
+    as.integer(result_norm[result_norm$driver_id == "max_verstappen", "grid"]),
+    as.integer(result_penalty[
+      result_penalty$driver_id == "max_verstappen",
+      "grid"
+    ]) -
+      5
+  )
 
-  expect_equal(as.integer(result_norm[result_norm$driver_id == "russell", "grid"]),
-               as.integer(result_penalty[result_penalty$driver_id == "russell", "grid"])+1)
+  expect_equal(
+    as.integer(result_norm[result_norm$driver_id == "russell", "grid"]),
+    as.integer(result_penalty[result_penalty$driver_id == "russell", "grid"]) +
+      1
+  )
 })
 
 test_that("build_feature_set() includes numeric features", {

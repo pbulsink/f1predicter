@@ -109,7 +109,7 @@ test_that("normalize_vector() returns uniform distribution for zero sum", {
   result <- normalize_vector(x)
 
   # Should be 1/3 for each element
-  expect_equal(result, c(1/3, 1/3, 1/3))
+  expect_equal(result, c(1 / 3, 1 / 3, 1 / 3))
 })
 
 test_that("normalize_vector() errors on non-numeric input", {

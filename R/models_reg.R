@@ -673,17 +673,17 @@ train_quali_models <- function(
 
   # Manually create a metrics object for reporting
   polr_metrics <- tibble::tribble(
-    ~.metric,
-    ~.estimator,
-    ~.estimate,
-    "mn_log_loss",
-    "standard",
-    log_loss_val$.estimate,
-    "accuracy",
-    "multiclass",
-    accuracy_val$.estimate,
-    "kap",
-    "multiclass",
+    ~.metric               ,
+    ~.estimator            ,
+    ~.estimate             ,
+    "mn_log_loss"          ,
+    "standard"             ,
+    log_loss_val$.estimate ,
+    "accuracy"             ,
+    "multiclass"           ,
+    accuracy_val$.estimate ,
+    "kap"                  ,
+    "multiclass"           ,
     kap_val$.estimate
   )
 
@@ -858,7 +858,11 @@ train_binary_result_model <- function(
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list containing five fitted `workflow` objects.
-train_results_models <- function(data = clean_data(), scenario, engine = "ranger") {
+train_results_models <- function(
+  data = clean_data(),
+  scenario,
+  engine = "ranger"
+) {
   cli::cli_h1("Training Race Results Models")
   cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
 
@@ -1302,17 +1306,17 @@ train_results_models <- function(data = clean_data(), scenario, engine = "ranger
 
   # Manually create a metrics object for reporting
   polr_metrics <- tibble::tribble(
-    ~.metric,
-    ~.estimator,
-    ~.estimate,
-    "mn_log_loss",
-    "standard",
-    log_loss_val$.estimate,
-    "accuracy",
-    "multiclass",
-    accuracy_val$.estimate,
-    "kap",
-    "multiclass",
+    ~.metric               ,
+    ~.estimator            ,
+    ~.estimate             ,
+    "mn_log_loss"          ,
+    "standard"             ,
+    log_loss_val$.estimate ,
+    "accuracy"             ,
+    "multiclass"           ,
+    accuracy_val$.estimate ,
+    "kap"                  ,
+    "multiclass"           ,
     kap_val$.estimate
   )
 
