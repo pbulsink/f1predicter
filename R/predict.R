@@ -32,6 +32,8 @@
 #' @param penalties A named vector of `driver_id = penalty_positions` to be
 #'   applied (in order of application).
 #'   For example `c('hamilton' = 5, 'max_verstappen' = 10)`.
+#' @param params A named list of processing parameters controlling imputation
+#'   defaults. Defaults to [get_processing_params()].
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
 #' @export
@@ -40,7 +42,8 @@ generate_new_data <- function(
   round,
   drivers = NULL,
   penalties = NULL,
-  historical_data = clean_data()
+  historical_data = clean_data(),
+  params = get_processing_params()
 ) {
   # drivers should be a data.frame or tibble with: driver_id, constructor_id, (optional any of: quali_position, grid, practice_optimal_rank, practice_best_rank,
   # practice_avg_rank) Any missing round-specific values will be given as current moved averages Any other values will be calculated from historical data,
@@ -91,24 +94,24 @@ generate_new_data <- function(
     dplyr::mutate(
       constructor_grid_avg = tidyr::replace_na(
         .data$constructor_grid_avg,
-        default_params$grid
+        params$grid
       ),
-      grid = tidyr::replace_na(.data$grid, default_params$grid),
+      grid = tidyr::replace_na(.data$grid, params$grid),
       constructor_finish_avg = tidyr::replace_na(
         .data$constructor_finish_avg,
-        1 - default_params$constructor_failure_avg * 2
+        1 - params$constructor_failure_avg * 2
       ),
       finished = tidyr::replace_na(
         .data$finished,
-        1 - default_params$constructor_failure_avg
+        1 - params$constructor_failure_avg
       ),
       constructor_failure_avg = tidyr::replace_na(
         .data$constructor_failure_avg,
-        default_params$constructor_failure_avg * 2
+        params$constructor_failure_avg * 2
       ),
       constructor_failure_race = tidyr::replace_na(
         .data$constructor_failure_race,
-        default_params$constructor_failure_avg * 2
+        params$constructor_failure_avg * 2
       ),
       constructor_grid_avg = wmean_two(
         .data$grid,
@@ -143,27 +146,27 @@ generate_new_data <- function(
       dplyr::mutate(
         grid_pos_corr_avg = tidyr::replace_na(
           .data$grid_pos_corr_avg,
-          default_params$grid_pos_corr_avg
+          params$grid_pos_corr_avg
         ),
         grid_pos_corr = tidyr::replace_na(
           .data$grid_pos_corr,
-          default_params$grid_pos_corr_avg
+          params$grid_pos_corr_avg
         ),
         driver_failure_circuit_avg = tidyr::replace_na(
           .data$driver_failure_circuit_avg,
-          default_params$driver_failure_avg
+          params$driver_failure_avg
         ),
         driver_failure_circuit = tidyr::replace_na(
           .data$driver_failure_circuit,
-          default_params$driver_failure_avg
+          params$driver_failure_avg
         ),
         constructor_failure_circuit_avg = tidyr::replace_na(
           .data$constructor_failure_circuit_avg,
-          default_params$constructor_failure_avg
+          params$constructor_failure_avg
         ),
         constructor_failure_circuit = tidyr::replace_na(
           .data$constructor_failure_circuit,
-          default_params$constructor_failure_avg
+          params$constructor_failure_avg
         ),
         grid_pos_corr_avg = wmean_two(
           .data$grid_pos_corr,
@@ -186,9 +189,9 @@ generate_new_data <- function(
     #Need to make a new version - use defaults
     hd_circuit <- tibble::tibble(
       'circuit_id' = new_data$circuit_id,
-      'grid_pos_corr_avg' = default_params$grid_pos_corr_avg,
-      'driver_failure_circuit_avg' = default_params$driver_failure_avg,
-      'constructor_failure_circuit_avg' = default_params$constructor_failure_avg
+      'grid_pos_corr_avg' = params$grid_pos_corr_avg,
+      'driver_failure_circuit_avg' = params$driver_failure_avg,
+      'constructor_failure_circuit_avg' = params$constructor_failure_avg
     )
   }
 
@@ -217,21 +220,21 @@ generate_new_data <- function(
       driver_experience = .data$driver_experience + 1,
       driver_failure_avg = tidyr::replace_na(
         .data$driver_failure_avg,
-        default_params$driver_failure_avg
+        params$driver_failure_avg
       ),
       driver_failure = tidyr::replace_na(
         .data$driver_failure,
-        default_params$driver_failure_avg
+        params$driver_failure_avg
       ),
       driver_failure_avg = wmean_two(
         .data$driver_failure,
         .data$driver_failure_avg,
         20
       ),
-      position = tidyr::replace_na(.data$position, default_params$position),
+      position = tidyr::replace_na(.data$position, params$position),
       driver_position_avg = tidyr::replace_na(
         .data$driver_position_avg,
-        default_params$position
+        params$position
       ),
       driver_position_avg = wmean_two(
         .data$position,
@@ -240,18 +243,18 @@ generate_new_data <- function(
       ),
       driver_finish_avg = tidyr::replace_na(
         .data$driver_finish_avg,
-        default_params$driver_finish_avg
+        params$driver_finish_avg
       ),
       finished = tidyr::replace_na(
         .data$finished,
-        default_params$driver_finish_avg
+        params$driver_finish_avg
       ),
       driver_finish_avg = wmean_two(.data$finished, .data$driver_finish_avg, 10)
     ) %>%
     dplyr::mutate(
       driver_avg_qgap = tidyr::replace_na(
         .data$driver_avg_qgap,
-        default_params$qgap
+        params$qgap
       )
     ) %>%
     dplyr::left_join(
@@ -275,7 +278,7 @@ generate_new_data <- function(
     dplyr::mutate(
       constructor_grid_avg = tidyr::replace_na(
         .data$constructor_grid_avg,
-        default_params$grid
+        params$grid
       )
     )
 
@@ -366,7 +369,6 @@ generate_new_data <- function(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
       )
-
   } else {
     # sort drivers by their average grid for an estimate
     new_data <- new_data %>%
@@ -374,9 +376,9 @@ generate_new_data <- function(
       dplyr::mutate(
         driver_grid_avg = tidyr::replace_na(
           .data$driver_grid_avg,
-          default_params$grid
+          params$grid
         ),
-        last_grid = tidyr::replace_na(.data$last_grid, default_params$grid),
+        last_grid = tidyr::replace_na(.data$last_grid, params$grid),
         driver_grid_avg = wmean_two(.data$last_grid, .data$driver_grid_avg, 10),
         grid = order(order(.data$driver_grid_avg)),
         driver_avg_qgap = 1,

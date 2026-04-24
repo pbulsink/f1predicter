@@ -4,10 +4,28 @@
 \alias{clean_data}
 \title{Clean Data}
 \usage{
-clean_data(input = load_all_data())
+clean_data(
+  input = load_all_data(),
+  params = get_processing_params(),
+  cache_processed = FALSE
+)
 }
 \arguments{
-\item{input}{A list of raw data frames, typically from `load_all_data()`.}
+\item{input}{A list of raw data frames, typically from [load_all_data()].}
+
+\item{params}{A named list of processing parameters controlling imputation
+defaults and rolling-average priors. Defaults to [get_processing_params()].
+Modify individual elements to tune the pipeline without rewriting code, e.g.
+`params <- get_processing_params(); params$fastest_pit <- 2.3`.}
+
+\item{cache_processed}{Logical. When `TRUE`, the cleaned data frame is saved
+to the cache directory (see `options("f1predicter.cache")`) as
+`"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
+the cached file is returned immediately **without** reprocessing, regardless
+of the `params` or `input` arguments. Set to `FALSE` (default) to always
+reprocess. If you change `params` or `input`, delete the cached file
+(`"processed_data.rds"` in the cache directory) before calling with
+`cache_processed = TRUE` again.}
 }
 \value{
 A single, cleaned data frame.
