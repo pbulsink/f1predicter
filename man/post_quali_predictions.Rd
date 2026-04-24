@@ -15,3 +15,9 @@ Invisibly returns the response from the Bluesky API, or NULL on failure.
 \description{
 A wrapper function that formats qualifying predictions and posts them to Bluesky.
 }
+\examples{
+\dontrun{
+preds <- predict_quali_round()
+post_quali_predictions(preds)
+}
+}

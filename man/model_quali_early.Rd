@@ -17,7 +17,7 @@ are automatically butchered and saved to the path specified in
 `options('f1predicter.models')`.}
 }
 \value{
-A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
+A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 }
 \description{
 This function trains two classification models to predict qualifying results using
@@ -26,16 +26,12 @@ is a wrapper around `train_quali_models(use_practice_data = FALSE)`.
 }
 \details{
 The function first filters the input data to include seasons from 2018
-onwards. Both models are built using the specified engine. Hyperparameters
-are tuned via `tune::tune_grid()` with a grid search. For the `ranger`,
-`glmnet`, and `nnet` engines, this is a regular grid.
-
-The function first filters the input data to include seasons from 2018 onwards.
-
-The pole position model is optimized by selecting the best model based on the
-`mn_log_loss` metric. The qualifying position model is optimized based on the
-`kap` (Cohen's Kappa) metric.
-
-Upon completion, the function prints the final performance metrics of each
-model (log loss, accuracy, AUC, etc.) to the console.
+onwards. Models are built using the specified engine with hyperparameters
+tuned via grid search. The pole position model is optimized on `mn_log_loss`;
+the qualifying position model on `kap` (Cohen's Kappa).
+}
+\examples{
+\dontrun{
+models <- model_quali_early()
+}
 }
