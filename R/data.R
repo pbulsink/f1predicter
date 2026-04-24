@@ -14,9 +14,18 @@ cache_to_rds <- function(data, path) {
 # Load a data frame from an RDS file, falling back to CSV for backward
 # compatibility with existing cache files written by earlier versions of the
 # package.  Returns NULL (not NA) when neither file is found.
+# Corrupt/unreadable RDS files emit a warning so the problem is visible.
 load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
   if (file.exists(rds_path)) {
-    return(tryCatch(readRDS(rds_path), error = function(e) NULL))
+    return(tryCatch(
+      readRDS(rds_path),
+      error = function(e) {
+        cli::cli_warn(
+          "Failed to read {.file {rds_path}}: {conditionMessage(e)}"
+        )
+        NULL
+      }
+    ))
   }
   if (!is.null(csv_path) && file.exists(csv_path)) {
     args <- list(file = csv_path)

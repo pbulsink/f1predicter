@@ -9,7 +9,8 @@ generate_new_data(
   round,
   drivers = NULL,
   penalties = NULL,
-  historical_data = clean_data()
+  historical_data = clean_data(),
+  params = get_processing_params()
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ For example `c('hamilton' = 5, 'max_verstappen' = 10)`.}
 
 \item{historical_data}{A data frame of historical race data, typically the
 output of `clean_data()`. This is used to calculate the feature values.}
+
+\item{params}{A named list of processing parameters controlling imputation
+defaults. Defaults to [get_processing_params()].}
 }
 \value{
 A tibble where each row corresponds to a driver for the specified

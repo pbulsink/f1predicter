@@ -20,10 +20,12 @@ Modify individual elements to tune the pipeline without rewriting code, e.g.
 
 \item{cache_processed}{Logical. When `TRUE`, the cleaned data frame is saved
 to the cache directory (see `options("f1predicter.cache")`) as
-`"processed_data.rds"` and reloaded from there on the next call (when the
-file exists). Set to `FALSE` (default) to always reprocess. Passing
-`cache_processed = TRUE` with a custom `params` will overwrite any
-previously cached result.}
+`"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
+the cached file is returned immediately **without** reprocessing, regardless
+of the `params` or `input` arguments. Set to `FALSE` (default) to always
+reprocess. If you change `params` or `input`, delete the cached file
+(`"processed_data.rds"` in the cache directory) before calling with
+`cache_processed = TRUE` again.}
 }
 \value{
 A single, cleaned data frame.

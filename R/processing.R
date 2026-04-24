@@ -49,9 +49,6 @@ get_processing_params <- function() {
   )
 }
 
-# Keep the internal alias for any legacy internal usage
-default_params <- get_processing_params()
-
 
 # Data Processing Functions
 
@@ -989,10 +986,12 @@ combine_and_finalize_features <- function(
 #'   `params <- get_processing_params(); params$fastest_pit <- 2.3`.
 #' @param cache_processed Logical. When `TRUE`, the cleaned data frame is saved
 #'   to the cache directory (see `options("f1predicter.cache")`) as
-#'   `"processed_data.rds"` and reloaded from there on the next call (when the
-#'   file exists). Set to `FALSE` (default) to always reprocess. Passing
-#'   `cache_processed = TRUE` with a custom `params` will overwrite any
-#'   previously cached result.
+#'   `"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
+#'   the cached file is returned immediately **without** reprocessing, regardless
+#'   of the `params` or `input` arguments. Set to `FALSE` (default) to always
+#'   reprocess. If you change `params` or `input`, delete the cached file
+#'   (`"processed_data.rds"` in the cache directory) before calling with
+#'   `cache_processed = TRUE` again.
 #' @return A single, cleaned data frame.
 #' @importFrom rlang .data
 #' @export

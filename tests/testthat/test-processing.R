@@ -115,11 +115,9 @@ test_that("clean_data() respects custom params", {
 
   # Just check that it runs without error; we skip deep value verification
   # because that requires a full data reload which is expensive in CI.
+  cache_dir <- getOption("f1predicter.cache")
   skip_if(
-    !dir.exists(getOption(
-      "f1predicter.cache",
-      "~/Documents/f1predicter/cache"
-    )),
+    is.null(cache_dir) || !dir.exists(cache_dir),
     "Cache directory not available in this environment"
   )
   result <- clean_data(params = custom_params)
