@@ -22,3 +22,8 @@ Loads a list of models from a standardized file path. The path is
 constructed from the base directory set in `getOption("f1predicter.models")`,
 the model type, and timing.
 }
+\examples{
+\dontrun{
+models <- load_models(model_type = "quali", model_timing = "early")
+}
+}

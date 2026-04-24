@@ -12,3 +12,8 @@ a list of data.frames
 \description{
 Loads all data previously saved to cache at options('f1predicter.cache') location
 }
+\examples{
+\dontrun{
+all_data <- load_all_data()
+}
+}

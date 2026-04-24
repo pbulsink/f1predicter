@@ -35,3 +35,9 @@ This function combines the outputs of `predict_quali_pole()`,
 It takes the list of fitted models returned by `model_quali_early()` or
 `model_quali_late()`.
 }
+\examples{
+\dontrun{
+new_data <- generate_next_race_data()
+preds <- predict_quali_round(new_data)
+}
+}

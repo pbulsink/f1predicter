@@ -19,3 +19,8 @@ a list of data frames
 \description{
 Downloads and saves all data for a round weekend
 }
+\examples{
+\dontrun{
+data <- get_weekend_data(season = 2024, round = 1)
+}
+}

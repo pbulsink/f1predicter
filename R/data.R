@@ -11,6 +11,7 @@
 #' @param round round, compatible with fastf1 round selector
 #'
 #' @return a data.frame with all lap information
+#' @noRd
 get_laps <- function(season, round) {
   r <- get_laps_or_null(season = season, round = round, session = "R")
   quali <- get_laps_or_null(season = season, round = round, session = "Q")
@@ -85,6 +86,7 @@ get_laps_or_null <- function(season, round, session) {
 #' @param session Usually 'R', but also available is 'S'
 #'
 #' @return data frame
+#' @noRd
 get_grids <- function(season, round, session) {
   if (session == "R") {
     # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
@@ -175,6 +177,10 @@ get_grids <- function(season, round, session) {
 #' @export
 #'
 #' @return a list of data frames
+#' @examples
+#' \dontrun{
+#' data <- get_weekend_data(season = 2024, round = 1)
+#' }
 get_weekend_data <- function(season, round, force = FALSE) {
   schedule <- f1predicter::schedule %>%
     dplyr::mutate(
@@ -571,6 +577,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
 #'
 #' @return Schedule data.frame
 #' @export
+#' @examples
+#' \dontrun{
+#' sched <- get_schedule()
+#' }
 get_schedule <- function(save_data = FALSE) {
   schedule <- NULL
   for (y in c(1990:f1dataR::get_current_season())) {
@@ -578,7 +588,9 @@ get_schedule <- function(save_data = FALSE) {
   }
 
   # Sometimes cancelled races exit in schedule -- this is not useful for predictions
-  schedule <- schedule[stats::complete.cases(schedule[,c('season', 'round')]),]
+  schedule <- schedule[
+    stats::complete.cases(schedule[, c('season', 'round')]),
+  ]
 
   # Cast to numeric when useful
   schedule$season <- as.numeric(schedule$season)
@@ -603,7 +615,14 @@ get_schedule <- function(save_data = FALSE) {
 #'
 #' @return None, writes to file
 #' @export
-get_season_data <- function(season = f1dataR::get_current_season(), force = FALSE) {
+#' @examples
+#' \dontrun{
+#' get_season_data(season = 2024)
+#' }
+get_season_data <- function(
+  season = f1dataR::get_current_season(),
+  force = FALSE
+) {
   stopifnot(season <= f1dataR::get_current_season())
 
   schedule <- f1predicter::schedule
@@ -763,6 +782,10 @@ get_season_data <- function(season = f1dataR::get_current_season(), force = FALS
 #'
 #' @return a list of data.frames
 #' @export
+#' @examples
+#' \dontrun{
+#' all_data <- load_all_data()
+#' }
 load_all_data <- function() {
   rgrid <- NULL
   sgrid <- NULL
@@ -776,40 +799,44 @@ load_all_data <- function() {
     cat("Reading", y, "data...\n")
     rg <- tryCatch(
       suppressWarnings(
-      utils::read.csv(file.path(
-        getOption("f1predicter.cache"),
-        paste0(y, "_season_rgrid.csv")
-      ))),
+        utils::read.csv(file.path(
+          getOption("f1predicter.cache"),
+          paste0(y, "_season_rgrid.csv")
+        ))
+      ),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     rgrid <- dplyr::bind_rows(rgrid, rg)
     sg <- tryCatch(
       suppressWarnings(
-      utils::read.csv(file.path(
-        getOption("f1predicter.cache"),
-        paste0(y, "_season_sgrid.csv")
-      ))),
+        utils::read.csv(file.path(
+          getOption("f1predicter.cache"),
+          paste0(y, "_season_sgrid.csv")
+        ))
+      ),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     sgrid <- dplyr::bind_rows(sgrid, sg)
     res <- tryCatch(
       suppressWarnings(
-      utils::read.csv(file.path(
-        getOption("f1predicter.cache"),
-        paste0(y, "_season_results.csv")
-      ))),
+        utils::read.csv(file.path(
+          getOption("f1predicter.cache"),
+          paste0(y, "_season_results.csv")
+        ))
+      ),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
     results <- dplyr::bind_rows(results, res)
     q <- tryCatch(
       suppressWarnings(
-      utils::read.csv(file.path(
-        getOption("f1predicter.cache"),
-        paste0(y, "_season_qualis.csv")
-      ))),
+        utils::read.csv(file.path(
+          getOption("f1predicter.cache"),
+          paste0(y, "_season_qualis.csv")
+        ))
+      ),
       error = function(e) return(NULL)
     ) %>%
       ensure_tidy()
@@ -817,10 +844,11 @@ load_all_data <- function() {
     if (y >= 2011) {
       pt <- tryCatch(
         suppressWarnings(
-        utils::read.csv(file.path(
-          getOption("f1predicter.cache"),
-          paste0(y, "_season_pitstops.csv")
-        ))),
+          utils::read.csv(file.path(
+            getOption("f1predicter.cache"),
+            paste0(y, "_season_pitstops.csv")
+          ))
+        ),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
@@ -829,10 +857,11 @@ load_all_data <- function() {
     if (y >= 2021) {
       sr <- tryCatch(
         suppressWarnings(
-        utils::read.csv(file.path(
-          getOption("f1predicter.cache"),
-          paste0(y, "_season_sprint_results.csv")
-        ))),
+          utils::read.csv(file.path(
+            getOption("f1predicter.cache"),
+            paste0(y, "_season_sprint_results.csv")
+          ))
+        ),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
@@ -841,45 +870,46 @@ load_all_data <- function() {
     if (y >= 2018) {
       lp <- tryCatch(
         suppressWarnings(
-        utils::read.csv(
-          file.path(
-            getOption("f1predicter.cache"),
-            paste0(y, "_season_laps.csv")
-          ),
-          colClasses = c(
-            "character",
-            "character",
-            "numeric",
-            "integer",
-            "integer",
-            "numeric",
-            "numeric",
-            "numeric",
-            "integer",
-            "integer",
-            "integer",
-            "integer",
-            "logical",
-            "character",
-            "integer",
-            "logical",
-            "integer",
-            "integer",
-            "logical",
-            "character",
-            "logical",
-            "numeric",
-            "numeric",
-            "numeric",
-            "logical",
-            "numeric",
-            "integer",
-            "numeric",
-            "character",
-            "integer",
-            "integer"
+          utils::read.csv(
+            file.path(
+              getOption("f1predicter.cache"),
+              paste0(y, "_season_laps.csv")
+            ),
+            colClasses = c(
+              "character",
+              "character",
+              "numeric",
+              "integer",
+              "integer",
+              "numeric",
+              "numeric",
+              "numeric",
+              "integer",
+              "integer",
+              "integer",
+              "integer",
+              "logical",
+              "character",
+              "integer",
+              "logical",
+              "integer",
+              "integer",
+              "logical",
+              "character",
+              "logical",
+              "numeric",
+              "numeric",
+              "numeric",
+              "logical",
+              "numeric",
+              "integer",
+              "numeric",
+              "character",
+              "integer",
+              "integer"
+            )
           )
-        )),
+        ),
         error = function(e) return(NULL)
       ) %>%
         ensure_tidy()
@@ -936,6 +966,7 @@ get_last_drivers <- function() {
 #' @param round_url a wikipedia url for a grand prix (in english)
 #'
 #' @return a weather, as character (one of `warm`, `cold`, `dry`, `wet`, or `cloudy`)
+#' @noRd
 getWeather <- function(round_url) {
   stopifnot(grepl("wikipedia", round_url))
 

@@ -1,5 +1,3 @@
-
-
 test_that("format functions handle table output", {
   # Test that formatting functions exist and are callable
   expect_true(is.function(format_quali_prob_table))
