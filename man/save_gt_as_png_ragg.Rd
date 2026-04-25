@@ -4,18 +4,34 @@
 \alias{save_gt_as_png_ragg}
 \title{Save a gt table as a PNG using ragg (no webshot/chrome required)}
 \usage{
-save_gt_as_png_ragg(gt_table, filename, width = 1400, height = 800, scale = 1)
+save_gt_as_png_ragg(
+  gt_table,
+  filename,
+  width = NULL,
+  height = NULL,
+  scale = 1,
+  dpi = 150,
+  padding = 20
+)
 }
 \arguments{
 \item{gt_table}{A gt_tbl object}
 
 \item{filename}{Output PNG file path}
 
-\item{width}{Width in pixels (default 1400)}
+\item{width}{Width in pixels. If `NULL` (default), the width is
+automatically determined from the table's natural content size.}
 
-\item{height}{Height in pixels (default 800)}
+\item{height}{Height in pixels. If `NULL` (default), the height is
+automatically determined from the table's natural content size.}
 
 \item{scale}{Scaling factor (default 1)}
+
+\item{dpi}{Resolution in dots per inch used for auto-detection (default 150).
+Ignored when both `width` and `height` are supplied explicitly.}
+
+\item{padding}{Extra pixels added to each auto-detected dimension (default
+20). Ignored when both `width` and `height` are supplied explicitly.}
 }
 \value{
 The filename (invisibly)

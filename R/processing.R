@@ -909,8 +909,14 @@ combine_and_finalize_features <- function(
         .data$pit_num_perc,
         0
       ),
-      q_min_perc = tidyr::replace_na(.data$q_min_perc, mean(.data$q_min_perc, na.rm = T)),
-      q_avg_perc = tidyr::replace_na(.data$q_avg_perc, mean(.data$q_avg_perc, na.rm = T))
+      q_min_perc = tidyr::replace_na(
+        .data$q_min_perc,
+        mean(.data$q_min_perc, na.rm = T)
+      ),
+      q_avg_perc = tidyr::replace_na(
+        .data$q_avg_perc,
+        mean(.data$q_avg_perc, na.rm = T)
+      )
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(

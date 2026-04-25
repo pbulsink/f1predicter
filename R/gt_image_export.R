@@ -2,12 +2,26 @@
 #'
 #' @param gt_table A gt_tbl object
 #' @param filename Output PNG file path
-#' @param width Width in pixels (default 1400)
-#' @param height Height in pixels (default 800)
+#' @param width Width in pixels. If `NULL` (default), the width is
+#'   automatically determined from the table's natural content size.
+#' @param height Height in pixels. If `NULL` (default), the height is
+#'   automatically determined from the table's natural content size.
 #' @param scale Scaling factor (default 1)
+#' @param dpi Resolution in dots per inch used for auto-detection (default 150).
+#'   Ignored when both `width` and `height` are supplied explicitly.
+#' @param padding Extra pixels added to each auto-detected dimension (default
+#'   20). Ignored when both `width` and `height` are supplied explicitly.
 #' @return The filename (invisibly)
 #' @export
-save_gt_as_png_ragg <- function(gt_table, filename, width = 1400, height = 800, scale = 1) {
+save_gt_as_png_ragg <- function(
+  gt_table,
+  filename,
+  width = NULL,
+  height = NULL,
+  scale = 1,
+  dpi = 150,
+  padding = 20
+) {
   if (!requireNamespace("ragg", quietly = TRUE)) {
     cli::cli_abort(
       "Package {.pkg ragg} is required for PNG export. Please install it with {.code `install.packages('ragg')`}."
@@ -20,8 +34,31 @@ save_gt_as_png_ragg <- function(gt_table, filename, width = 1400, height = 800, 
   }
   # Render gt table to grid object
   gt_grob <- gt::as_gtable(gt_table)
+
+  # Auto-detect width and/or height from the gtable's natural dimensions.
+  # A temporary null PDF device provides the graphics context required by
+  # grid::convertWidth/convertHeight to resolve unit values to inches.
+  if (is.null(width) || is.null(height)) {
+    grDevices::pdf(nullfile(), width = 20, height = 20)
+    if (is.null(width)) {
+      w_in <- sum(grid::convertWidth(gt_grob$widths, "in", valueOnly = TRUE))
+      width <- ceiling(w_in * dpi) + padding
+    }
+    if (is.null(height)) {
+      h_in <- sum(grid::convertHeight(gt_grob$heights, "in", valueOnly = TRUE))
+      height <- ceiling(h_in * dpi) + padding
+    }
+    grDevices::dev.off()
+  }
+
   # Use ragg to save as PNG
-  ragg::agg_png(filename, width = width, height = height, units = "px", scaling = scale)
+  ragg::agg_png(
+    filename,
+    width = width,
+    height = height,
+    units = "px",
+    scaling = scale
+  )
   grid::grid.draw(gt_grob)
   grDevices::dev.off()
   invisible(filename)
