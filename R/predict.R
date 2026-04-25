@@ -366,7 +366,6 @@ generate_new_data <- function(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
       )
-
   } else {
     # sort drivers by their average grid for an estimate
     new_data <- new_data %>%

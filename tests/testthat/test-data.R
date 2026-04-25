@@ -11,8 +11,10 @@ test_that("get_schedule() returns a tibble with schedule data and data is as exp
   # Should have essential columns
   expected_cols <- c("season", "round", "circuit_id")
   for (col in expected_cols) {
-    expect_true(col %in% names(result),
-                paste("Column", col, "should exist in get_schedule()"))
+    expect_true(
+      col %in% names(result),
+      paste("Column", col, "should exist in get_schedule()")
+    )
   }
 
   # All seasons should be numeric and reasonable
@@ -38,7 +40,15 @@ test_that("load_all_data() returns a list with expected components", {
   expect_type(result, "list")
 
   # Should have required components
-  expected_components <- c("results", "sprint_results", "laps", "pitstops", "sgrid", "rgrid", "qualis")
+  expected_components <- c(
+    "results",
+    "sprint_results",
+    "laps",
+    "pitstops",
+    "sgrid",
+    "rgrid",
+    "qualis"
+  )
   expect_true(all(expected_components %in% names(result)))
 
   # Main components should be tibbles or dataframes
