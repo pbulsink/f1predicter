@@ -18,3 +18,8 @@ None, writes to file
 Get a whole season's data (up to today's date, if current data). Saves data to
 options('f1predicter.cache') directory
 }
+\examples{
+\dontrun{
+get_season_data(season = 2024)
+}
+}

@@ -19,6 +19,7 @@
 #' @param group The variable to group by for the split.
 #' @return A list containing the data split object, training data,
 #'   testing data, and cross-validation folds.
+#' @noRd
 prepare_and_split_data <- function(
   data,
   columns = NULL,
@@ -58,6 +59,7 @@ prepare_and_split_data <- function(
 #' @param metrics A named character vector where names are the metric IDs from
 #'   `yardstick` (e.g., "mn_log_loss") and values are the display names (e.g., "log loss").
 #' @return Invisibly returns the `last_fit_object`.
+#' @noRd
 report_model_metrics <- function(last_fit_object, model_name, metrics) {
   # Extract the metrics data frame once
   collected_metrics <- tune::collect_metrics(last_fit_object)
@@ -131,6 +133,7 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
+#' @noRd
 train_quali_models <- function(
   data,
   use_practice_data = FALSE,
@@ -714,15 +717,22 @@ train_quali_models <- function(
 #' data available before any practice sessions have occurred for a race weekend. It
 #' is a wrapper around `train_quali_models(use_practice_data = FALSE)`.
 #'
-#' @inherit train_quali_models details
+#' @details The function first filters the input data to include seasons from 2018
+#' onwards. Models are built using the specified engine with hyperparameters
+#' tuned via grid search. The pole position model is optimized on `mn_log_loss`;
+#' the qualifying position model on `kap` (Cohen's Kappa).
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
-#' @inherit train_quali_models return
+#' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_quali_early()
+#' }
 model_quali_early <- function(
   data = clean_data(),
   engine = "ranger",
@@ -746,15 +756,22 @@ model_quali_early <- function(
 #' model includes practice performance metrics as predictors. It is a wrapper
 #' around `train_quali_models(use_practice_data = TRUE)`.
 #'
-#' @inherit train_quali_models details
+#' @details The function first filters the input data to include seasons from 2018
+#' onwards. Models are built using the specified engine with hyperparameters
+#' tuned via grid search. The pole position model is optimized on `mn_log_loss`;
+#' the qualifying position model on `kap` (Cohen's Kappa).
 #' @param data A data frame containing the modeling data. Defaults to the output of `clean_data()`.
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
-#' @inherit train_quali_models return
+#' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_quali_late()
+#' }
 model_quali_late <- function(
   data = clean_data(),
   engine = "ranger",
@@ -786,6 +803,7 @@ model_quali_late <- function(
 #' @param predictor_vars A character vector of predictor variable names to be
 #'   used in the model.
 #' @return A fitted `workflow` object.
+#' @noRd
 train_binary_result_model <- function(
   outcome_var,
   model_name,
@@ -858,6 +876,7 @@ train_binary_result_model <- function(
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list containing five fitted `workflow` objects.
+#' @noRd
 train_results_models <- function(
   data = clean_data(),
   scenario,
@@ -1370,6 +1389,10 @@ train_results_models <- function(
 #' @return A list containing fitted `workflow` objects for `win`, `podium`,
 #'   `t10`, and `position`.
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_results_after_quali()
+#' }
 model_results_after_quali <- function(
   data = clean_data(),
   engine = "ranger",
@@ -1407,6 +1430,10 @@ model_results_after_quali <- function(
 #'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_results_late()
+#' }
 model_results_late <- function(
   data = clean_data(),
   engine = "ranger",
@@ -1440,6 +1467,10 @@ model_results_late <- function(
 #'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_results_early()
+#' }
 model_results_early <- function(
   data = clean_data(),
   engine = "ranger",
@@ -1524,6 +1555,11 @@ construct_model_path <- function(model_type, model_timing, engine) {
 #'   `"late"`, or (for "results" models only) `"after_quali"`.
 #' @return Invisibly returns the full `file_path` where models were saved.
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- model_quali_early()
+#' save_models(models, model_timing = "early")
+#' }
 save_models <- function(model_list, model_timing) {
   # Infer model_type from the names in model_list
   model_names <- names(model_list)
@@ -1591,6 +1627,10 @@ save_models <- function(model_list, model_timing) {
 #' @param engine The engine used for the model, e.g., `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
 #' @return A list of  model objects, ready for prediction.
 #' @export
+#' @examples
+#' \dontrun{
+#' models <- load_models(model_type = "quali", model_timing = "early")
+#' }
 load_models <- function(model_type, model_timing, engine = "ranger") {
   file_path <- construct_model_path(model_type, model_timing, engine)
 

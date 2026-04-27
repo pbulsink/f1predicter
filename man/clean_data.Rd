@@ -34,3 +34,8 @@ A single, cleaned data frame.
 This function serves as a wrapper to load all raw data and process it through
 a series of cleaning and feature engineering steps, preparing it for modeling.
 }
+\examples{
+\dontrun{
+data <- clean_data()
+}
+}

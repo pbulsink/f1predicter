@@ -15,3 +15,9 @@ Invisibly returns the response from the Bluesky API, or NULL on failure.
 \description{
 A wrapper function that formats race predictions and posts them to Bluesky.
 }
+\examples{
+\dontrun{
+preds <- predict_round()
+post_race_predictions(preds)
+}
+}

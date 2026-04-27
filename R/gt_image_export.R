@@ -7,6 +7,11 @@
 #' @param scale Scaling factor (default 1)
 #' @return The filename (invisibly)
 #' @export
+#' @examples
+#' \dontrun{
+#' tbl <- gt::gt(data.frame(x = 1:3, y = c("a", "b", "c")))
+#' save_gt_as_png_ragg(tbl, "output.png", width = 400, height = 200)
+#' }
 save_gt_as_png_ragg <- function(
   gt_table,
   filename,
