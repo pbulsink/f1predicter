@@ -32,6 +32,28 @@ save_gt_as_png_ragg <- function(
       "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
     )
   }
+  if (!inherits(gt_table, "gt_tbl")) {
+    cli::cli_abort("{.arg gt_table} must be a {.cls gt_tbl} object.")
+  }
+  if (!is.character(filename) || length(filename) != 1 || is.na(filename)) {
+    cli::cli_abort(
+      "{.arg filename} must be a single non-missing character string."
+    )
+  }
+  if (
+    !is.null(width) && (!is.numeric(width) || length(width) != 1 || width < 1)
+  ) {
+    cli::cli_abort("{.arg width} must be a single number >= 1.")
+  }
+  if (
+    !is.null(height) &&
+      (!is.numeric(height) || length(height) != 1 || height < 1)
+  ) {
+    cli::cli_abort("{.arg height} must be a single number >= 1.")
+  }
+  if (!is.numeric(scale) || length(scale) != 1 || scale <= 0) {
+    cli::cli_abort("{.arg scale} must be a single positive number.")
+  }
   if (!is.numeric(dpi) || length(dpi) != 1 || dpi <= 0) {
     cli::cli_abort("{.arg dpi} must be a single positive number.")
   }
@@ -75,6 +97,13 @@ save_gt_as_png_ragg <- function(
     })
     width <- dims$width
     height <- dims$height
+  }
+
+  if (width < 1 || height < 1) {
+    cli::cli_abort(
+      "Computed canvas dimensions ({width} x {height} px) must both be >= 1. \\
+      Increase {.arg dpi} or {.arg padding}, or supply explicit {.arg width}/{.arg height}."
+    )
   }
 
   # Use ragg to save as PNG
