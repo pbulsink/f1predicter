@@ -39,16 +39,27 @@ save_gt_as_png_ragg <- function(
   # A temporary null PDF device provides the graphics context required by
   # grid::convertWidth/convertHeight to resolve unit values to inches.
   if (is.null(width) || is.null(height)) {
-    grDevices::pdf(nullfile(), width = 20, height = 20)
-    if (is.null(width)) {
-      w_in <- sum(grid::convertWidth(gt_grob$widths, "in", valueOnly = TRUE))
-      width <- ceiling(w_in * dpi) + padding
-    }
-    if (is.null(height)) {
-      h_in <- sum(grid::convertHeight(gt_grob$heights, "in", valueOnly = TRUE))
-      height <- ceiling(h_in * dpi) + padding
-    }
-    grDevices::dev.off()
+    dims <- local({
+      grDevices::pdf(file = grDevices::nullfile(), width = 20, height = 20)
+      on.exit(grDevices::dev.off(), add = TRUE)
+
+      list(
+        width = if (is.null(width)) {
+          w_in <- sum(grid::convertWidth(gt_grob$widths, "in", valueOnly = TRUE))
+          ceiling(w_in * dpi) + padding
+        } else {
+          width
+        },
+        height = if (is.null(height)) {
+          h_in <- sum(grid::convertHeight(gt_grob$heights, "in", valueOnly = TRUE))
+          ceiling(h_in * dpi) + padding
+        } else {
+          height
+        }
+      )
+    })
+    width <- dims$width
+    height <- dims$height
   }
 
   # Use ragg to save as PNG
