@@ -39,3 +39,9 @@ The filename (invisibly)
 \description{
 Save a gt table as a PNG using ragg (no webshot/chrome required)
 }
+\examples{
+\dontrun{
+tbl <- gt::gt(data.frame(x = 1:3, y = c("a", "b", "c")))
+save_gt_as_png_ragg(tbl, "output.png", width = 400, height = 200)
+}
+}

@@ -30,3 +30,10 @@ the upcoming race. The user can control whether to make an "early"
 (pre-practice) or "late" (post-practice) prediction by passing the
 appropriate model object from `model_quali_early()` or `model_quali_late()`.
 }
+\examples{
+\dontrun{
+new_data <- generate_next_race_data()
+models <- load_models("quali", "early")
+predict_quali_pos_class(new_data, models$quali_pos_class)
+}
+}

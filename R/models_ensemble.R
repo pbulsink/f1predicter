@@ -254,10 +254,7 @@ train_stacked_model <- function(
 #'   (e.g., `pole_hyperparameters`, `position_hyperparameters`), and each value
 #'   is another named list where keys are the `parsnip` engine (e.g., 'glmnet',
 #'   'ranger') and values are the corresponding optimal hyperparameters.
-#' @examples
-#' \dontrun{
-#'   get_hyperparameters(model = 'quali', timing = 'early')
-#' }
+#' @noRd
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
   if (model == 'quali') {
     if (timing == 'early') {

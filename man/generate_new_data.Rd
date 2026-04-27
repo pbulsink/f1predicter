@@ -54,3 +54,8 @@ The features generated include driver experience, failure rates, average
 finishing positions, constructor averages, and circuit-specific performance
 metrics.
 }
+\examples{
+\dontrun{
+new_data <- generate_new_data(season = 2024, round = 1)
+}
+}

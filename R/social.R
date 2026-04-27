@@ -72,6 +72,7 @@ get_driver_name <- function(season, driver_ids) {
 #' @param round The round number
 #'
 #' @return A string with the race name, e.g. "Bahrain Grand Prix"
+#' @noRd
 get_race_name <- function(season, round) {
   # Assumes f1predicter::schedule is available in the package namespace
   race_info <- f1predicter::schedule %>%
@@ -90,6 +91,7 @@ get_race_name <- function(season, round) {
 #' @param predictions A data frame of predictions from `predict_round()`
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
+#' @noRd
 format_race_skeet_predictions <- function(predictions) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
@@ -218,6 +220,7 @@ format_race_skeet_predictions <- function(predictions) {
 #' @param predictions A data frame of predictions from `predict_quali_round()`
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
+#' @noRd
 format_quali_skeet_predictions <- function(predictions) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
@@ -307,6 +310,7 @@ format_quali_skeet_predictions <- function(predictions) {
 #'   another list containing `text`, and optionally `image`, `image_alt`, and `tags`.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
+#' @noRd
 post_skeet_predictions <- function(skeets) {
   if (!requireNamespace("atrrr", quietly = TRUE)) {
     cli::cli_abort(
@@ -373,6 +377,11 @@ post_skeet_predictions <- function(skeets) {
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
+#' @examples
+#' \dontrun{
+#' preds <- predict_quali_round()
+#' post_quali_predictions(preds)
+#' }
 post_quali_predictions <- function(predictions = predict_quali_round()) {
   skeet_thread <- format_quali_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_thread)
@@ -387,6 +396,11 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
+#' @examples
+#' \dontrun{
+#' preds <- predict_round()
+#' post_race_predictions(preds)
+#' }
 post_race_predictions <- function(predictions = predict_round()) {
   # Race predictions are shorter, so we post as a single skeet
   skeet_list <- format_race_skeet_predictions(predictions)
@@ -413,6 +427,11 @@ post_race_predictions <- function(predictions = predict_round()) {
 #'
 #' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 #' @export
+#' @examples
+#' \dontrun{
+#' preds <- predict_round()
+#' format_results_prob_table(preds)
+#' }
 format_results_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
     cli::cli_abort(
@@ -536,6 +555,11 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #'
 #' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 #' @export
+#' @examples
+#' \dontrun{
+#' preds <- predict_quali_round()
+#' format_quali_prob_table(preds)
+#' }
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
     cli::cli_abort(
@@ -649,6 +673,11 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 #'
 #' @return A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 #' @export
+#' @examples
+#' \dontrun{
+#' preds <- predict_round()
+#' format_results_odds_table(preds)
+#' }
 format_results_odds_table <- function(predictions, save_image = FALSE) {
   if (!requireNamespace("gt", quietly = TRUE)) {
     cli::cli_abort(

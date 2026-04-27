@@ -26,3 +26,9 @@ the names of the models in the list (e.g., "quali_pole", "win").
 The path is constructed from the base directory set in
 `getOption("f1predicter.models")` and the specified model timing.
 }
+\examples{
+\dontrun{
+models <- model_quali_early()
+save_models(models, model_timing = "early")
+}
+}

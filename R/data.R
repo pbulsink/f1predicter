@@ -11,6 +11,7 @@
 #' @param round round, compatible with fastf1 round selector
 #'
 #' @return a data.frame with all lap information
+#' @noRd
 get_laps <- function(season, round) {
   r <- get_laps_or_null(season = season, round = round, session = "R")
   quali <- get_laps_or_null(season = season, round = round, session = "Q")
@@ -85,6 +86,7 @@ get_laps_or_null <- function(season, round, session) {
 #' @param session Usually 'R', but also available is 'S'
 #'
 #' @return data frame
+#' @noRd
 get_grids <- function(season, round, session) {
   if (session == "R") {
     # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
@@ -175,6 +177,10 @@ get_grids <- function(season, round, session) {
 #' @export
 #'
 #' @return a list of data frames
+#' @examples
+#' \dontrun{
+#' data <- get_weekend_data(season = 2024, round = 1)
+#' }
 get_weekend_data <- function(season, round, force = FALSE) {
   schedule <- f1predicter::schedule %>%
     dplyr::mutate(
@@ -571,6 +577,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
 #'
 #' @return Schedule data.frame
 #' @export
+#' @examples
+#' \dontrun{
+#' sched <- get_schedule()
+#' }
 get_schedule <- function(save_data = FALSE) {
   schedule <- NULL
   for (y in c(1990:f1dataR::get_current_season())) {
@@ -605,6 +615,10 @@ get_schedule <- function(save_data = FALSE) {
 #'
 #' @return None, writes to file
 #' @export
+#' @examples
+#' \dontrun{
+#' get_season_data(season = 2024)
+#' }
 get_season_data <- function(
   season = f1dataR::get_current_season(),
   force = FALSE
@@ -768,6 +782,10 @@ get_season_data <- function(
 #'
 #' @return a list of data.frames
 #' @export
+#' @examples
+#' \dontrun{
+#' all_data <- load_all_data()
+#' }
 load_all_data <- function() {
   rgrid <- NULL
   sgrid <- NULL
@@ -948,6 +966,7 @@ get_last_drivers <- function() {
 #' @param round_url a wikipedia url for a grand prix (in english)
 #'
 #' @return a weather, as character (one of `warm`, `cold`, `dry`, `wet`, or `cloudy`)
+#' @noRd
 getWeather <- function(round_url) {
   stopifnot(grepl("wikipedia", round_url))
 

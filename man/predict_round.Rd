@@ -34,3 +34,9 @@ This function combines the outputs of `predict_winner()`, `predict_podium()`,
 tibble. It requires the full suite of models trained by one of the
 `model_results_*()` functions.
 }
+\examples{
+\dontrun{
+new_data <- generate_next_race_data()
+preds <- predict_round(new_data)
+}
+}

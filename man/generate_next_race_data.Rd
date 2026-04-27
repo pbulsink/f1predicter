@@ -29,6 +29,11 @@ passes them to `generate_new_data()`.
 A message is printed to the console indicating which race (`season`, `round`,
 and `race_name`) the data is being generated for.
 }
+\examples{
+\dontrun{
+new_data <- generate_next_race_data()
+}
+}
 \seealso{
 [generate_new_data()]
 }
