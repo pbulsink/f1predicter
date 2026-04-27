@@ -35,6 +35,10 @@
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_new_data(season = 2024, round = 1)
+#' }
 generate_new_data <- function(
   season,
   round,
@@ -366,7 +370,6 @@ generate_new_data <- function(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
       )
-
   } else {
     # sort drivers by their average grid for an estimate
     new_data <- new_data %>%
@@ -460,6 +463,10 @@ generate_new_data <- function(
 #'   functions.
 #' @seealso [generate_new_data()]
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' }
 
 # driver_id constructor_id grid quali_position driver_experience driver_failure_avg
 # bortoleto           alfa   NA             NA                20         0.01822632
@@ -601,6 +608,12 @@ apply_grid_penalty <- function(
 #' @return A tibble with `driver_id`, `round`, `season`, and `pole_odd` (the
 #'   predicted probability of getting pole position).
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' models <- load_models("quali", "early")
+#' predict_quali_pole(new_data, models$quali_pole)
+#' }
 predict_quali_pole <- function(
   new_data = generate_next_race_data(),
   quali_pole_model
@@ -650,6 +663,12 @@ predict_quali_pole <- function(
 #' @return A tibble with `driver_id`, `round`, `season`, and
 #'   `likely_quali_position`.
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' models <- load_models("quali", "early")
+#' predict_quali_pos(new_data, models$quali_pos)
+#' }
 predict_quali_pos <- function(
   new_data = generate_next_race_data(),
   quali_pos_model,
@@ -696,6 +715,12 @@ predict_quali_pos <- function(
 #' @return A tibble with `driver_id`, `round`, `season`, and
 #'   `likely_quali_position_class`.
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' models <- load_models("quali", "early")
+#' predict_quali_pos_class(new_data, models$quali_pos_class)
+#' }
 predict_quali_pos_class <- function(
   new_data = generate_next_race_data(),
   quali_pos_class_model
@@ -757,6 +782,11 @@ predict_quali_pos_class <- function(
 #' @return A tibble with predictions for pole probability and qualifying position
 #'   (from both regression and classification models) for each driver.
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' preds <- predict_quali_round(new_data)
+#' }
 predict_quali_round <- function(
   new_data = generate_next_race_data(),
   quali_models = NULL,
@@ -851,7 +881,7 @@ predict_quali_round <- function(
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
 #' @param win_model A `workflow` object for predicting the winner.
 #' @return A tibble with `driver_id`, `round`, `season`, and `win_odd`.
-#' @keywords internal
+#' @noRd
 predict_winner <- function(
   new_data = generate_next_race_data(),
   win_model
@@ -880,7 +910,7 @@ predict_winner <- function(
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
 #' @param podium_model A `workflow` object for predicting a podium finish.
 #' @return A tibble with `driver_id`, `round`, `season`, and `podium_odd`.
-#' @keywords internal
+#' @noRd
 predict_podium <- function(
   new_data = generate_next_race_data(),
   podium_model
@@ -913,7 +943,7 @@ predict_podium <- function(
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
 #' @param t10_model A `workflow` object for predicting a top 10 finish.
 #' @return A tibble with `driver_id`, `round`, `season`, and `t10_odd`.
-#' @keywords internal
+#' @noRd
 predict_t10 <- function(
   new_data = generate_next_race_data(),
   t10_model
@@ -942,7 +972,7 @@ predict_t10 <- function(
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
 #' @param position_model A `workflow` object for predicting the finishing position.
 #' @return A tibble with `driver_id`, `round`, `season`, and `likely_position`.
-#' @keywords internal
+#' @noRd
 predict_position <- function(
   new_data = generate_next_race_data(),
   position_model
@@ -973,7 +1003,7 @@ predict_position <- function(
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
 #' @param position_class_model A list containing the `polr` fit and recipe.
 #' @return A tibble with `driver_id`, `round`, `season`, and `likely_position_class`.
-#' @keywords internal
+#' @noRd
 predict_position_class <- function(
   new_data = generate_next_race_data(),
   position_class_model
@@ -1034,6 +1064,11 @@ predict_position_class <- function(
 #' @return A tibble with predictions for all race outcomes for each driver,
 #'   including win/podium/t10 odds and the likely finishing position.
 #' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' preds <- predict_round(new_data)
+#' }
 predict_round <- function(
   new_data = generate_next_race_data(),
   results_models = NULL,

@@ -43,3 +43,8 @@ The four binary models (`win`, `podium`, `t10`, `finish`) are optimized on
 the `mn_log_loss` metric. The `position` regression model is optimized
 based on the `rmse` (Root Mean Squared Error) metric.
 }
+\examples{
+\dontrun{
+models <- model_results_after_quali()
+}
+}

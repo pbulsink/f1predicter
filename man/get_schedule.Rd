@@ -15,3 +15,8 @@ Schedule data.frame
 \description{
 Loads schedule data from 1990 through to the current season.
 }
+\examples{
+\dontrun{
+sched <- get_schedule()
+}
+}

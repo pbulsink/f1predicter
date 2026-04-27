@@ -186,10 +186,17 @@ train_stacked_model <- function(
   for (i in seq_along(candidate_resamples)) {
     cli::cli_inform("Adding candidate: {.val {names(candidate_resamples)[i]}}")
     tryCatch(
-      model_stack <- stacks::add_candidates(model_stack,candidate_resamples[[i]],name = names(candidate_resamples)[i]),
-      error = function(e){cli::cli_warn("Model stacking error: {e}. Continuing with one less model.")}
+      model_stack <- stacks::add_candidates(
+        model_stack,
+        candidate_resamples[[i]],
+        name = names(candidate_resamples)[i]
+      ),
+      error = function(e) {
+        cli::cli_warn(
+          "Model stacking error: {e}. Continuing with one less model."
+        )
+      }
     )
-
   }
 
   cli::cli_inform("Stack members and their resampling performance:")
@@ -247,10 +254,7 @@ train_stacked_model <- function(
 #'   (e.g., `pole_hyperparameters`, `position_hyperparameters`), and each value
 #'   is another named list where keys are the `parsnip` engine (e.g., 'glmnet',
 #'   'ranger') and values are the corresponding optimal hyperparameters.
-#' @examples
-#' \dontrun{
-#'   get_hyperparameters(model = 'quali', timing = 'early')
-#' }
+#' @noRd
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
   if (model == 'quali') {
     if (timing == 'early') {

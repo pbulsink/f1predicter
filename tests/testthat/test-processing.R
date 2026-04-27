@@ -10,12 +10,20 @@ test_that("clean_data() returns a tibble with expected structure and valid data"
 
   # Should have essential columns
   expected_cols <- c(
-    "season", "round", "driver_id", "constructor_id",
-    "grid", "position", "points", "finished"
+    "season",
+    "round",
+    "driver_id",
+    "constructor_id",
+    "grid",
+    "position",
+    "points",
+    "finished"
   )
   for (col in expected_cols) {
-    expect_true(col %in% names(result),
-                paste("Column", col, "should exist in clean_data()"))
+    expect_true(
+      col %in% names(result),
+      paste("Column", col, "should exist in clean_data()")
+    )
   }
 
   # All seasons should be numeric and reasonable

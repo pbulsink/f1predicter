@@ -2,10 +2,34 @@ test_that("prepare_and_split_data() returns required list elements", {
   # Create minimal test data
   test_data <- data.frame(
     round_id = rep(1:5, 4),
-    driver_id = rep(c("max_verstappen", "lando_norris", "lewis_hamilton", "george_russell"), 5),
+    driver_id = rep(
+      c("max_verstappen", "lando_norris", "lewis_hamilton", "george_russell"),
+      5
+    ),
     grid = c(1:5, 2:6, 3:7, 4:8),
     position = c(1:5, 2:6, 3:7, 4:8),
-    points = c(25, 18, 15, 12, 10, 25, 18, 15, 12, 10, 25, 18, 15, 12, 10, 25, 18, 15, 12, 10)
+    points = c(
+      25,
+      18,
+      15,
+      12,
+      10,
+      25,
+      18,
+      15,
+      12,
+      10,
+      25,
+      18,
+      15,
+      12,
+      10,
+      25,
+      18,
+      15,
+      12,
+      10
+    )
   )
 
   result <- prepare_and_split_data(test_data, group = "round_id")
@@ -32,7 +56,7 @@ test_that("prepare_and_split_data() creates training/test split correctly", {
 
   expect_true(train_size > 0)
   expect_true(test_size > 0)
-  expect_true(train_size > test_size)  # More training data with 0.8 prop
+  expect_true(train_size > test_size) # More training data with 0.8 prop
 })
 
 test_that("prepare_and_split_data() selects specified columns", {
