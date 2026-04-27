@@ -32,6 +32,13 @@ save_gt_as_png_ragg <- function(
       "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
     )
   }
+  if (!is.numeric(dpi) || length(dpi) != 1 || dpi <= 0) {
+    cli::cli_abort("{.arg dpi} must be a single positive number.")
+  }
+  if (!is.numeric(padding) || length(padding) != 1 || padding < 0) {
+    cli::cli_abort("{.arg padding} must be a single non-negative number.")
+  }
+
   # Render gt table to grid object
   gt_grob <- gt::as_gtable(gt_table)
 
@@ -40,18 +47,26 @@ save_gt_as_png_ragg <- function(
   # grid::convertWidth/convertHeight to resolve unit values to inches.
   if (is.null(width) || is.null(height)) {
     dims <- local({
-      grDevices::pdf(file = grDevices::nullfile(), width = 20, height = 20)
+      grDevices::pdf(file = tempfile(fileext = ".pdf"), width = 20, height = 20)
       on.exit(grDevices::dev.off(), add = TRUE)
 
       list(
         width = if (is.null(width)) {
-          w_in <- sum(grid::convertWidth(gt_grob$widths, "in", valueOnly = TRUE))
+          w_in <- sum(grid::convertWidth(
+            gt_grob$widths,
+            "in",
+            valueOnly = TRUE
+          ))
           ceiling(w_in * dpi) + padding
         } else {
           width
         },
         height = if (is.null(height)) {
-          h_in <- sum(grid::convertHeight(gt_grob$heights, "in", valueOnly = TRUE))
+          h_in <- sum(grid::convertHeight(
+            gt_grob$heights,
+            "in",
+            valueOnly = TRUE
+          ))
           ceiling(h_in * dpi) + padding
         } else {
           height
