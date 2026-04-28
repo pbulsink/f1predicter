@@ -12,8 +12,9 @@ predict_quali_pos_class(
 \arguments{
 \item{new_data}{A data frame of new data, typically from `generate_new_data()`.}
 
-\item{quali_pos_class_model}{A `workflow` object for predicting qualifying position,
-such as `model_quali_early()$quali_pos_class`.}
+\item{quali_pos_class_model}{A `last_fit` or `model_stack` object for
+predicting qualifying position class, such as
+`model_quali_early()$quali_pos_class`.}
 }
 \value{
 A tibble with `driver_id`, `round`, `season`, and
@@ -24,11 +25,19 @@ Predicts the likely qualifying position for each driver using an ordered
 classification model.
 }
 \details{
-This function takes a `workflow` object (trained for qualifying position
-prediction using a classification method) and a data frame of features for
-the upcoming race. The user can control whether to make an "early"
-(pre-practice) or "late" (post-practice) prediction by passing the
+This function takes a model object (trained for qualifying position
+prediction using an ordinal classification method) and a data frame of
+features for the upcoming race. The user can control whether to make an
+"early" (pre-practice) or "late" (post-practice) prediction by passing the
 appropriate model object from `model_quali_early()` or `model_quali_late()`.
+
+The `quali_pos_class_model` can be either:
+\itemize{
+  \item A `last_fit` object (single-engine, e.g., `engine = "ranger"`): the
+    underlying workflow is extracted with `tune::extract_workflow()`.
+  \item A `model_stack` object (`engine = "ensemble"`): predicted directly
+    via `stats::predict()`.
+}
 }
 \examples{
 \dontrun{

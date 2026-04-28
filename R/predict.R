@@ -714,15 +714,24 @@ predict_quali_pos <- function(
 #' classification model.
 #'
 #' @details
-#' This function takes a `workflow` object (trained for qualifying position
-#' prediction using a classification method) and a data frame of features for
-#' the upcoming race. The user can control whether to make an "early"
-#' (pre-practice) or "late" (post-practice) prediction by passing the
+#' This function takes a model object (trained for qualifying position
+#' prediction using an ordinal classification method) and a data frame of
+#' features for the upcoming race. The user can control whether to make an
+#' "early" (pre-practice) or "late" (post-practice) prediction by passing the
 #' appropriate model object from `model_quali_early()` or `model_quali_late()`.
 #'
+#' The `quali_pos_class_model` can be either:
+#' \itemize{
+#'   \item A `last_fit` object (single-engine, e.g., `engine = "ranger"`): the
+#'     underlying workflow is extracted with `tune::extract_workflow()`.
+#'   \item A `model_stack` object (`engine = "ensemble"`): predicted directly
+#'     via `stats::predict()`.
+#' }
+#'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
-#' @param quali_pos_class_model A `workflow` object for predicting qualifying position,
-#'   such as `model_quali_early()$quali_pos_class`.
+#' @param quali_pos_class_model A `last_fit` or `model_stack` object for
+#'   predicting qualifying position class, such as
+#'   `model_quali_early()$quali_pos_class`.
 #' @return A tibble with `driver_id`, `round`, `season`, and
 #'   `likely_quali_position_class`.
 #' @export
@@ -736,36 +745,34 @@ predict_quali_pos_class <- function(
   new_data = generate_next_race_data(),
   quali_pos_class_model
 ) {
-  # The polr model is not a workflow, so it needs special handling.
-  # It's a list containing the fit and the prepped recipe.
-  baked_new_data <- recipes::bake(
-    quali_pos_class_model$recipe,
-    new_data = new_data
-  )
+  pred_call <- if (inherits(quali_pos_class_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
+    stats::predict(quali_pos_class_model, new_data, type = "class")
+  } else {
+    stats::predict(
+      tune::extract_workflow(quali_pos_class_model),
+      new_data,
+      type = "class"
+    )
+  }
 
   preds <- new_data %>%
     dplyr::mutate(
-      .pred = stats::predict(
-        quali_pos_class_model$fit,
-        newdata = baked_new_data,
-        type = "class"
-      ),
-      .probs = stats::predict(
-        quali_pos_class_model$fit,
-        newdata = baked_new_data,
-        type = "probs"
+      .pred_class = pred_call$.pred_class,
+      # Convert the ordered factor level to a numeric position
+      likely_quali_position_class = as.numeric(
+        as.character(.data$.pred_class)
       )
-    ) %>%
-    # The prediction is a factor, convert to numeric for sorting/comparison
-    dplyr::mutate(
-      likely_quali_position_class = as.numeric(as.character(.data$.pred))
     ) %>%
     dplyr::select(
       "driver_id",
       "round",
       "season",
-      "likely_quali_position_class",
-      ".probs"
+      "likely_quali_position_class"
     ) %>%
     dplyr::arrange(.data$likely_quali_position_class)
   return(preds)
@@ -842,10 +849,13 @@ predict_quali_round <- function(
   pole_preds <- predict_quali_pole(new_data, quali_models$quali_pole)
   pos_preds <- predict_quali_pos(new_data, quali_models$quali_pos)
 
-  # For ensemble models, the ordinal classification model (polr) was trained
-  # using the predictions from the other ensemble models as features. We need
-  # to replicate that here by adding those predictions to the new_data frame.
-  data_for_class_model <- if (engine == "ensemble") {
+  # When the ordinal model was trained using an ensemble engine, the ordinal
+  # classification model was trained with ensemble predictions as extra features.
+  # We detect this by checking whether the model is a `model_stack` or `last_fit`
+  # and add the required columns to `new_data` only if needed.
+  data_for_class_model <- if (
+    inherits(quali_models$quali_pos_class, "model_stack")
+  ) {
     cli::cli_inform(
       "Adding ensemble predictions as features for the ordinal model."
     )
@@ -861,14 +871,14 @@ predict_quali_round <- function(
       type = "numeric"
     )
 
-    # Add them as new columns with the names expected by the polr model's recipe
+    # Add them as new columns with the names expected by the ordinal model's recipe
     new_data %>%
       dplyr::mutate(
         ensemble_pole_pred = pole_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
       )
   } else {
-    # For single-engine models, no extra features are needed
+    # Single-engine ordinal model: no extra features needed
     new_data
   }
 
@@ -1011,44 +1021,55 @@ predict_position <- function(
 
 #' Predict Finishing Position (Classification)
 #'
+#' @description
+#' Predicts the likely finishing position for each driver using an ordered
+#' classification model.
+#'
+#' @details
+#' The `position_class_model` can be either:
+#' \itemize{
+#'   \item A `last_fit` object (single-engine, e.g., `engine = "ranger"`): the
+#'     underlying workflow is extracted with `tune::extract_workflow()`.
+#'   \item A `model_stack` object (`engine = "ensemble"`): predicted directly
+#'     via `stats::predict()`.
+#' }
+#'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
-#' @param position_class_model A list containing the `polr` fit and recipe.
+#' @param position_class_model A `last_fit` or `model_stack` object for
+#'   predicting finishing position class, such as
+#'   `model_results_early()$position_class`.
 #' @return A tibble with `driver_id`, `round`, `season`, and `likely_position_class`.
 #' @noRd
 predict_position_class <- function(
   new_data = generate_next_race_data(),
   position_class_model
 ) {
-  # The polr model is not a workflow, so it needs special handling.
-  # It's a list containing the fit and the prepped recipe.
-  baked_new_data <- recipes::bake(
-    position_class_model$recipe,
-    new_data = new_data
-  )
+  pred_call <- if (inherits(position_class_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
+    stats::predict(position_class_model, new_data, type = "class")
+  } else {
+    stats::predict(
+      tune::extract_workflow(position_class_model),
+      new_data,
+      type = "class"
+    )
+  }
 
   preds <- new_data %>%
     dplyr::mutate(
-      .pred = stats::predict(
-        position_class_model$fit,
-        newdata = baked_new_data,
-        type = "class"
-      ),
-      .probs = stats::predict(
-        position_class_model$fit,
-        newdata = baked_new_data,
-        type = "probs"
-      )
-    ) %>%
-    # The prediction is a factor, convert to numeric for sorting/comparison
-    dplyr::mutate(
-      likely_position_class = as.numeric(as.character(.data$.pred))
+      .pred_class = pred_call$.pred_class,
+      # Convert the ordered factor level to a numeric position
+      likely_position_class = as.numeric(as.character(.data$.pred_class))
     ) %>%
     dplyr::select(
       "driver_id",
       "round",
       "season",
-      "likely_position_class",
-      ".probs"
+      "likely_position_class"
     ) %>%
     dplyr::arrange(.data$likely_position_class)
   return(preds)
@@ -1134,10 +1155,13 @@ predict_round <- function(
   t10_preds <- predict_t10(new_data, results_models$t10)
   position_preds <- predict_position(new_data, results_models$position)
 
-  # For ensemble models, the ordinal classification model (polr) was trained
-  # using the predictions from the other ensemble models as features. We need
-  # to replicate that here by adding those predictions to the new_data frame.
-  data_for_class_model <- if (engine == "ensemble") {
+  # When the ordinal model was trained using an ensemble engine, it was trained
+  # with ensemble predictions as extra features. We detect this by checking
+  # whether the model is a `model_stack` and add the required columns only if
+  # needed.
+  data_for_class_model <- if (
+    inherits(results_models$position_class, "model_stack")
+  ) {
     cli::cli_inform(
       "Adding ensemble predictions as features for the ordinal model."
     )
@@ -1153,14 +1177,14 @@ predict_round <- function(
       type = "numeric"
     )
 
-    # Add them as new columns with the names expected by the polr model's recipe
+    # Add them as new columns with the names expected by the ordinal model's recipe
     new_data %>%
       dplyr::mutate(
         ensemble_win_pred = win_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
       )
   } else {
-    # For single-engine models, no extra features are needed
+    # Single-engine ordinal model: no extra features needed
     new_data
   }
 
