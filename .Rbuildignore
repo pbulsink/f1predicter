@@ -9,3 +9,5 @@
 ^models
 ^AGENTS\.md$
 ^\.github$
+^\.positai$
+^\.claude$
