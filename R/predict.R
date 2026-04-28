@@ -762,10 +762,9 @@ predict_quali_pos_class <- function(
 
   preds <- new_data %>%
     dplyr::mutate(
-      .pred_class = pred_call$.pred_class,
-      # Convert the ordered factor level to a numeric position
+      # Convert the ordered factor level to a numeric position directly
       likely_quali_position_class = as.numeric(
-        as.character(.data$.pred_class)
+        as.character(pred_call$.pred_class)
       )
     ) %>%
     dplyr::select(
@@ -1061,9 +1060,8 @@ predict_position_class <- function(
 
   preds <- new_data %>%
     dplyr::mutate(
-      .pred_class = pred_call$.pred_class,
-      # Convert the ordered factor level to a numeric position
-      likely_position_class = as.numeric(as.character(.data$.pred_class))
+      # Convert the ordered factor level to a numeric position directly
+      likely_position_class = as.numeric(as.character(pred_call$.pred_class))
     ) %>%
     dplyr::select(
       "driver_id",

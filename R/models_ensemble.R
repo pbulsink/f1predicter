@@ -374,9 +374,13 @@ train_ordinal_ensemble <- function(
       )
     }
     if (nrow(engine_params) > 0) {
-      cli::cli_inform(
-        "Using hyperparameters: {paste(names(engine_params), unlist(engine_params), sep = ' = ', collapse = ', ')}"
+      param_vals <- paste(
+        names(engine_params),
+        vapply(engine_params, function(x) as.character(x[[1L]]), character(1L)),
+        sep = " = ",
+        collapse = ", "
       )
+      cli::cli_inform("Using hyperparameters: {param_vals}")
     }
 
     # Build model specification; trees for ordinalForest fixed at 500 for speed
