@@ -9,7 +9,8 @@ generate_new_data(
   round,
   drivers = NULL,
   penalties = NULL,
-  historical_data = clean_data()
+  historical_data = clean_data(),
+  use_live_data = TRUE
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ For example `c('hamilton' = 5, 'max_verstappen' = 10)`.}
 
 \item{historical_data}{A data frame of historical race data, typically the
 output of `clean_data()`. This is used to calculate the feature values.}
+
+\item{use_live_data}{Whether or not to check for weekend data (e.g. recent qualis).
+Default TRUE}
 }
 \value{
 A tibble where each row corresponds to a driver for the specified

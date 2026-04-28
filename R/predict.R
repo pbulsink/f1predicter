@@ -32,6 +32,7 @@
 #' @param penalties A named vector of `driver_id = penalty_positions` to be
 #'   applied (in order of application).
 #'   For example `c('hamilton' = 5, 'max_verstappen' = 10)`.
+#'   Default TRUE
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
 #' @export
@@ -44,7 +45,8 @@ generate_new_data <- function(
   round,
   drivers = NULL,
   penalties = NULL,
-  historical_data = clean_data()
+  historical_data = clean_data(),
+  use_live_data = TRUE
 ) {
   # drivers should be a data.frame or tibble with: driver_id, constructor_id, (optional any of: quali_position, grid, practice_optimal_rank, practice_best_rank,
   # practice_avg_rank) Any missing round-specific values will be given as current moved averages Any other values will be calculated from historical data,
@@ -64,14 +66,13 @@ generate_new_data <- function(
   }
 
   cli::cli_inform("Building next race data tibbles")
+  ]$circuit_id
   new_data <- tibble::as_tibble(drivers) %>%
     dplyr::mutate(
       season = season,
       round = round,
       round_id = paste0(season, "-", round),
-      circuit_id = schedule[
-        schedule$season == season & schedule$round == round,
-      ]$circuit_id
+      circuit_id = circuit
     )
 
   hd_driver <- historical_data %>%
@@ -285,11 +286,23 @@ generate_new_data <- function(
 
   # TODO Refactor processing code to subfunctions to do the same laps calculations for practice there as here
   # Try to load laps and quali for the round to get up-to-date data
+
   cli::cli_inform("Checking for mid-weekend data")
-  laps <- tryCatch(
-    get_laps(season = season, round = round),
-    error = function(e) NULL
-  )
+
+  # If we're not within a few days before the race don't bother checking for data
+  if (use_live_data && Sys.Date() > (as.Date(schedule[schedule$season == season & schedule$round == round, ]$date) - 3)) {
+      laps <- tryCatch(
+        get_laps(season = season, round = round),
+        error = function(e) NULL
+      )
+      quali <- tryCatch(
+        f1dataR::load_quali(season = season, round = round),
+        error = function(e) NULL
+      )
+  } else {
+    laps <- NULL
+    quali <- NULL
+  }
 
   if (!is.null(laps) && nrow(laps) > 0) {
     cli::cli_inform(
@@ -340,11 +353,6 @@ generate_new_data <- function(
     new_data$practice_avg_gap <- 1.5
     new_data$practice_best_gap <- 1
   }
-
-  quali <- tryCatch(
-    f1dataR::load_quali(season = season, round = round),
-    error = function(e) NULL
-  )
 
   if (!is.null(quali) && nrow(quali) > 0) {
     cli::cli_inform("Found qualifying data for {season} round {round}.")
