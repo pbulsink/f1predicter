@@ -761,7 +761,7 @@ get_season_data <- function(
 #'
 #' @return Invisibly returns a character vector of the RDS paths that were
 #'   written during this call.
-#' @export
+#' @noRd
 migrate_cache_to_rds <- function(
   cache = getOption("f1predicter.cache"),
   years = 1990:f1dataR::get_current_season()

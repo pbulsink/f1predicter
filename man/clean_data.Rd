@@ -14,7 +14,7 @@ clean_data(
 \item{input}{A list of raw data frames, typically from [load_all_data()].}
 
 \item{params}{A named list of processing parameters controlling imputation
-defaults and rolling-average priors. Defaults to [get_processing_params()].
+defaults and rolling-average priors. Defaults to `get_processing_params()`.
 Modify individual elements to tune the pipeline without rewriting code, e.g.
 `params <- get_processing_params(); params$fastest_pit <- 2.3`.}
 
@@ -33,9 +33,4 @@ A single, cleaned data frame.
 \description{
 This function serves as a wrapper to load all raw data and process it through
 a series of cleaning and feature engineering steps, preparing it for modeling.
-}
-\examples{
-\dontrun{
-data <- clean_data()
-}
 }

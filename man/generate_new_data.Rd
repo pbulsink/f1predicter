@@ -31,7 +31,7 @@ For example `c('hamilton' = 5, 'max_verstappen' = 10)`.}
 output of `clean_data()`. This is used to calculate the feature values.}
 
 \item{params}{A named list of processing parameters controlling imputation
-defaults. Defaults to [get_processing_params()].}
+defaults. Defaults to `get_processing_params()`.}
 }
 \value{
 A tibble where each row corresponds to a driver for the specified

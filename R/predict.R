@@ -33,7 +33,7 @@
 #'   applied (in order of application).
 #'   For example `c('hamilton' = 5, 'max_verstappen' = 10)`.
 #' @param params A named list of processing parameters controlling imputation
-#'   defaults. Defaults to [get_processing_params()].
+#'   defaults. Defaults to `get_processing_params()`.
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
 #' @export

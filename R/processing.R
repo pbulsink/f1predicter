@@ -27,11 +27,7 @@
 #'     \item{constructor_pit_num_perc}{Prior relative number of pit stops for a
 #'       constructor (as a fraction of the field average).}
 #'   }
-#' @export
-#' @examples
-#' params <- get_processing_params()
-#' params$fastest_pit <- 2.3  # use a faster assumed fastest pit stop
-#' # clean_data(params = params)
+#' @noRd
 get_processing_params <- function() {
   list(
     "grid" = 16.9,
@@ -981,7 +977,7 @@ combine_and_finalize_features <- function(
 #'
 #' @param input A list of raw data frames, typically from [load_all_data()].
 #' @param params A named list of processing parameters controlling imputation
-#'   defaults and rolling-average priors. Defaults to [get_processing_params()].
+#'   defaults and rolling-average priors. Defaults to `get_processing_params()`.
 #'   Modify individual elements to tune the pipeline without rewriting code, e.g.
 #'   `params <- get_processing_params(); params$fastest_pit <- 2.3`.
 #' @param cache_processed Logical. When `TRUE`, the cleaned data frame is saved
