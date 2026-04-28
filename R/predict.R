@@ -32,6 +32,7 @@
 #' @param penalties A named vector of `driver_id = penalty_positions` to be
 #'   applied (in order of application).
 #'   For example `c('hamilton' = 5, 'max_verstappen' = 10)`.
+#' @param use_live_data Whether or not to check for weekend data (e.g. recent qualis).
 #'   Default TRUE
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
@@ -66,6 +67,8 @@ generate_new_data <- function(
   }
 
   cli::cli_inform("Building next race data tibbles")
+  circuit <- schedule[
+    schedule$season == season & schedule$round == round,
   ]$circuit_id
   new_data <- tibble::as_tibble(drivers) %>%
     dplyr::mutate(
