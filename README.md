@@ -1,5 +1,6 @@
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/pbulsink/f1predicter/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/pbulsink/f1predicter/actions/workflows/R-CMD-check.yaml)
+[![Codecov test coverage](https://codecov.io/gh/pbulsink/f1predicter/graph/badge.svg)](https://app.codecov.io/gh/pbulsink/f1predicter)
 <!-- badges: end -->
 
 # f1predicter

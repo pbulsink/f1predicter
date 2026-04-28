@@ -1,3 +1,15 @@
+# Read width and height from a PNG file's IHDR chunk.
+# PNG layout: 8-byte signature + 4-byte chunk length + 4-byte "IHDR" type +
+# 4-byte width + 4-byte height (all big-endian integers).
+png_dims <- function(path) {
+  con <- file(path, "rb")
+  on.exit(close(con))
+  readBin(con, "raw", n = 16) # skip: 8-byte signature + 4-byte length + 4-byte "IHDR"
+  width <- readBin(con, "integer", n = 1, size = 4, endian = "big")
+  height <- readBin(con, "integer", n = 1, size = 4, endian = "big")
+  list(width = width, height = height)
+}
+
 test_that("save_gt_as_png_ragg() requires ragg package", {
   skip_if_not_installed("ragg")
   skip_if_not_installed("gt")
@@ -14,7 +26,7 @@ test_that("save_gt_as_png_ragg() requires ragg package", {
   expect_true(file.exists(temp_file))
 })
 
-test_that("save_gt_as_png_ragg() creates PNG file", {
+test_that("save_gt_as_png_ragg() creates PNG file with auto-detected size", {
   skip_if_not_installed("ragg")
   skip_if_not_installed("gt")
 
@@ -37,33 +49,53 @@ test_that("save_gt_as_png_ragg() creates PNG file", {
   expect_equal(result, temp_file)
 })
 
-test_that("save_gt_as_png_ragg() uses custom width and height", {
+test_that("save_gt_as_png_ragg() auto-detected size is smaller than a fixed large size", {
   skip_if_not_installed("ragg")
   skip_if_not_installed("gt")
 
   test_df <- data.frame(x = 1:5, y = 6:10)
   gt_table <- gt::gt(test_df)
 
-  temp_file_default <- withr::local_file(tempfile(fileext = ".png"))
-  temp_file_custom <- withr::local_file(tempfile(fileext = ".png"))
+  temp_file_auto <- withr::local_file(tempfile(fileext = ".png"))
+  temp_file_fixed <- withr::local_file(tempfile(fileext = ".png"))
 
-  # Save with default dimensions
-  save_gt_as_png_ragg(gt_table, temp_file_default)
+  save_gt_as_png_ragg(gt_table, temp_file_auto)
+  save_gt_as_png_ragg(gt_table, temp_file_fixed, width = 1400, height = 800)
 
-  # Save with custom dimensions (smaller)
-  save_gt_as_png_ragg(gt_table, temp_file_custom, width = 800, height = 600)
+  expect_true(file.exists(temp_file_auto))
+  expect_true(file.exists(temp_file_fixed))
+  expect_gt(file.size(temp_file_auto), 0)
+  # Auto-detected dimensions should be strictly less than the fixed 1400x800 canvas
+  dims_auto <- png_dims(temp_file_auto)
+  dims_fixed <- png_dims(temp_file_fixed)
+  expect_lt(dims_auto$width, dims_fixed$width)
+  expect_lt(dims_auto$height, dims_fixed$height)
+})
 
-  # Both files should exist
-  expect_true(file.exists(temp_file_default))
-  expect_true(file.exists(temp_file_custom))
+test_that("save_gt_as_png_ragg() uses explicit width and height when provided", {
+  skip_if_not_installed("ragg")
+  skip_if_not_installed("gt")
 
-  # Custom dimensions should typically produce different file sizes
-  # (though we can't guarantee exact sizes due to compression)
-  size_default <- file.size(temp_file_default)
-  size_custom <- file.size(temp_file_custom)
+  test_df <- data.frame(x = 1:5, y = 6:10)
+  gt_table <- gt::gt(test_df)
 
-  expect_gt(size_default, 0)
-  expect_gt(size_custom, 0)
+  temp_file_small <- withr::local_file(tempfile(fileext = ".png"))
+  temp_file_large <- withr::local_file(tempfile(fileext = ".png"))
+
+  save_gt_as_png_ragg(gt_table, temp_file_small, width = 400, height = 300)
+  save_gt_as_png_ragg(gt_table, temp_file_large, width = 1200, height = 900)
+
+  expect_true(file.exists(temp_file_small))
+  expect_true(file.exists(temp_file_large))
+  expect_gt(file.size(temp_file_small), 0)
+  expect_gt(file.size(temp_file_large), 0)
+  # Verify the PNG files were created with the requested pixel dimensions
+  dims_small <- png_dims(temp_file_small)
+  dims_large <- png_dims(temp_file_large)
+  expect_equal(dims_small$width, 400L)
+  expect_equal(dims_small$height, 300L)
+  expect_equal(dims_large$width, 1200L)
+  expect_equal(dims_large$height, 900L)
 })
 
 test_that("save_gt_as_png_ragg() works with styled gt tables", {
@@ -160,4 +192,26 @@ test_that("save_gt_as_png_ragg() handles data with special characters", {
   expect_true(file.exists(temp_file))
   expect_gt(file.size(temp_file), 0)
   expect_equal(result, temp_file)
+})
+
+test_that("save_gt_as_png_ragg() padding parameter controls extra space", {
+  skip_if_not_installed("ragg")
+  skip_if_not_installed("gt")
+
+  test_df <- data.frame(Team = c("A", "B"), Points = c(10, 8))
+  gt_table <- gt::gt(test_df)
+
+  temp_no_pad <- withr::local_file(tempfile(fileext = ".png"))
+  temp_with_pad <- withr::local_file(tempfile(fileext = ".png"))
+
+  save_gt_as_png_ragg(gt_table, temp_no_pad, padding = 0)
+  save_gt_as_png_ragg(gt_table, temp_with_pad, padding = 100)
+
+  expect_true(file.exists(temp_no_pad))
+  expect_true(file.exists(temp_with_pad))
+  # More padding means a larger canvas — verify via actual PNG dimensions
+  dims_no_pad <- png_dims(temp_no_pad)
+  dims_with_pad <- png_dims(temp_with_pad)
+  expect_gt(dims_with_pad$width, dims_no_pad$width)
+  expect_gt(dims_with_pad$height, dims_no_pad$height)
 })
