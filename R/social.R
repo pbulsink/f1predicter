@@ -530,12 +530,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    save_gt_as_png_ragg(
-      prob_table,
-      filename = filename,
-      width = 1250,
-      height = 650
-    )
+    save_gt_as_png_ragg(prob_table, filename = filename)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
@@ -653,16 +648,10 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    save_gt_as_png_ragg(
-      prob_table,
-      filename = filename,
-      width = 1250,
-      height = 650
-    )
+    save_gt_as_png_ragg(prob_table, filename = filename)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
-
 
 #' Format Results Probabilities as a Table
 #'
@@ -761,12 +750,7 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
   } else {
     tempdir <- tempdir(check = TRUE)
     filename <- tempfile(pattern = "preds", tmpdir = tempdir, fileext = ".png")
-    save_gt_as_png_ragg(
-      prob_table,
-      filename = filename,
-      width = 420,
-      height = 620
-    )
+    save_gt_as_png_ragg(prob_table, filename = filename)
     return(list(prob_table = prob_table, filename = filename))
   }
 }
