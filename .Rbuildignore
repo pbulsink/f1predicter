@@ -11,3 +11,8 @@
 ^\.github$
 ^\.positai$
 ^\.claude$
+^autorunner.csv$
+^cobertura.xml$
+^run_predictions.R$
+^test.csv$
+^\.lintr$

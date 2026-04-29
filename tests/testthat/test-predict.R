@@ -3,8 +3,7 @@ test_that("generate_new_data() returns a tibble", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
 
   # Use clean_data for mock historical data
-  historical_data <- suppressWarnings(clean_data())
-
+  historical_data <- cleaned_data
 
   result <- generate_new_data(
     season = 2025,
@@ -56,3 +55,4 @@ test_that("generate_new_data() returns a tibble", {
       1
   )
 })
+

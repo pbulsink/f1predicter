@@ -1,21 +1,49 @@
-#' Default model and data parameters
+#' Get Default Processing Parameters
 #'
-#' A named list of fallback values used when historical averages are unavailable.
+#' @description
+#' Returns the default set of parameters used during data processing and feature
+#' engineering. These values control imputation defaults and historical weighting
+#' for rolling averages. Pass a modified copy of this list to [clean_data()] to
+#' tune processing behaviour without touching source code.
+#'
+#' @return A named list of numeric parameters:
+#'   \describe{
+#'     \item{grid}{Default grid position used as the prior for rolling averages
+#'       (roughly mid-field).}
+#'     \item{position}{Default finishing position used as the prior.}
+#'     \item{driver_finish_avg}{Prior finish-rate for a driver.}
+#'     \item{driver_failure_avg}{Prior driver-caused DNF rate.}
+#'     \item{constructor_failure_avg}{Prior constructor-caused DNF rate.}
+#'     \item{grid_pos_corr_avg}{Prior grid-to-finish-position correlation per
+#'       circuit.}
+#'     \item{constructor_pit_duration_perc}{Prior relative pit-stop duration for
+#'       a constructor (as a fraction of the fastest stop).}
+#'     \item{quali_avg_perc}{Prior average qualifying time as a fraction of the
+#'       pole time.}
+#'     \item{fastest_pit}{Assumed fastest pit-stop time in seconds, used to
+#'       anchor the relative pit-stop duration calculation.}
+#'     \item{pos_change}{Prior positions-gained per race for a driver.}
+#'     \item{qgap}{Prior qualifying gap (seconds) to the fastest car.}
+#'     \item{constructor_pit_num_perc}{Prior relative number of pit stops for a
+#'       constructor (as a fraction of the field average).}
+#'   }
 #' @noRd
-default_params <- list(
-  'grid' = 16.9,
-  'position' = 14.9,
-  'driver_finish_avg' = 1 - (0.09253282 + 0.1461158 / 2),
-  'driver_failure_avg' = 0.09253282,
-  'constructor_failure_avg' = 0.1461158 / 2,
-  'grid_pos_corr_avg' = 0.5682137,
-  'constructor_pit_duration_perc' = 1.50,
-  'quali_avg_perc' = 1.014262,
-  'fastest_pit' = 2.5,
-  'pos_change' = 1.56621,
-  'qgap' = 1.5,
-  'constructor_pit_num_perc' = 1
-)
+get_processing_params <- function() {
+  list(
+    "grid" = 16.9,
+    "position" = 14.9,
+    "driver_finish_avg" = 1 - (0.09253282 + 0.1461158 / 2),
+    "driver_failure_avg" = 0.09253282,
+    "constructor_failure_avg" = 0.1461158 / 2,
+    "grid_pos_corr_avg" = 0.5682137,
+    "constructor_pit_duration_perc" = 1.50,
+    "quali_avg_perc" = 1.014262,
+    "fastest_pit" = 2.5,
+    "pos_change" = 1.56621,
+    "qgap" = 1.5,
+    "constructor_pit_num_perc" = 1
+  )
+}
 
 
 # Data Processing Functions
@@ -42,7 +70,7 @@ process_results_data <- function(input) {
     ) %>%
     # Update Team Names:
     dplyr::mutate(
-      constructor_id = dplyr::case_match(
+      constructor_id = dplyr::recode_values(
         .data$constructor_id,
         c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
         c("benetton", "renault") ~ "alpine",
@@ -64,7 +92,7 @@ process_results_data <- function(input) {
         c("marussia", "virgin") ~ "manor",
         "osella" ~ "fondmetal",
         c("sauber", "kick", "stake", "audi") ~ "alfa",
-        .default = .data$constructor_id
+        default = .data$constructor_id
       )
     ) %>%
     # Calculate positions gained or lost during the race.
@@ -442,9 +470,10 @@ summarize_practice_laps <- function(processed_laps) {
 #' Process Raw Qualifying Time Data
 #'
 #' @param qualis Raw qualis data frame.
+#' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A processed data frame of qualifying times with gaps and rolling averages.
 #' @noRd
-process_quali_times <- function(qualis) {
+process_quali_times <- function(qualis, params = get_processing_params()) {
   # ---- 5. Process Qualifying Session Data ----
   processed_qualis <- qualis %>%
     dplyr::arrange(.data$season, .data$round) %>%
@@ -499,7 +528,7 @@ process_quali_times <- function(qualis) {
       ),
       q_avg_perc = tidyr::replace_na(
         .data$q_avg_perc,
-        default_params$quali_avg_perc
+        params$quali_avg_perc
       )
     ) %>%
     dplyr::ungroup() %>%
@@ -511,7 +540,7 @@ process_quali_times <- function(qualis) {
         .data$qgap,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$qgap,
+        val = params$qgap,
         .before = 5
       ))
     ) %>%
@@ -525,9 +554,10 @@ process_quali_times <- function(qualis) {
 #' Process Raw Pit Stop Data
 #'
 #' @param pitstops Raw pitstops data frame.
+#' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A processed data frame of pit stop performance.
 #' @noRd
-process_pit_stops <- function(pitstops) {
+process_pit_stops <- function(pitstops, params = get_processing_params()) {
   # ---- 6. Process Pit Stop Data ----
   processed_pitstops <- pitstops %>%
     dplyr::arrange(.data$season, .data$round) %>%
@@ -542,7 +572,7 @@ process_pit_stops <- function(pitstops) {
       stops = tidyr::replace_na(.data$stops, 0),
       adj_duration = .data$duration -
         (min(.data$duration, na.rm = TRUE)) +
-        default_params$fastest_pit,
+        params$fastest_pit,
       pit_duration_perc = .data$adj_duration /
         min(.data$adj_duration, na.rm = TRUE)
     ) |>
@@ -600,9 +630,14 @@ process_pit_stops <- function(pitstops) {
 #'
 #' @param results Processed results data from `process_results_data`.
 #' @param pitstops Processed pitstop data from `process_pit_stops`.
+#' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A data frame with historical constructor-level features.
 #' @noRd
-create_constructor_features <- function(results, pitstops) {
+create_constructor_features <- function(
+  results,
+  pitstops,
+  params = get_processing_params()
+) {
   # ---- 7. Create Constructor-Level Features ----
   constructor_results <- results %>%
     dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
@@ -626,35 +661,35 @@ create_constructor_features <- function(results, pitstops) {
         .data$constructor_best_grid,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$grid,
+        val = params$grid,
         .before = 10
       )),
       constructor_finish_avg = as.numeric(slider::slide(
         .data$constructor_best_finish,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$position,
+        val = params$position,
         .before = 10
       )),
       constructor_failure_avg = as.numeric(slider::slide(
         .data$constructor_failure_race,
         s_lagged_cumwmean_expanded,
         ln = 10,
-        val = default_params$constructor_failure_avg * 2,
+        val = params$constructor_failure_avg * 2,
         .before = 20
       )),
       constructor_pit_duration_avg = as.numeric(slider::slide(
         .data$constructor_pit_duration_perc,
         s_lagged_cumwmean_expanded,
         ln = 8,
-        val = default_params$constructor_pit_duration_perc,
+        val = params$constructor_pit_duration_perc,
         .before = 20
       )),
       constructor_pit_num_avg = as.numeric(slider::slide(
         .data$constructor_pit_num_perc,
         s_lagged_cumwmean_expanded,
         ln = 8,
-        val = default_params$constructor_pit_num_perc,
+        val = params$constructor_pit_num_perc,
         .before = 20
       ))
     ) %>%
@@ -681,9 +716,10 @@ create_constructor_features <- function(results, pitstops) {
 #' Create Circuit-Specific Features
 #'
 #' @param results A data frame containing processed results with failure flags.
+#' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A data frame with historical circuit-specific features.
 #' @noRd
-create_circuit_features <- function(results) {
+create_circuit_features <- function(results, params = get_processing_params()) {
   # This function calculates rolling historical averages for each circuit.
   circuit_summary <- results %>%
     dplyr::select(
@@ -710,21 +746,21 @@ create_circuit_features <- function(results) {
         .data$driver_failure_circuit,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$driver_failure_avg,
+        val = params$driver_failure_avg,
         .before = 5
       )),
       constructor_failure_circuit_avg = as.numeric(slider::slide(
         .data$constructor_failure_circuit,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$constructor_failure_avg * 2,
+        val = params$constructor_failure_avg * 2,
         .before = 5
       )),
       grid_pos_corr_avg = as.numeric(slider::slide(
         .data$grid_pos_corr,
         s_lagged_cumwmean_expanded,
         ln = 5,
-        val = default_params$grid_pos_corr_avg,
+        val = params$grid_pos_corr_avg,
         .before = 5
       ))
     ) %>%
@@ -741,6 +777,7 @@ create_circuit_features <- function(results) {
 #' @param pitstops Processed pitstop data.
 #' @param constructor_results Processed constructor data.
 #' @param schedule Raw schedule data.
+#' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A final, cleaned data frame ready for modeling.
 #' @noRd
 combine_and_finalize_features <- function(
@@ -749,7 +786,8 @@ combine_and_finalize_features <- function(
   practices,
   pitstops,
   constructor_results,
-  schedule
+  schedule,
+  params = get_processing_params()
 ) {
   # ---- 9. Combine All Data and Create Final Features ----
   results <- results %>%
@@ -779,7 +817,7 @@ combine_and_finalize_features <- function(
         .data$pos_change,
         s_lagged_cumwmean_expanded,
         ln = 8,
-        val = default_params$pos_change,
+        val = params$pos_change,
         .before = 5
       )),
       driver_weighted_pass_avg = as.numeric(slider::slide(
@@ -800,40 +838,40 @@ combine_and_finalize_features <- function(
       driver_failure_avg = as.numeric(slider::slide(
         .data$driver_failure,
         s_lagged_cumwmean_expanded,
-        val = default_params$driver_failure_avg,
+        val = params$driver_failure_avg,
         ln = 10,
         .before = 20
       )),
       driver_grid_avg = as.numeric(slider::slide(
         .data$grid,
         s_lagged_cumwmean_expanded,
-        val = default_params$grid,
+        val = params$grid,
         ln = 8,
         .before = 10
       )),
       driver_position_avg = as.numeric(slider::slide(
         .data$position,
         s_lagged_cumwmean_expanded,
-        val = default_params$position,
+        val = params$position,
         ln = 8,
         .before = 10
       )),
       driver_finish_avg = as.numeric(slider::slide(
         .data$finished,
         s_lagged_cumwmean_expanded,
-        val = default_params$driver_finish_avg,
+        val = params$driver_finish_avg,
         ln = 8,
         .before = 10
       )),
       practice_optimal_rank = tidyr::replace_na(
         .data$practice_optimal_rank,
-        default_params$position
+        params$position
       ),
       driver_practice_optimal_rank_avg = as.numeric(
         slider::slide(
           .data$practice_optimal_rank,
           s_lagged_cumwmean_expanded,
-          val = default_params$position,
+          val = params$position,
           ln = 8,
           .before = 10
         )
@@ -844,7 +882,7 @@ combine_and_finalize_features <- function(
       ),
       driver_avg_qgap = tidyr::replace_na(
         .data$driver_avg_qgap,
-        default_params$qgap
+        params$qgap
       )
     ) %>%
     dplyr::ungroup() %>%
@@ -858,7 +896,7 @@ combine_and_finalize_features <- function(
     janitor::clean_names()
 
   # ---- 10. Join Circuit Features and Final Imputation ----
-  circuit_features <- create_circuit_features(results)
+  circuit_features <- create_circuit_features(results, params = params)
 
   final_data <- results %>%
     dplyr::left_join(
@@ -927,21 +965,42 @@ combine_and_finalize_features <- function(
   return(final_data)
 }
 
-
 #' Clean Data
 #'
 #' This function serves as a wrapper to load all raw data and process it through
 #' a series of cleaning and feature engineering steps, preparing it for modeling.
 #'
-#' @param input A list of raw data frames, typically from `load_all_data()`.
+#' @param input A list of raw data frames, typically from [load_all_data()].
+#' @param params A named list of processing parameters controlling imputation
+#'   defaults and rolling-average priors. Defaults to `get_processing_params()`.
+#'   Modify individual elements to tune the pipeline without rewriting code, e.g.
+#'   `params <- get_processing_params(); params$fastest_pit <- 2.3`.
+#' @param cache_processed Logical. When `TRUE`, the cleaned data frame is saved
+#'   to the cache directory (see `options("f1predicter.cache")`) as
+#'   `"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
+#'   the cached file is returned immediately **without** reprocessing, regardless
+#'   of the `params` or `input` arguments. Set to `FALSE` (default) to always
+#'   reprocess. If you change `params` or `input`, delete the cached file
+#'   (`"processed_data.rds"` in the cache directory) before calling with
+#'   `cache_processed = TRUE` again.
 #' @return A single, cleaned data frame.
 #' @importFrom rlang .data
 #' @export
-#' @examples
-#' \dontrun{
-#' data <- clean_data()
-#' }
-clean_data <- function(input = load_all_data()) {
+clean_data <- function(
+  input = load_all_data(),
+  params = get_processing_params(),
+  cache_processed = FALSE
+) {
+  cache_file <- file.path(
+    getOption("f1predicter.cache", default = tempdir()),
+    "processed_data.rds"
+  )
+
+  if (isTRUE(cache_processed) && file.exists(cache_file)) {
+    cli::cli_inform("Loading processed data from cache: {.file {cache_file}}")
+    return(readRDS(cache_file))
+  }
+
   nseasons <- length(unique(input$results$season))
   cli::cli_inform(
     "Loaded {nseasons} seasons of data, now processing"
@@ -950,11 +1009,12 @@ clean_data <- function(input = load_all_data()) {
   results_processed <- process_results_data(input)
   laps_processed <- process_lap_times(input$laps)
   practices_summarized <- summarize_practice_laps(laps_processed)
-  qualis_processed <- process_quali_times(input$qualis)
-  pitstops_processed <- process_pit_stops(input$pitstops)
+  qualis_processed <- process_quali_times(input$qualis, params = params)
+  pitstops_processed <- process_pit_stops(input$pitstops, params = params)
   constructor_features <- create_constructor_features(
     results_processed,
-    pitstops_processed
+    pitstops_processed,
+    params = params
   )
 
   # 2. Combine all processed data and finalize features
@@ -964,8 +1024,15 @@ clean_data <- function(input = load_all_data()) {
     practices = practices_summarized,
     pitstops = pitstops_processed,
     constructor_results = constructor_features,
-    schedule = f1predicter::schedule
+    schedule = f1predicter::schedule,
+    params = params
   )
   cli::cli_inform("Returning {nrow(final_data)} rows of data.")
+
+  if (isTRUE(cache_processed)) {
+    cli::cli_inform("Saving processed data to cache: {.file {cache_file}}")
+    saveRDS(final_data, cache_file)
+  }
+
   return(final_data)
 }

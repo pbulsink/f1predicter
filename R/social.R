@@ -462,7 +462,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   sort_position<-c()
   for(i in seq_len(nrow(probs))){
     sort_position <- c(sort_position,
-                       weighted.mean(seq_len(ncol(probs)), probs[i,]))
+                       stats::weighted.mean(seq_len(ncol(probs)), probs[i,]))
   }
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted %>%
