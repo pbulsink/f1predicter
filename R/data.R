@@ -233,6 +233,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
     ) %>%
     tibble::as_tibble()
 
+  if(!round %in% schedule[schedule$season == season, ]$round){
+    cli::cli_abort("Error in f1predicter::get_weekend_data(). Round: {round} not in season: {season}.")
+  }
+
   rgrid <- NA
   sgrid <- NA
   results <- NA

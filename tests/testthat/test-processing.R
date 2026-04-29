@@ -50,6 +50,9 @@ test_that("get_season_data() errors on invalid season", {
 
 test_that("get_weekend_data() returns data for valid race", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
+  if(!dir.exists(getOption('f1predicter.cache'))){
+    skip("No cached data")
+  }
   result <- get_weekend_data(2023, 1)
 
   expect_type(result, "list")
@@ -60,7 +63,6 @@ test_that("get_weekend_data() returns data for valid race", {
 })
 
 test_that("get_weekend_data() errors on invalid round", {
-  withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
   expect_error(get_weekend_data(2023, 99))
 })
 
