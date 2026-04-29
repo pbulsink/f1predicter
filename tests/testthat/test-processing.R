@@ -50,7 +50,7 @@ test_that("get_season_data() errors on invalid season", {
 
 test_that("get_weekend_data() returns data for valid race", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
-  if(!dir.exists(getOption('f1predicter.cache'))){
+  if (!dir.exists(getOption('f1predicter.cache'))) {
     skip("No cached data")
   }
   result <- get_weekend_data(2023, 1)
@@ -207,4 +207,142 @@ test_that("migrate_cache_to_rds() skips files already migrated", {
 
   # Should not re-write anything
   expect_length(written, 0)
+})
+
+test_that("sqlite cache helpers round-trip filtered data (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  results <- tibble::tibble(
+    season = c(2024, 2024, 2025),
+    round = c(1, 2, 1),
+    driver_id = c("hamilton", "leclerc", "piastri"),
+    points = c(25, 18, 15)
+  )
+
+  write_cache_table(results, "results", con, overwrite = TRUE)
+
+  filtered <- read_cache_table("results", con, season = 2024, round = 2)
+  expect_equal(filtered$driver_id, "leclerc")
+  expect_equal(filtered$points, 18)
+
+  season_data <- read_cache_table("results", con, season = 2024)
+  expect_equal(sort(season_data$round), c(1, 2))
+})
+
+test_that("migrate_cache_to_sqlite() migrates cached season files (#9)", {
+  cache_dir <- withr::local_tempdir()
+  results <- tibble::tibble(
+    season = c(2022, 2022),
+    round = c(1, 2),
+    driver_id = c("hamilton", "russell"),
+    points = c(25, 18)
+  )
+  results_path <- file.path(cache_dir, "2022_season_results.rds")
+  saveRDS(results, results_path)
+
+  written <- migrate_cache_to_sqlite(cache = cache_dir, years = 2022)
+
+  expect_true("results" %in% written)
+
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  migrated <- read_cache_table("results", con, season = 2022)
+  expect_equal(migrated$driver_id, c("hamilton", "russell"))
+})
+
+test_that("load_all_data() reads sqlite cache tables (#9)", {
+  cache_dir <- withr::local_tempdir()
+  withr::local_options(f1predicter.cache = cache_dir)
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "results",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "sprint_results",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(
+      season = 2024,
+      round = 1,
+      driver_id = "hamilton",
+      deleted_reason = NA_character_
+    ),
+    "laps",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "pitstops",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, position = 1L),
+    "sgrid",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, position = 1L),
+    "rgrid",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "qualis",
+    con,
+    overwrite = TRUE
+  )
+
+  all_data <- load_all_data()
+
+  expect_named(
+    all_data,
+    c(
+      "results",
+      "sprint_results",
+      "laps",
+      "pitstops",
+      "sgrid",
+      "rgrid",
+      "qualis"
+    )
+  )
+  expect_equal(all_data$results$driver_id, "hamilton")
+  expect_equal(all_data$laps$deleted_reason, NA_character_)
+})
+
+test_that("clean_data() reads processed data from sqlite cache (#9)", {
+  cache_dir <- withr::local_tempdir()
+  withr::local_options(f1predicter.cache = cache_dir)
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  cached_processed <- tibble::tibble(
+    season = 2024,
+    round = 1,
+    driver_id = "hamilton",
+    finished = 1
+  )
+  write_cache_table(cached_processed, "processed_data", con, overwrite = TRUE)
+
+  loaded <- clean_data(
+    input = list(results = tibble::tibble(season = 2024)),
+    cache_processed = TRUE
+  )
+
+  expect_equal(loaded, cached_processed)
 })

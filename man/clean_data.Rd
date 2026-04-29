@@ -19,13 +19,13 @@ Modify individual elements to tune the pipeline without rewriting code, e.g.
 `params <- get_processing_params(); params$fastest_pit <- 2.3`.}
 
 \item{cache_processed}{Logical. When `TRUE`, the cleaned data frame is saved
-to the cache directory (see `options("f1predicter.cache")`) as
-`"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
-the cached file is returned immediately **without** reprocessing, regardless
-of the `params` or `input` arguments. Set to `FALSE` (default) to always
-reprocess. If you change `params` or `input`, delete the cached file
-(`"processed_data.rds"` in the cache directory) before calling with
-`cache_processed = TRUE` again.}
+to the cache directory (see `options("f1predicter.cache")`) in the
+`processed_data` table of `"f1predicter.sqlite"`. On subsequent calls with
+`cache_processed = TRUE` the cached table is returned immediately
+**without** reprocessing, regardless of the `params` or `input` arguments.
+Set to `FALSE` (default) to always reprocess. Existing
+`"processed_data.rds"` files are still read as a fallback for backward
+compatibility.}
 }
 \value{
 A single, cleaned data frame.
