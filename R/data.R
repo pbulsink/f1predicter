@@ -95,6 +95,8 @@ get_laps_or_null <- function(season, round, session) {
   if (!is.null(laps)) {
     if (!('deleted_reason' %in% colnames(laps))) {
       laps$deleted_reason <- NA_character_
+    } else {
+      laps$deleted_reason <- as.character(laps$deleted_reason)
     }
     laps <- laps %>%
       dplyr::mutate(
@@ -875,9 +877,10 @@ load_all_data <- function() {
 
     if (y >= 2018) {
       lp <- load_rds_or_csv(
-        file.path(cache, paste0(y, "_season_laps.rds")),
-        file.path(cache, paste0(y, "_season_laps.csv"))
-      ) %>%
+          file.path(cache, paste0(y, "_season_laps.rds")),
+          file.path(cache, paste0(y, "_season_laps.csv"))
+        ) %>%
+        dplyr::mutate("deleted_reason" = as.character(.data$deleted_reason)) %>%
         ensure_tidy()
       laps <- dplyr::bind_rows(laps, lp)
     }
@@ -1278,3 +1281,10 @@ add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
   laps %>%
     dplyr::left_join(drivers, by = c(driver = "code"))
 }
+
+
+#' Cleaned Data
+#'
+#' @description A data frame used for internal testing
+#'
+#' @noRd

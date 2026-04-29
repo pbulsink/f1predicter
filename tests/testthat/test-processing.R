@@ -1,6 +1,6 @@
 test_that("clean_data() returns a tibble with expected structure and valid data", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
-  result <- clean_data()
+  result <- cleaned_data
 
   # Should be a tibble
   expect_s3_class(result, "tbl_df")

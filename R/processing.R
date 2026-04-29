@@ -70,7 +70,7 @@ process_results_data <- function(input) {
     ) %>%
     # Update Team Names:
     dplyr::mutate(
-      constructor_id = dplyr::case_match(
+      constructor_id = dplyr::recode_values(
         .data$constructor_id,
         c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
         c("benetton", "renault") ~ "alpine",
@@ -92,7 +92,7 @@ process_results_data <- function(input) {
         c("marussia", "virgin") ~ "manor",
         "osella" ~ "fondmetal",
         c("sauber", "kick", "stake", "audi") ~ "alfa",
-        .default = .data$constructor_id
+        default = .data$constructor_id
       )
     ) %>%
     # Calculate positions gained or lost during the race.

@@ -33,6 +33,7 @@ output of `clean_data()`. This is used to calculate the feature values.}
 
 \item{params}{A named list of processing parameters controlling imputation
 defaults. Defaults to `get_processing_params()`.}
+
 \item{use_live_data}{Whether or not to check for weekend data (e.g. recent qualis).
 Default TRUE}
 }
