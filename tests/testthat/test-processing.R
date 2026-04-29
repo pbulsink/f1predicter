@@ -231,6 +231,35 @@ test_that("sqlite cache helpers round-trip filtered data (#9)", {
   expect_equal(sort(season_data$round), c(1, 2))
 })
 
+test_that("write_cache_table() replaces matching season-round rows on append (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  initial_results <- tibble::tibble(
+    season = c(2024, 2024),
+    round = c(1, 2),
+    driver_id = c("hamilton", "leclerc"),
+    points = c(25, 18)
+  )
+  updated_round <- tibble::tibble(
+    season = 2024,
+    round = 2,
+    driver_id = "leclerc",
+    points = 19
+  )
+
+  write_cache_table(initial_results, "results", con, overwrite = TRUE)
+  write_cache_table(updated_round, "results", con, overwrite = FALSE)
+
+  all_results <- read_cache_table("results", con, season = 2024)
+  expect_equal(nrow(all_results), 2)
+  expect_equal(
+    all_results$points[all_results$round == 2],
+    19
+  )
+})
+
 test_that("migrate_cache_to_sqlite() migrates cached season files (#9)", {
   cache_dir <- withr::local_tempdir()
   results <- tibble::tibble(

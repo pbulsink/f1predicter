@@ -111,12 +111,31 @@ open_cache_db <- function(
   query <- paste0('DELETE FROM "', table, '" WHERE ', where)
 
   for (i in seq_len(nrow(key_data))) {
-    DBI::dbExecute(con, query, params = as.list(key_data[i, , drop = TRUE]))
+    DBI::dbExecute(
+      con,
+      query,
+      params = unname(as.list(key_data[i, , drop = TRUE]))
+    )
   }
 
   invisible(NULL)
 }
 
+#' Write a Cached SQLite Table
+#'
+#' @description
+#' Internal helper to write a cache table into the SQLite database. When
+#' `overwrite = TRUE`, the full table is replaced. When `overwrite = FALSE`,
+#' rows for matching `season`/`round` keys are deleted before appending the new
+#' rows.
+#'
+#' @param data A data frame to store.
+#' @param table Cache table name.
+#' @param con A live SQLite connection created by [open_cache_db()].
+#' @param overwrite Logical indicating whether to replace the full table.
+#'
+#' @return Invisibly returns `data`.
+#' @noRd
 write_cache_table <- function(data, table, con, overwrite = FALSE) {
   if (is.null(data) || !.has_cache_rows(data)) {
     return(invisible(data))
@@ -136,6 +155,19 @@ write_cache_table <- function(data, table, con, overwrite = FALSE) {
   invisible(data)
 }
 
+#' Read a Cached SQLite Table
+#'
+#' @description
+#' Internal helper to read one cache table from the SQLite database, optionally
+#' filtered to a single season and/or round.
+#'
+#' @param table Cache table name.
+#' @param con A live SQLite connection created by [open_cache_db()].
+#' @param season Optional season filter.
+#' @param round Optional round filter.
+#'
+#' @return A tibble when rows are found, otherwise `NULL`.
+#' @noRd
 read_cache_table <- function(table, con, season = NULL, round = NULL) {
   if (!DBI::dbExistsTable(con, table)) {
     return(NULL)
