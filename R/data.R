@@ -51,6 +51,12 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
   "laps"
 )
 
+#' Build the SQLite Cache Path
+#'
+#' @param cache Cache directory path.
+#'
+#' @return Path to the SQLite cache file.
+#' @noRd
 cache_db_path <- function(
   cache = getOption("f1predicter.cache", default = tempdir())
 ) {
@@ -61,6 +67,12 @@ cache_db_path <- function(
   file.path(cache, "f1predicter.sqlite")
 }
 
+#' Open the SQLite Cache
+#'
+#' @param cache Cache directory path.
+#'
+#' @return A live SQLite connection. Callers are responsible for disconnecting it.
+#' @noRd
 open_cache_db <- function(
   cache = getOption("f1predicter.cache", default = tempdir())
 ) {
@@ -73,6 +85,12 @@ open_cache_db <- function(
   is.data.frame(data) && nrow(data) > 0
 }
 
+#' Coerce Cached Lap Data Types
+#'
+#' @param data Lap cache data.
+#'
+#' @return Lap cache data with `deleted_reason` stored as character when present.
+#' @noRd
 .coerce_laps_cache <- function(data) {
   if (!.has_cache_rows(data) || !("deleted_reason" %in% names(data))) {
     return(data)
@@ -83,6 +101,13 @@ open_cache_db <- function(
     ensure_tidy()
 }
 
+#' Create Cache Query Indexes
+#'
+#' @param con A live SQLite connection.
+#' @param table Cache table name.
+#'
+#' @return Invisibly returns `NULL`.
+#' @noRd
 .create_cache_index <- function(con, table) {
   if (!DBI::dbExistsTable(con, table)) {
     return(invisible(NULL))
@@ -239,6 +264,13 @@ read_cache_table <- function(table, con, season = NULL, round = NULL) {
   data
 }
 
+#' Check Whether the SQLite Cache Has Data
+#'
+#' @param con A live SQLite connection.
+#' @param tables Cache table names to inspect.
+#'
+#' @return `TRUE` when any cache table exists, otherwise `FALSE`.
+#' @noRd
 .sqlite_cache_populated <- function(con, tables = .cache_tables) {
   any(vapply(
     tables,
@@ -975,7 +1007,12 @@ migrate_cache_to_sqlite <- function(
 }
 
 
-# Load all data from legacy season cache files.
+#' Load All Data from Legacy Season Cache Files
+#'
+#' @param cache Cache directory path.
+#'
+#' @return A named list of cached data frames loaded from legacy season files.
+#' @noRd
 .load_all_data_from_files <- function(cache = getOption("f1predicter.cache")) {
   rgrid <- NULL
   sgrid <- NULL
