@@ -40,6 +40,7 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
   NULL
 }
 
+# Expected SQLite cache table names used by the package cache helpers.
 .cache_tables <- c(
   "results",
   "qualis",
@@ -70,6 +71,16 @@ open_cache_db <- function(
 
 .has_cache_rows <- function(data) {
   is.data.frame(data) && nrow(data) > 0
+}
+
+.coerce_laps_cache <- function(data) {
+  if (!.has_cache_rows(data) || !("deleted_reason" %in% names(data))) {
+    return(data)
+  }
+
+  data %>%
+    dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
+    ensure_tidy()
 }
 
 .create_cache_index <- function(con, table) {
@@ -1028,8 +1039,7 @@ migrate_cache_to_sqlite <- function(
         file.path(cache, paste0(y, "_season_laps.rds")),
         file.path(cache, paste0(y, "_season_laps.csv"))
       ) %>%
-        dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
-        ensure_tidy()
+        .coerce_laps_cache()
       laps <- dplyr::bind_rows(laps, lp)
     }
   }
@@ -1074,8 +1084,7 @@ load_all_data <- function() {
 
     if (.has_cache_rows(cached_data$laps)) {
       cached_data$laps <- cached_data$laps %>%
-        dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
-        ensure_tidy()
+        .coerce_laps_cache()
     }
 
     if (any(vapply(cached_data, is.null, logical(1)))) {

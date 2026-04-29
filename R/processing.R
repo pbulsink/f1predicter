@@ -1017,7 +1017,6 @@ clean_data <- function(
     getOption("f1predicter.cache", default = tempdir()),
     "processed_data.rds"
   )
-  con <- NULL
 
   if (isTRUE(cache_processed)) {
     con <- open_cache_db()
