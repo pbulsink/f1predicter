@@ -1028,7 +1028,7 @@ migrate_cache_to_sqlite <- function(
         file.path(cache, paste0(y, "_season_laps.rds")),
         file.path(cache, paste0(y, "_season_laps.csv"))
       ) %>%
-        dplyr::mutate("deleted_reason" = as.character(.data$deleted_reason)) %>%
+        dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
         ensure_tidy()
       laps <- dplyr::bind_rows(laps, lp)
     }
@@ -1074,7 +1074,7 @@ load_all_data <- function() {
 
     if (.has_cache_rows(cached_data$laps)) {
       cached_data$laps <- cached_data$laps %>%
-        dplyr::mutate("deleted_reason" = as.character(.data$deleted_reason)) %>%
+        dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
         ensure_tidy()
     }
 

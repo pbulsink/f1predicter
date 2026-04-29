@@ -231,6 +231,24 @@ test_that("sqlite cache helpers round-trip filtered data (#9)", {
   expect_equal(sort(season_data$round), c(1, 2))
 })
 
+test_that("read_cache_table() returns NULL for missing tables or rows (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  expect_null(read_cache_table("results", con))
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "results",
+    con,
+    overwrite = TRUE
+  )
+
+  expect_null(read_cache_table("results", con, season = 2023))
+  expect_null(read_cache_table("results", con, season = 2024, round = 2))
+})
+
 test_that("write_cache_table() replaces matching season-round rows on append (#9)", {
   cache_dir <- withr::local_tempdir()
   con <- open_cache_db(cache = cache_dir)
