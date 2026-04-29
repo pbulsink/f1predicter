@@ -46,6 +46,7 @@ jobs:
           plugins: noop
           disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: pbulsink/f1predicter
 
       - name: Show testthat output
         if: always()

@@ -10,7 +10,8 @@ generate_new_data(
   drivers = NULL,
   penalties = NULL,
   historical_data = clean_data(),
-  params = get_processing_params()
+  params = get_processing_params(),
+  use_live_data = TRUE
 )
 }
 \arguments{
@@ -32,6 +33,8 @@ output of `clean_data()`. This is used to calculate the feature values.}
 
 \item{params}{A named list of processing parameters controlling imputation
 defaults. Defaults to `get_processing_params()`.}
+\item{use_live_data}{Whether or not to check for weekend data (e.g. recent qualis).
+Default TRUE}
 }
 \value{
 A tibble where each row corresponds to a driver for the specified

@@ -489,9 +489,9 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
     # Calculate each driver's time as a percentage of the session's fastest time.
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(
-      q1_perc = .data$q1_sec / min(.data$q1_sec, na.rm = TRUE),
-      q2_perc = .data$q2_sec / min(.data$q2_sec, na.rm = TRUE),
-      q3_perc = .data$q3_sec / min(.data$q3_sec, na.rm = TRUE)
+      q1_perc = suppressWarnings(.data$q1_sec / min(.data$q1_sec, na.rm = TRUE)),
+      q2_perc = suppressWarnings(.data$q2_sec / min(.data$q2_sec, na.rm = TRUE)),
+      q3_perc = suppressWarnings(.data$q3_sec / min(.data$q3_sec, na.rm = TRUE))
     ) |>
     dplyr::mutate(
       # Find the best percentage gap (q_min_perc) across Q1, Q2, Q3.
@@ -501,20 +501,20 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
     # Calculate the time gap to the fastest driver in each session.
     dplyr::mutate(
       q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.07),
-      q1gap = .data$q1_sec - min(.data$q1_sec, na.rm = TRUE),
-      q2gap = .data$q2_sec - min(.data$q2_sec, na.rm = TRUE),
-      q3gap = .data$q3_sec - min(.data$q3_sec, na.rm = TRUE),
+      q1gap = suppressWarnings(.data$q1_sec - min(.data$q1_sec, na.rm = TRUE)),
+      q2gap = suppressWarnings(.data$q2_sec - min(.data$q2_sec, na.rm = TRUE)),
+      q3gap = suppressWarnings(.data$q3_sec - min(.data$q3_sec, na.rm = TRUE)),
       qgap = dplyr::case_when(
         !is.na(.data$q3_sec) ~ .data$q3gap,
         !is.na(.data$q2_sec) ~ .data$q2gap,
         !is.na(.data$q1_sec) ~ .data$q1gap,
         TRUE ~ max(q1gap, na.rm = TRUE) + 0.1
-      ),
-      qgap = dplyr::if_else(
-        .data$qgap > 5,
-        max(.data$qgap[.data$qgap < 5], na.rm = TRUE) + 0.1,
-        .data$qgap
-      )
+      # ),
+      # qgap = dplyr::if_else(
+      #   .data$qgap > 5,
+      #   max(.data$qgap[.data$qgap < 5], na.rm = TRUE) + 0.1,
+      #   .data$qgap
+       )
     ) %>%
     dplyr::mutate(
       qgap = tidyr::replace_na(.data$qgap, max(.data$qgap, na.rm = TRUE) + 0.1)
@@ -532,6 +532,7 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
       )
     ) %>%
     dplyr::ungroup() %>%
+    # Problem is a driver who didn't do qualifying has no data here.
     # Calculate a driver's rolling average qualifying gap over the last 5 races.
     dplyr::group_by(.data$driver_id) %>%
     dplyr::mutate(
