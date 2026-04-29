@@ -85,6 +85,30 @@ open_cache_db <- function(
   is.data.frame(data) && nrow(data) > 0
 }
 
+#' Check Whether Event Data Can Be Cached
+#'
+#' @param season Season year.
+#' @param round Round number.
+#' @param schedule Schedule data containing `season`, `round`, and `date`.
+#' @param today Date used for the cacheability check.
+#'
+#' @return `TRUE` when the scheduled race date has fully passed, otherwise
+#'   `FALSE`.
+#' @noRd
+.can_cache_event_data <- function(
+    season,
+    round,
+    schedule,
+    today = Sys.Date()
+) {
+  event_row <- schedule[schedule$season == season & schedule$round == round, ]
+  if (nrow(event_row) == 0 || is.na(event_row$date[[1]])) {
+    return(FALSE)
+  }
+
+  as.Date(today) > as.Date(event_row$date[[1]])
+}
+
 #' Coerce Cached Lap Data Types
 #'
 #' @param data Lap cache data.
@@ -246,7 +270,8 @@ read_cache_table <- function(table, con, season = NULL, round = NULL) {
   round = NULL,
   rds_path,
   csv_path = NULL,
-  col_classes = NULL
+  col_classes = NULL,
+  cache_write = TRUE
 ) {
   data <- read_cache_table(table, con, season = season, round = round)
 
@@ -258,7 +283,9 @@ read_cache_table <- function(table, con, season = NULL, round = NULL) {
     ) %>%
       ensure_tidy()
 
-    write_cache_table(data, table, con, overwrite = FALSE)
+    if (isTRUE(cache_write)) {
+      write_cache_table(data, table, con, overwrite = FALSE)
+    }
   }
 
   data
@@ -481,6 +508,18 @@ get_weekend_data <- function(season, round, force = FALSE) {
     )
   }
 
+  cache_writes_allowed <- .can_cache_event_data(
+    season = season,
+    round = round,
+    schedule = schedule
+  )
+
+  if (!cache_writes_allowed) {
+    cli::cli_inform(
+      "Skipping cache writes for {season} round {round} until the day after the scheduled race date."
+    )
+  }
+
   rgrid <- NULL
   sgrid <- NULL
   results <- NULL
@@ -499,7 +538,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "rgrid.rds")),
-      csv_path = file.path(cache, paste0(pfx, "rgrid.csv"))
+      csv_path = file.path(cache, paste0(pfx, "rgrid.csv")),
+      cache_write = cache_writes_allowed
     )
     sgrid <- .read_cache_with_legacy_fallback(
       table = "sgrid",
@@ -507,7 +547,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "sgrid.rds")),
-      csv_path = file.path(cache, paste0(pfx, "sgrid.csv"))
+      csv_path = file.path(cache, paste0(pfx, "sgrid.csv")),
+      cache_write = cache_writes_allowed
     )
     results <- .read_cache_with_legacy_fallback(
       table = "results",
@@ -515,7 +556,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "results.rds")),
-      csv_path = file.path(cache, paste0(pfx, "results.csv"))
+      csv_path = file.path(cache, paste0(pfx, "results.csv")),
+      cache_write = cache_writes_allowed
     )
     sprint_results <- .read_cache_with_legacy_fallback(
       table = "sprint_results",
@@ -523,7 +565,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "sprint_results.rds")),
-      csv_path = file.path(cache, paste0(pfx, "sptrint_results.csv"))
+      csv_path = file.path(cache, paste0(pfx, "sptrint_results.csv")),
+      cache_write = cache_writes_allowed
     )
     pitstops <- .read_cache_with_legacy_fallback(
       table = "pitstops",
@@ -531,7 +574,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "pitstops.rds")),
-      csv_path = file.path(cache, paste0(pfx, "pitstops.csv"))
+      csv_path = file.path(cache, paste0(pfx, "pitstops.csv")),
+      cache_write = cache_writes_allowed
     )
     quali <- .read_cache_with_legacy_fallback(
       table = "qualis",
@@ -539,7 +583,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "quali.rds")),
-      csv_path = file.path(cache, paste0(pfx, "quali.csv"))
+      csv_path = file.path(cache, paste0(pfx, "quali.csv")),
+      cache_write = cache_writes_allowed
     )
     laps <- .read_cache_with_legacy_fallback(
       table = "laps",
@@ -547,7 +592,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
       season = season,
       round = round,
       rds_path = file.path(cache, paste0(pfx, "laps.rds")),
-      csv_path = file.path(cache, paste0(pfx, "laps.csv"))
+      csv_path = file.path(cache, paste0(pfx, "laps.csv")),
+      cache_write = cache_writes_allowed
     )
 
     if (
@@ -585,7 +631,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
           round = round
         ) %>%
         janitor::clean_names()
-      write_cache_table(results, "results", con, overwrite = FALSE)
+      if (cache_writes_allowed) {
+        write_cache_table(results, "results", con, overwrite = FALSE)
+      }
     }
   }
 
@@ -609,12 +657,14 @@ get_weekend_data <- function(season, round, force = FALSE) {
               lap = as.numeric(.data$lap)
             ) %>%
             janitor::clean_names()
-          write_cache_table(
-            sprint_results,
-            "sprint_results",
-            con,
-            overwrite = FALSE
-          )
+          if (cache_writes_allowed) {
+            write_cache_table(
+              sprint_results,
+              "sprint_results",
+              con,
+              overwrite = FALSE
+            )
+          }
         }
       }
     }
@@ -638,7 +688,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               round = round
             ) %>%
             janitor::clean_names()
-          write_cache_table(pitstops, "pitstops", con, overwrite = FALSE)
+          if (cache_writes_allowed) {
+            write_cache_table(pitstops, "pitstops", con, overwrite = FALSE)
+          }
         }
       }
     }
@@ -654,7 +706,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
           dplyr::mutate(season = season, round = round) %>%
           dplyr::mutate(position = as.integer(.data$position)) %>%
           janitor::clean_names()
-        write_cache_table(rgrid, "rgrid", con, overwrite = FALSE)
+        if (cache_writes_allowed) {
+          write_cache_table(rgrid, "rgrid", con, overwrite = FALSE)
+        }
       }
     }
 
@@ -664,7 +718,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
         sgrid <- sgrid %>%
           dplyr::mutate(season = season, round = round) %>%
           janitor::clean_names()
-        write_cache_table(sgrid, "sgrid", con, overwrite = FALSE)
+        if (cache_writes_allowed) {
+          write_cache_table(sgrid, "sgrid", con, overwrite = FALSE)
+        }
       }
     }
 
@@ -686,7 +742,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               q3_sec = expand_val(unlist(.data$q3_sec), dplyr::n())
             ) %>%
             janitor::clean_names()
-          write_cache_table(quali, "qualis", con, overwrite = FALSE)
+          if (cache_writes_allowed) {
+            write_cache_table(quali, "qualis", con, overwrite = FALSE)
+          }
         }
       }
     }
@@ -753,7 +811,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
         if (xresults) {
           results <- NULL
         }
-        write_cache_table(laps, "laps", con, overwrite = FALSE)
+        if (cache_writes_allowed) {
+          write_cache_table(laps, "laps", con, overwrite = FALSE)
+        }
       }
     }
   } else {

@@ -164,6 +164,45 @@ test_that("load_rds_or_csv returns NULL when neither file exists", {
   expect_null(result)
 })
 
+test_that(".can_cache_event_data() waits until the day after the event (#9)", {
+  schedule <- tibble::tibble(
+    season = 2024,
+    round = 5,
+    date = as.Date("2024-05-12")
+  )
+
+  expect_false(.can_cache_event_data(2024, 5, schedule, today = "2024-05-12"))
+  expect_false(.can_cache_event_data(2024, 5, schedule, today = "2024-05-11"))
+  expect_true(.can_cache_event_data(2024, 5, schedule, today = "2024-05-13"))
+})
+
+test_that(".read_cache_with_legacy_fallback() skips SQLite writes when caching is disabled (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  legacy_results <- tibble::tibble(
+    season = 2024,
+    round = 5,
+    driver_id = "hamilton",
+    points = 25
+  )
+  legacy_path <- file.path(cache_dir, "2024_5_results.rds")
+  saveRDS(legacy_results, legacy_path)
+
+  loaded <- .read_cache_with_legacy_fallback(
+    table = "results",
+    con = con,
+    season = 2024,
+    round = 5,
+    rds_path = legacy_path,
+    cache_write = FALSE
+  )
+
+  expect_equal(loaded, legacy_results)
+  expect_null(read_cache_table("results", con, season = 2024, round = 5))
+})
+
 # ---- migrate_cache_to_rds() ----
 
 test_that("migrate_cache_to_rds() converts CSVs to RDS in a temp directory", {
