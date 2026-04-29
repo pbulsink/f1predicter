@@ -209,7 +209,7 @@ test_that("migrate_cache_to_rds() skips files already migrated", {
   expect_length(written, 0)
 })
 
-test_that("sqlite cache helpers round-trip filtered data (#9)", {
+test_that("SQLite cache helpers round-trip filtered data (#9)", {
   cache_dir <- withr::local_tempdir()
   con <- open_cache_db(cache = cache_dir)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
@@ -231,7 +231,7 @@ test_that("sqlite cache helpers round-trip filtered data (#9)", {
   expect_equal(sort(season_data$round), c(1, 2))
 })
 
-test_that("read_cache_table() returns NULL for missing tables or rows (#9)", {
+test_that("read_cache_table() returns NULL for missing SQLite tables or rows (#9)", {
   cache_dir <- withr::local_tempdir()
   con <- open_cache_db(cache = cache_dir)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
@@ -278,7 +278,7 @@ test_that("write_cache_table() replaces matching season-round rows on append (#9
   )
 })
 
-test_that("migrate_cache_to_sqlite() migrates cached season files (#9)", {
+test_that("migrate_cache_to_sqlite() migrates cached season files into SQLite (#9)", {
   cache_dir <- withr::local_tempdir()
   results <- tibble::tibble(
     season = c(2022, 2022),
@@ -300,7 +300,7 @@ test_that("migrate_cache_to_sqlite() migrates cached season files (#9)", {
   expect_equal(migrated$driver_id, c("hamilton", "russell"))
 })
 
-test_that("load_all_data() reads sqlite cache tables (#9)", {
+test_that("load_all_data() reads SQLite cache tables (#9)", {
   cache_dir <- withr::local_tempdir()
   withr::local_options(f1predicter.cache = cache_dir)
   con <- open_cache_db(cache = cache_dir)
@@ -372,7 +372,7 @@ test_that("load_all_data() reads sqlite cache tables (#9)", {
   expect_equal(all_data$laps$deleted_reason, NA_character_)
 })
 
-test_that("clean_data() reads processed data from sqlite cache (#9)", {
+test_that("clean_data() reads processed data from SQLite cache (#9)", {
   cache_dir <- withr::local_tempdir()
   withr::local_options(f1predicter.cache = cache_dir)
   con <- open_cache_db(cache = cache_dir)

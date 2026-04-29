@@ -1019,10 +1019,10 @@ clean_data <- function(
   )
 
   if (isTRUE(cache_processed)) {
-    con <- open_cache_db()
-    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    read_con <- open_cache_db()
+    on.exit(if (DBI::dbIsValid(read_con)) DBI::dbDisconnect(read_con), add = TRUE)
 
-    cached_processed <- read_cache_table("processed_data", con)
+    cached_processed <- read_cache_table("processed_data", read_con)
     if (!is.null(cached_processed)) {
       cli::cli_inform(
         "Loading processed data from cache: {.file {cache_db_path()}}"
@@ -1065,10 +1065,15 @@ clean_data <- function(
   cli::cli_inform("Returning {nrow(final_data)} rows of data.")
 
   if (isTRUE(cache_processed)) {
+    write_con <- open_cache_db()
+    on.exit(
+      if (DBI::dbIsValid(write_con)) DBI::dbDisconnect(write_con),
+      add = TRUE
+    )
     cli::cli_inform(
       "Saving processed data to cache: {.file {cache_db_path()}}"
     )
-    write_cache_table(final_data, "processed_data", con, overwrite = TRUE)
+    write_cache_table(final_data, "processed_data", write_con, overwrite = TRUE)
   }
 
   return(final_data)
