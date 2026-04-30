@@ -553,11 +553,14 @@ train_quali_models <- function(
       c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
     )
   }
-  # ---- Quali Position Classification Model (Ordered Logistic) ----
-  cli::cli_rule("Training Qualifying Position Model (Ordinal, polr)")
+  # ---- Quali Position Classification Model (Ordinal) ----
+  # Uses new ordinal engines from the `ordered` package (parsnip >= 1.5.0).
+  # Optimised on Ranked Probability Score (yardstick >= 1.4.0): it rewards
+  # calibrated probability distributions and penalises predictions that are
+  # far from the true rank.
+  cli::cli_rule("Training Qualifying Position Model (Ordinal)")
 
-  # Use the same data as the regression model, but with a factor outcome and
-  # prepped for MASS:polr
+  # Use the same data as the regression model, but with an ordered factor outcome
   pos_class_data <- pos_data %>%
     dplyr::arrange(.data$quali_position) %>%
     dplyr::mutate(
@@ -565,21 +568,17 @@ train_quali_models <- function(
     ) %>%
     dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
-  pos_class_splits <- prepare_and_split_data(pos_class_data)
-
-  predictor_vars <- pos_cols[!(pos_cols %in% c("quali_position", id_cols))]
-  formula <- stats::reformulate(predictor_vars, response = "quali_position")
-  # Set the formula environment to the base environment to prevent capturing
-  # large objects from the local function environment, which significantly
-  # reduces model size.
-  rlang::f_env(formula) <- rlang::base_env()
+  predictor_vars_class <- pos_cols[
+    !(pos_cols %in% c("quali_position", id_cols))
+  ]
 
   if (engine == "ensemble") {
     cli::cli_inform(
       "Adding ensemble predictions as features for the ordinal model."
     )
 
-    # Predict pole probability and quali position using the trained ensembles
+    # Predict pole probability and quali position using the trained ensembles;
+    # these predictions become additional features for the ordinal model
     pole_ensemble_preds <- stats::predict(
       pole_final_fit,
       new_data = pos_class_data,
@@ -591,121 +590,97 @@ train_quali_models <- function(
       type = "numeric"
     )
 
-    # Add predictions as new columns
     pos_class_data <- pos_class_data %>%
       dplyr::mutate(
         ensemble_pole_pred = pole_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
       )
 
-    # Re-split the data now that it has the new features
-    pos_class_splits <- prepare_and_split_data(pos_class_data)
-
-    # Add those columns to the formulas
-    formula <- stats::reformulate(
-      c(predictor_vars, "ensemble_pole_pred", "ensemble_pos_pred"),
-      response = "quali_position"
+    predictor_vars_class <- c(
+      predictor_vars_class,
+      "ensemble_pole_pred",
+      "ensemble_pos_pred"
     )
-    # Reset the environment for the new formula as well
-    rlang::f_env(formula) <- rlang::base_env()
   }
 
+  pos_class_splits <- prepare_and_split_data(pos_class_data)
   train_data_pos_class <- pos_class_splits$train_data
+  data_folds_pos_class <- pos_class_splits$data_folds
   data_split_pos_class <- pos_class_splits$data_split
 
-  pos_class_recipe <- recipes::recipe(
-    formula,
-    data = train_data_pos_class
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
+  if (engine == "ensemble") {
+    pos_class_final_fit <- train_ordinal_ensemble(
+      outcome_var = "quali_position",
+      model_name = paste(
+        "Quali Position Class",
+        tools::toTitleCase(model_timing)
+      ),
+      train_data = train_data_pos_class,
+      data_split = data_split_pos_class,
+      data_folds = data_folds_pos_class,
+      predictor_vars = predictor_vars_class,
+      hyperparams = all_hyperparams$ordinal_class_hyperparameters,
+      save_model = FALSE
+    )
+  } else {
+    # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
+    # workflow. polr is the proportional-odds ordered logistic regression model
+    # and is equivalent to the previous direct MASS::polr approach, but now
+    # properly wrapped in a tidymodels workflow for consistent interfaces.
+    formula_class <- stats::reformulate(
+      predictor_vars_class,
+      response = "quali_position"
+    )
+    # Reset environment to base to prevent capturing large objects
+    rlang::f_env(formula_class) <- rlang::base_env()
 
-  # Prep the recipe and bake the data
-  prepped_recipe <- recipes::prep(
-    pos_class_recipe,
-    training = train_data_pos_class
-  )
-  baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
-  baked_test <- recipes::bake(
-    prepped_recipe,
-    new_data = rsample::testing(data_split_pos_class)
-  )
+    pos_class_recipe <- recipes::recipe(
+      formula_class,
+      data = train_data_pos_class
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
 
-  # Fit the model directly using MASS::polr
-  tictoc::tic("Trained Position Classification Model (polr)")
+    ordinal_spec <- parsnip::ordinal_reg() %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("polr")
 
-  polr_fit <- MASS::polr(
-    formula,
-    data = baked_train,
-    Hess = TRUE
-  )
+    ordinal_wflow <- workflows::workflow() %>%
+      workflows::add_model(ordinal_spec) %>%
+      workflows::add_recipe(pos_class_recipe)
 
-  tictoc::toc()
-  # --- Evaluate the model on the test set ---
-  # Get class predictions
-  class_preds <- stats::predict(polr_fit, newdata = baked_test, type = "class")
-  # Get probability predictions
-  prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
+    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+    class(kap_linear) <- c("class_metric", "metric", "function")
+    attr(kap_linear, "direction") <- "maximize"
 
-  # Combine true values and predictions
-  test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = "quali_position"),
-    .pred_class = class_preds,
-    tibble::as_tibble(prob_preds)
-  )
+    metrics_ordinal <- yardstick::metric_set(
+      yardstick::ranked_prob_score,
+      kap_linear,
+      yardstick::accuracy
+    )
 
-  # Calculate metrics
-  log_loss_val <- yardstick::mn_log_loss(
-    test_results,
-    truth = 'truth',
-    colnames(test_results)[
-      !(colnames(test_results) %in% c("truth", ".pred_class"))
-    ]
-  )
-  accuracy_val <- yardstick::accuracy(
-    test_results,
-    truth = 'truth',
-    estimate = '.pred_class'
-  )
-  kap_val <- yardstick::kap(
-    test_results,
-    truth = 'truth',
-    estimate = '.pred_class'
-  )
+    tictoc::tic("Trained Qualifying Position Ordinal Model (polr)")
+    pos_class_final_fit <- ordinal_wflow %>%
+      tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
+    tictoc::toc()
 
-  # Manually create a metrics object for reporting
-  polr_metrics <- tibble::tribble(
-    ~.metric               ,
-    ~.estimator            ,
-    ~.estimate             ,
-    "mn_log_loss"          ,
-    "standard"             ,
-    log_loss_val$.estimate ,
-    "accuracy"             ,
-    "multiclass"           ,
-    accuracy_val$.estimate ,
-    "kap"                  ,
-    "multiclass"           ,
-    kap_val$.estimate
-  )
-
-  # Report metrics
-  message(glue::glue(
-    "Quali Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
-  ))
-
-  pos_class_final_fit <- list(
-    fit = polr_fit,
-    recipe = prepped_recipe,
-    metrics = polr_metrics
-  )
+    report_model_metrics(
+      pos_class_final_fit,
+      "Quali Position Ordinal Model (polr)",
+      c(
+        "ranked_prob_score" = "RPS",
+        "kap" = "kappa",
+        "accuracy" = "accuracy"
+      )
+    )
+  }
 
   # ---- Return ----
   return(list(
     "quali_pole" = pole_final_fit,
-    'quali_pos' = position_final_fit,
-    'quali_pos_class' = pos_class_final_fit
+    "quali_pos" = position_final_fit,
+    "quali_pos_class" = pos_class_final_fit
   ))
 }
 
@@ -1225,18 +1200,25 @@ train_results_models <- function(
   }
 
   # ---- Train Position Model (Ordinal Classification) ----
-  cli::cli_rule("Training Position Model (Ordinal, polr)")
+  # Uses new ordinal engines from the `ordered` package (parsnip >= 1.5.0).
+  # Optimised on Ranked Probability Score (yardstick >= 1.4.0): it rewards
+  # calibrated probability distributions and penalises predictions that are
+  # far from the true rank.
+  cli::cli_rule("Training Position Model (Ordinal)")
 
   pos_class_data <- data %>%
     dplyr::select(dplyr::all_of(pos_cols)) %>%
     dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+
+  predictor_vars_class <- pos_predictor_vars
 
   if (engine == "ensemble") {
     cli::cli_inform(
       "Adding ensemble predictions as features for the ordinal model."
     )
 
-    # Predict win probability and finishing position using the trained ensembles
+    # Predict win probability and finishing position using the trained ensembles;
+    # these predictions become additional features for the ordinal model
     win_ensemble_preds <- stats::predict(
       win_final,
       new_data = pos_class_data,
@@ -1248,113 +1230,95 @@ train_results_models <- function(
       type = "numeric"
     )
 
-    # Add predictions as new columns
     pos_class_data <- pos_class_data %>%
       dplyr::mutate(
         ensemble_win_pred = win_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
       )
 
-    # Re-split the data now that it has the new features.
-    # This is important to ensure the new features are in the training set.
-    pos_class_splits <- prepare_and_split_data(pos_class_data)
-
-    position_formula <- stats::reformulate(
-      c(pos_predictor_vars, 'ensemble_win_pred', 'ensemble_pos_pred'),
-      response = "position"
+    predictor_vars_class <- c(
+      predictor_vars_class,
+      "ensemble_win_pred",
+      "ensemble_pos_pred"
     )
-    rlang::f_env(position_formula) <- rlang::base_env()
   }
 
   pos_class_splits <- prepare_and_split_data(pos_class_data)
   train_data_pos_class <- pos_class_splits$train_data
-  test_data_pos_class <- pos_class_splits$test_data
+  data_folds_pos_class <- pos_class_splits$data_folds
+  data_split_pos_class <- pos_class_splits$data_split
 
-  pos_class_recipe <- recipes::recipe(
-    position_formula,
-    data = train_data_pos_class
-  ) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_predictors())
+  if (engine == "ensemble") {
+    position_class_final_fit <- train_ordinal_ensemble(
+      outcome_var = "position",
+      model_name = paste("Position Class", tools::toTitleCase(scenario)),
+      train_data = train_data_pos_class,
+      data_split = data_split_pos_class,
+      data_folds = data_folds_pos_class,
+      predictor_vars = predictor_vars_class,
+      hyperparams = all_hyperparams$ordinal_class_hyperparameters,
+      save_model = FALSE
+    )
+  } else {
+    # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
+    # workflow. polr is the proportional-odds ordered logistic regression model
+    # and is equivalent to the previous direct MASS::polr approach, but now
+    # properly wrapped in a tidymodels workflow for consistent interfaces.
+    formula_class <- stats::reformulate(
+      predictor_vars_class,
+      response = "position"
+    )
+    # Reset environment to base to prevent capturing large objects
+    rlang::f_env(formula_class) <- rlang::base_env()
 
-  prepped_recipe <- recipes::prep(
-    pos_class_recipe,
-    training = train_data_pos_class
-  )
-  baked_train <- recipes::bake(prepped_recipe, new_data = NULL)
-  baked_test <- recipes::bake(prepped_recipe, new_data = test_data_pos_class)
+    pos_class_recipe <- recipes::recipe(
+      formula_class,
+      data = train_data_pos_class
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
 
-  # Fit the model directly using MASS::polr
-  tictoc::tic("Trained Position Classification Model (polr)")
-  polr_fit <- MASS::polr(
-    position_formula,
-    data = baked_train,
-    Hess = TRUE
-  )
-  tictoc::toc()
+    ordinal_spec <- parsnip::ordinal_reg() %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("polr")
 
-  # --- Evaluate the model on the test set ---
-  class_preds <- stats::predict(polr_fit, newdata = baked_test, type = "class")
-  prob_preds <- stats::predict(polr_fit, newdata = baked_test, type = "probs")
+    ordinal_wflow <- workflows::workflow() %>%
+      workflows::add_model(ordinal_spec) %>%
+      workflows::add_recipe(pos_class_recipe)
 
-  test_results <- dplyr::bind_cols(
-    baked_test %>% dplyr::select(truth = .data$position),
-    .pred_class = class_preds,
-    tibble::as_tibble(prob_preds)
-  )
+    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+    class(kap_linear) <- c("class_metric", "metric", "function")
+    attr(kap_linear, "direction") <- "maximize"
 
-  # Calculate metrics
-  log_loss_val <- yardstick::mn_log_loss(
-    test_results,
-    truth = 'truth',
-    colnames(test_results)[
-      !(colnames(test_results) %in% c("truth", ".pred_class"))
-    ]
-  )
-  accuracy_val <- yardstick::accuracy(
-    test_results,
-    truth = 'truth',
-    estimate = '.pred_class'
-  )
-  kap_val <- yardstick::kap(
-    test_results,
-    truth = 'truth',
-    estimate = '.pred_class'
-  )
+    metrics_ordinal <- yardstick::metric_set(
+      yardstick::ranked_prob_score,
+      kap_linear,
+      yardstick::accuracy
+    )
 
-  # Manually create a metrics object for reporting
-  polr_metrics <- tibble::tribble(
-    ~.metric               ,
-    ~.estimator            ,
-    ~.estimate             ,
-    "mn_log_loss"          ,
-    "standard"             ,
-    log_loss_val$.estimate ,
-    "accuracy"             ,
-    "multiclass"           ,
-    accuracy_val$.estimate ,
-    "kap"                  ,
-    "multiclass"           ,
-    kap_val$.estimate
-  )
+    tictoc::tic("Trained Position Ordinal Model (polr)")
+    position_class_final_fit <- ordinal_wflow %>%
+      tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
+    tictoc::toc()
 
-  message(glue::glue(
-    "Position Ordinal Model (polr) with {round(log_loss_val$.estimate, 4)} log loss, {round(accuracy_val$.estimate, 4)} accuracy, {round(kap_val$.estimate, 4)} kappa."
-  ))
-
-  position_class_final_fit <- list(
-    fit = polr_fit,
-    recipe = prepped_recipe,
-    metrics = polr_metrics
-  )
+    report_model_metrics(
+      position_class_final_fit,
+      "Position Ordinal Model (polr)",
+      c(
+        "ranked_prob_score" = "RPS",
+        "kap" = "kappa",
+        "accuracy" = "accuracy"
+      )
+    )
+  }
 
   return(list(
     "win" = win_final,
     "podium" = podium_final,
     "t10" = t10_final,
-    'position' = position_final_fit,
-    'position_class' = position_class_final_fit
+    "position" = position_final_fit,
+    "position_class" = position_class_final_fit
   ))
 }
 
@@ -1651,88 +1615,31 @@ load_models <- function(model_type, model_timing, engine = "ranger") {
 #' significantly reduce their size, making them more efficient for storage and
 #' prediction.
 #'
-#' The function includes special handling for:
-#' - `polr` models: Manually butchers the recipe and resets the formula environment.
-#' - `model_stack` (ensemble) objects: Recursively butchers the components of the stack.
-#' - Standard `last_fit` objects from `tidymodels`.
+#' If `butcher::butcher()` fails for any model (e.g., for object types that do
+#' not yet have a `butcher` method), the original, un-butchered model is
+#' retained in the list with a warning. This ensures all models are always saved.
 #'
 #' @param model_list A named list of model objects to be butchered.
-#' @return A named list containing the smaller, "butchered" model objects.
+#' @return A named list containing the butchered model objects (or originals
+#'   where butchering failed).
 #' @noRd
 butcher_model_list <- function(model_list) {
   final_list <- list()
   for (model_name in names(model_list)) {
     model_object <- model_list[[model_name]]
 
-    # Handle the special case for the polr model, which is a list(fit, recipe)
-    # TODO: Update butcher to handle polr models.
-    if (inherits(model_object$fit, "polr")) {
-      attr(model_object$fit$terms, ".Environment") <- rlang::base_env()
-      model_object$recipe <- butcher::butcher(model_object$recipe)
-      cli::cli_inform("Butchering polr model object for: {.val {model_name}}")
-      final_list[[model_name]] <- model_object
-      next # Skip to the next model
-    }
-
-    # # Handle the special case of model_stacks, which don't butcher by themselves
-    # if (inherits(model_object, "model_stack")) {
-    #   for (model_type in names(model_object$model_defs)) {
-    #     model_object <- butcher::butcher(model_object)
-    #     model_object$fit <- butcher::butcher(model_object$fit)
-    #     model_object$model_defs[[
-    #       model_type
-    #     ]]$pre$actions$recipe$recipe <- butcher::butcher(
-    #       model_object$model_defs[[model_type]]$pre$actions$recipe$recipe
-    #     )
-    #     if (
-    #       paste0(model_type, 'pre0_mod0_post0') %in%
-    #         names(model_object$member_fits)
-    #     ) {
-    #       model_object$member_fits[[paste0(
-    #         model_type,
-    #         'pre0_mod0_post0'
-    #       )]] <- butcher::butcher(model_object$member_fits[[paste0(
-    #         model_type,
-    #         'pre0_mod0_post0'
-    #       )]])
-    #       model_object$member_fits[[paste0(
-    #         model_type,
-    #         'pre0_mod0_post0'
-    #       )]]$pre$actions$recipe$recipe <- butcher::butcher(
-    #         model_object$member_fits[[paste0(
-    #           model_type,
-    #           'pre0_mod0_post0'
-    #         )]]$pre$actions$recipe$recipe
-    #       )
-    #       model_object$member_fits[[paste0(
-    #         model_type,
-    #         'pre0_mod0_post0'
-    #       )]]$pre$mold$blueprint$recipe <- butcher::butcher(
-    #         model_object$member_fits[[paste0(
-    #           model_type,
-    #           'pre0_mod0_post0'
-    #         )]]$pre$mold$blueprint$recipe
-    #       )
-    #     }
-    #   }
-    #   cli::cli_inform(
-    #     "Butchering ensemble model object for: {.val {model_name}}"
-    #   )
-    #   final_list[[model_name]] <- model_object
-    #   next # Skip to the next model
-    # }
-    # Butcher the other models to reduce size, wrapped in a tryCatch for robustness
     tryCatch(
       {
         butchered_model <- butcher::butcher(model_object)
-
         cli::cli_inform("Butchering model: {.val {model_name}}")
         final_list[[model_name]] <- butchered_model
       },
       error = function(e) {
+        # Preserve the original model when butcher does not support the class
         cli::cli_warn(
-          "Failed to butcher model {.val {model_name}}: {e$message}"
+          "Could not butcher model {.val {model_name}}: {e$message}. Saving original."
         )
+        final_list[[model_name]] <<- model_object
       }
     )
   }

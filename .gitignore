@@ -11,3 +11,4 @@ tests/testthat/_problems/
 tests/testthat/testthat-problems.rds
 .positai
 cobertura.xml
+Rplots.pdf

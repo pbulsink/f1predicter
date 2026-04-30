@@ -233,8 +233,10 @@ get_weekend_data <- function(season, round, force = FALSE) {
     ) %>%
     tibble::as_tibble()
 
-  if(!round %in% schedule[schedule$season == season, ]$round){
-    cli::cli_abort("Error in f1predicter::get_weekend_data(). Round: {round} not in season: {season}.")
+  if (!round %in% schedule[schedule$season == season, ]$round) {
+    cli::cli_abort(
+      "Error in f1predicter::get_weekend_data(). Round: {round} not in season: {season}."
+    )
   }
 
   rgrid <- NA
@@ -881,9 +883,9 @@ load_all_data <- function() {
 
     if (y >= 2018) {
       lp <- load_rds_or_csv(
-          file.path(cache, paste0(y, "_season_laps.rds")),
-          file.path(cache, paste0(y, "_season_laps.csv"))
-        ) %>%
+        file.path(cache, paste0(y, "_season_laps.rds")),
+        file.path(cache, paste0(y, "_season_laps.csv"))
+      ) %>%
         dplyr::mutate("deleted_reason" = as.character(.data$deleted_reason)) %>%
         ensure_tidy()
       laps <- dplyr::bind_rows(laps, lp)
@@ -1285,7 +1287,6 @@ add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
   laps %>%
     dplyr::left_join(drivers, by = c(driver = "code"))
 }
-
 
 #' Cleaned Data
 #'
