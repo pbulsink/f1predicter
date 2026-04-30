@@ -128,6 +128,9 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
   )
 
   params <- get_processing_params()
+  expected_default_qgap <- 1
+  expected_default_practice_avg_gap <- 1.5
+  expected_default_practice_best_gap <- 1
   result <- generate_new_data(
     season = 2026,
     round = 1,
@@ -148,9 +151,15 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
     target_row$constructor_failure_circuit_avg,
     params$constructor_failure_avg
   )
-  expect_equal(target_row$driver_avg_qgap, 1)
-  expect_equal(target_row$practice_avg_gap, 1.5)
-  expect_equal(target_row$practice_best_gap, 1)
+  expect_equal(target_row$driver_avg_qgap, expected_default_qgap)
+  expect_equal(
+    target_row$practice_avg_gap,
+    expected_default_practice_avg_gap
+  )
+  expect_equal(
+    target_row$practice_best_gap,
+    expected_default_practice_best_gap
+  )
   expect_equal(target_row$quali_position, target_row$grid)
   expect_s3_class(result$driver_id, "factor")
   expect_s3_class(result$constructor_id, "factor")
