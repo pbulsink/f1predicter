@@ -10,6 +10,7 @@ generate_new_data(
   drivers = NULL,
   penalties = NULL,
   historical_data = clean_data(),
+  params = get_processing_params(),
   use_live_data = TRUE
 )
 }
@@ -29,6 +30,9 @@ For example `c('hamilton' = 5, 'max_verstappen' = 10)`.}
 
 \item{historical_data}{A data frame of historical race data, typically the
 output of `clean_data()`. This is used to calculate the feature values.}
+
+\item{params}{A named list of processing parameters controlling imputation
+defaults. Defaults to `get_processing_params()`.}
 
 \item{use_live_data}{Whether or not to check for weekend data (e.g. recent qualis).
 Default TRUE}
