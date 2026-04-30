@@ -432,3 +432,20 @@ test_that("clean_data() reads processed data from SQLite cache (#9)", {
 
   expect_equal(loaded, cached_processed)
 })
+
+test_that(".sqlite_cache_populated() includes processed data tables (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  expect_false(.sqlite_cache_populated(con))
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "processed_data",
+    con,
+    overwrite = TRUE
+  )
+
+  expect_true(.sqlite_cache_populated(con))
+})

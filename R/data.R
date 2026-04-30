@@ -41,7 +41,7 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
 }
 
 # Expected SQLite cache table names used by the package cache helpers.
-.cache_tables <- c(
+.raw_cache_tables <- c(
   "results",
   "qualis",
   "pitstops",
@@ -50,6 +50,8 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
   "sprint_results",
   "laps"
 )
+
+.cache_tables <- c(.raw_cache_tables, "processed_data")
 
 #' Build the SQLite Cache Path
 #'
@@ -1029,7 +1031,7 @@ migrate_cache_to_sqlite <- function(
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
   for (y in years) {
-    for (type in .cache_tables) {
+    for (type in .raw_cache_tables) {
       rds_path <- file.path(cache, paste0(y, "_season_", type, ".rds"))
       csv_path <- file.path(cache, paste0(y, "_season_", type, ".csv"))
       dat <- load_rds_or_csv(rds_path = rds_path, csv_path = csv_path)

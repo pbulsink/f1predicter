@@ -1024,9 +1024,7 @@ clean_data <- function(
 
     cached_processed <- read_cache_table("processed_data", read_con)
     if (!is.null(cached_processed)) {
-      cli::cli_inform(
-        "Loading processed data from cache: {.file {cache_db_path()}}"
-      )
+      cli::cli_inform("Loading processed data from cache")
       return(cached_processed)
     }
 
@@ -1070,9 +1068,7 @@ clean_data <- function(
       if (DBI::dbIsValid(write_con)) DBI::dbDisconnect(write_con),
       add = TRUE
     )
-    cli::cli_inform(
-      "Saving processed data to cache: {.file {cache_db_path()}}"
-    )
+    cli::cli_inform("Saving processed data to cache")
     write_cache_table(final_data, "processed_data", write_con, overwrite = TRUE)
   }
 
