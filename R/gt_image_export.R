@@ -27,22 +27,9 @@ save_gt_as_png_ragg <- function(
   dpi = 150,
   padding = 20
 ) {
-  now <- Sys.time()
-  tryCatch(
-    gt::gtsave(gt_table, filename),
-    error = function(e) {
-      cli::cli_alert_danger("Couldn't save file with `gtsave`.")
-    }
-  )
-
-  if (file.exists(filename) && file.info(filename)$mtime >= now) {
-    return(invisible(filename))
-  }
-  if (!requireNamespace("ragg", quietly = TRUE)) {
-    cli::cli_abort(
-      "Package {.pkg ragg} is required for PNG export. Please install it with {.code `install.packages('ragg')`}."
-    )
-  }
+  # Validate inputs and check dependencies before attempting any file I/O.
+  # This avoids confusing errors where gtsave() fails because gt isn't
+  # installed or the arguments are invalid.
   if (!requireNamespace("gt", quietly = TRUE)) {
     cli::cli_abort(
       "Package {.pkg gt} is required for this function. Please install it with {.code `install.packages('gt')`}."
@@ -75,6 +62,27 @@ save_gt_as_png_ragg <- function(
   }
   if (!is.numeric(padding) || length(padding) != 1 || padding < 0) {
     cli::cli_abort("{.arg padding} must be a single non-negative number.")
+  }
+
+  # Try gt::gtsave() first (uses webshot/chromote when available).
+  # If it succeeds the file will be newer than `now`, and we return early.
+  now <- Sys.time()
+  tryCatch(
+    gt::gtsave(gt_table, filename),
+    error = function(e) {
+      cli::cli_alert_danger(
+        "Couldn't save file with `gtsave`: {e$message}. Falling back to ragg."
+      )
+    }
+  )
+
+  if (file.exists(filename) && file.info(filename)$mtime >= now) {
+    return(invisible(filename))
+  }
+  if (!requireNamespace("ragg", quietly = TRUE)) {
+    cli::cli_abort(
+      "Package {.pkg ragg} is required for PNG export. Please install it with {.code `install.packages('ragg')`}."
+    )
   }
 
   # Render gt table to grid object

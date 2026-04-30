@@ -742,8 +742,11 @@ predict_quali_pos <- function(
 #' @param quali_pos_class_model A `last_fit` or `model_stack` object for
 #'   predicting qualifying position class, such as
 #'   `model_quali_early()$quali_pos_class`.
-#' @return A tibble with `driver_id`, `round`, `season`, and
-#'   `likely_quali_position_class`.
+#' @return A tibble with `driver_id`, `round`, `season`,
+#'   `likely_quali_position_class`, and `.probs` (a matrix list-column of
+#'   per-class position probabilities, one row per driver, one column per
+#'   ordered position level). The `.probs` column is required by downstream
+#'   helpers such as `format_quali_prob_table()`.
 #' @export
 #' @examples
 #' \dontrun{
@@ -755,33 +758,39 @@ predict_quali_pos_class <- function(
   new_data = generate_next_race_data(),
   quali_pos_class_model
 ) {
-  pred_call <- if (inherits(quali_pos_class_model, "model_stack")) {
+  model_obj <- if (inherits(quali_pos_class_model, "model_stack")) {
     if (!requireNamespace("stacks", quietly = TRUE)) {
       cli::cli_abort(
         "Package {.pkg stacks} must be installed to predict with an ensemble model."
       )
     }
-    stats::predict(quali_pos_class_model, new_data, type = "class")
+    quali_pos_class_model
   } else {
-    stats::predict(
-      tune::extract_workflow(quali_pos_class_model),
-      new_data,
-      type = "class"
-    )
+    tune::extract_workflow(quali_pos_class_model)
   }
+
+  pred_class <- stats::predict(model_obj, new_data, type = "class")
+  # Probability predictions: one column per ordered position class.
+  # Stored as a list-column of row-wise matrices so that downstream helpers
+  # (format_quali_prob_table(), format_results_prob_table()) can call
+  # as.data.frame(predictions$.probs) to get a wide probability data frame.
+  pred_probs <- stats::predict(model_obj, new_data, type = "prob")
+  probs_matrix <- as.matrix(pred_probs)
 
   preds <- new_data %>%
     dplyr::mutate(
       # Convert the ordered factor level to a numeric position directly
       likely_quali_position_class = as.numeric(
-        as.character(pred_call$.pred_class)
-      )
+        as.character(pred_class$.pred_class)
+      ),
+      .probs = I(probs_matrix)
     ) %>%
     dplyr::select(
       "driver_id",
       "round",
       "season",
-      "likely_quali_position_class"
+      "likely_quali_position_class",
+      ".probs"
     ) %>%
     dplyr::arrange(.data$likely_quali_position_class)
   return(preds)
@@ -1047,37 +1056,47 @@ predict_position <- function(
 #' @param position_class_model A `last_fit` or `model_stack` object for
 #'   predicting finishing position class, such as
 #'   `model_results_early()$position_class`.
-#' @return A tibble with `driver_id`, `round`, `season`, and `likely_position_class`.
+#' @return A tibble with `driver_id`, `round`, `season`, `likely_position_class`,
+#'   and `.probs` (a matrix list-column of per-class position probabilities,
+#'   one row per driver, one column per ordered position level). The `.probs`
+#'   column is required by downstream helpers such as
+#'   `format_results_prob_table()`.
 #' @noRd
 predict_position_class <- function(
   new_data = generate_next_race_data(),
   position_class_model
 ) {
-  pred_call <- if (inherits(position_class_model, "model_stack")) {
+  model_obj <- if (inherits(position_class_model, "model_stack")) {
     if (!requireNamespace("stacks", quietly = TRUE)) {
       cli::cli_abort(
         "Package {.pkg stacks} must be installed to predict with an ensemble model."
       )
     }
-    stats::predict(position_class_model, new_data, type = "class")
+    position_class_model
   } else {
-    stats::predict(
-      tune::extract_workflow(position_class_model),
-      new_data,
-      type = "class"
-    )
+    tune::extract_workflow(position_class_model)
   }
+
+  pred_class <- stats::predict(model_obj, new_data, type = "class")
+  # Probability predictions: one column per ordered position class.
+  # Stored as a list-column of row-wise matrices so that downstream helpers
+  # (format_results_prob_table()) can call as.data.frame(predictions$.probs)
+  # to get a wide probability data frame.
+  pred_probs <- stats::predict(model_obj, new_data, type = "prob")
+  probs_matrix <- as.matrix(pred_probs)
 
   preds <- new_data %>%
     dplyr::mutate(
       # Convert the ordered factor level to a numeric position directly
-      likely_position_class = as.numeric(as.character(pred_call$.pred_class))
+      likely_position_class = as.numeric(as.character(pred_class$.pred_class)),
+      .probs = I(probs_matrix)
     ) %>%
     dplyr::select(
       "driver_id",
       "round",
       "season",
-      "likely_position_class"
+      "likely_position_class",
+      ".probs"
     ) %>%
     dplyr::arrange(.data$likely_position_class)
   return(preds)

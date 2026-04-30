@@ -17,8 +17,11 @@ predicting qualifying position class, such as
 `model_quali_early()$quali_pos_class`.}
 }
 \value{
-A tibble with `driver_id`, `round`, `season`, and
-  `likely_quali_position_class`.
+A tibble with `driver_id`, `round`, `season`,
+  `likely_quali_position_class`, and `.probs` (a matrix list-column of
+  per-class position probabilities, one row per driver, one column per
+  ordered position level). The `.probs` column is required by downstream
+  helpers such as `format_quali_prob_table()`.
 }
 \description{
 Predicts the likely qualifying position for each driver using an ordered
