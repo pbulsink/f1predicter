@@ -146,17 +146,23 @@ test_that("get_grids() returns qualifying-only data when race results are unavai
 test_that("get_weekend_data() reads cached weekend results without fetching new data (#noissue)", {
   cache_dir <- withr::local_tempdir()
   withr::local_options(list(f1predicter.cache = cache_dir))
+  season <- 2002
+  round <- 1
 
+  # Use a pre-2003 season so uncached grid/quali branches are skipped.
   cached_results <- tibble::tibble(
     driver_id = "driver_a",
     constructor_id = "team_a",
     position = 1,
     grid = 1,
     points = 25,
-    season = 2002,
-    round = 1
+    season = season,
+    round = round
   )
-  saveRDS(cached_results, file.path(cache_dir, "2002_1_results.rds"))
+  saveRDS(
+    cached_results,
+    file.path(cache_dir, paste0(season, "_", round, "_results.rds"))
+  )
 
   local_mocked_bindings(
     load_results = function(...) {
@@ -165,7 +171,7 @@ test_that("get_weekend_data() reads cached weekend results without fetching new 
     .package = "f1dataR"
   )
 
-  result <- get_weekend_data(season = 2002, round = 1)
+  result <- get_weekend_data(season = season, round = round)
 
   expect_s3_class(result$results, "data.frame")
   expect_identical(result$results$driver_id, "driver_a")
