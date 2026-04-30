@@ -149,7 +149,7 @@ test_that("get_weekend_data() reads cached weekend results without fetching new 
   season <- 2002
   round <- 1
 
-  # Use a pre-2003 season so uncached grid/quali branches are skipped.
+  # Use a pre-2003 season so this test stays focused on cache-only retrieval.
   cached_results <- tibble::tibble(
     driver_id = "driver_a",
     constructor_id = "team_a",

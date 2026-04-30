@@ -133,6 +133,7 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
   expected_default_qgap <- 1
   expected_default_practice_avg_gap <- 1.5
   expected_default_practice_best_gap <- 1
+  # These gap defaults are hard-coded in generate_new_data() when no live laps exist.
   result <- generate_new_data(
     season = 2026,
     round = 1,
@@ -176,17 +177,17 @@ test_that("generate_next_race_data() forwards the next scheduled race (#noissue)
     dplyr::slice(1)
 
   local_mocked_bindings(
-    generate_new_data = function(season, round, marker = NULL, ...) {
-      list(season = season, round = round, marker = marker)
+    generate_new_data = function(season, round, use_live_data = TRUE, ...) {
+      list(season = season, round = round, use_live_data = use_live_data)
     },
     .package = "f1predicter"
   )
 
-  result <- generate_next_race_data(marker = "forwarded")
+  result <- generate_next_race_data(use_live_data = FALSE)
 
   expect_identical(result$season, as.numeric(next_race$season))
   expect_identical(result$round, as.numeric(next_race$round))
-  expect_identical(result$marker, "forwarded")
+  expect_false(result$use_live_data)
 })
 
 test_that("apply_grid_penalty() caps penalties at the back of the grid (#noissue)", {
