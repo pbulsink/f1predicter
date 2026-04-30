@@ -771,9 +771,10 @@ predict_quali_pos_class <- function(
 
   pred_class <- stats::predict(model_obj, new_data, type = "class")
   # Probability predictions: one column per ordered position class.
-  # Stored as a list-column of row-wise matrices so that downstream helpers
-  # (format_quali_prob_table(), format_results_prob_table()) can call
-  # as.data.frame(predictions$.probs) to get a wide probability data frame.
+  # Stored as a matrix wrapped in I() (one row per driver, one column per
+  # ordered position level) so that downstream helpers
+  # (format_quali_prob_table()) can call as.data.frame(predictions$.probs)
+  # to get a wide probability data frame.
   pred_probs <- stats::predict(model_obj, new_data, type = "prob")
   probs_matrix <- as.matrix(pred_probs)
 
@@ -1079,7 +1080,8 @@ predict_position_class <- function(
 
   pred_class <- stats::predict(model_obj, new_data, type = "class")
   # Probability predictions: one column per ordered position class.
-  # Stored as a list-column of row-wise matrices so that downstream helpers
+  # Stored as a matrix wrapped in I() (one row per driver, one column per
+  # ordered position level) so that downstream helpers
   # (format_results_prob_table()) can call as.data.frame(predictions$.probs)
   # to get a wide probability data frame.
   pred_probs <- stats::predict(model_obj, new_data, type = "prob")
