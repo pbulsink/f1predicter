@@ -32,7 +32,7 @@ test_that("get_schedule() returns a tibble with schedule data and data is as exp
 test_that("load_all_data() returns a list with expected components", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
 
-  if(!dir.exists(getOption('f1predicter.cache'))){
+  if (!dir.exists(getOption('f1predicter.cache'))) {
     skip("No cached data")
   }
   result <- load_all_data()
@@ -169,8 +169,9 @@ test_that("get_weekend_data() reads cached weekend results without fetching new 
 
   expect_s3_class(result$results, "data.frame")
   expect_identical(result$results$driver_id, "driver_a")
-  expect_true(is.na(result$rgrid))
-  expect_true(is.na(result$sprint_results))
-  expect_true(is.na(result$pitstops))
-  expect_true(is.na(result$laps))
+  expect_null(result$rgrid)
+  expect_null(result$sprint_results)
+  expect_null(result$pitstops)
+  expect_null(result$laps)
+  expect_null(result$quali)
 })
