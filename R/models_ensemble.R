@@ -520,12 +520,18 @@ train_ordinal_ensemble <- function(
         "{.arg model_timing} must be provided when {.arg save_model = TRUE}."
       )
     }
+    # Model type is inferred from outcome_var: any variable containing "quali"
+    # (e.g., "quali_position") maps to the qualifying model type; all other
+    # ordinal outcomes (e.g., "position") are race results. This mirrors the
+    # convention used in save_models() and construct_model_path().
     model_type <- if (grepl("quali", outcome_var, fixed = TRUE)) {
       "quali"
     } else {
       "results"
     }
-    # Use a name that is consistent with the key used in the full models list
+    # The save name must match the key used in the full models list assembled
+    # by train_quali_models() / train_results_models() so that load_models()
+    # and the predict_* helpers can locate the element by name after loading.
     save_name <- if (model_type == "quali") "quali_pos_class" else "pos_class"
     model_list_to_save <- stats::setNames(list(final_ensemble), save_name)
     butchered_list <- butcher_model_list(model_list_to_save)

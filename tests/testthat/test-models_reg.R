@@ -179,7 +179,10 @@ test_that("train_ordinal_ensemble() returns a model_stack", {
       save_model = FALSE
     ),
     error = function(e) {
-      if (grepl("one candidate member", conditionMessage(e), fixed = TRUE)) {
+      # stacks >= 1.0 errors when fewer than 2 candidates remain after
+      # add_candidates() failures. The message mentions "one candidate member"
+      # or "only.*candidate" depending on the stacks version.
+      if (grepl("candidate member", conditionMessage(e), fixed = TRUE)) {
         skip("ordinalNet OOF predictions incompatible with stacks in this environment")
       }
       stop(e)
