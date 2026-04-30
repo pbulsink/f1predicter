@@ -66,8 +66,10 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
       position = as.numeric(.data$position)
     )
 
-  target_driver <- as.character(historical_data$driver_id[[1]])
-  target_constructor <- as.character(historical_data$constructor_id[[1]])
+  driver_seed <- historical_data |>
+    dplyr::slice(1)
+  target_driver <- as.character(driver_seed$driver_id)
+  target_constructor <- as.character(driver_seed$constructor_id)
   historical_data <- historical_data |>
     dplyr::mutate(
       driver_failure_avg = dplyr::if_else(

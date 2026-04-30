@@ -32,7 +32,7 @@ test_that("get_schedule() returns a tibble with schedule data and data is as exp
 test_that("load_all_data() returns a list with expected components", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
 
-  if (!dir.exists(getOption('f1predicter.cache'))) {
+  if (!dir.exists(getOption("f1predicter.cache"))) {
     skip("No cached data")
   }
   result <- load_all_data()
