@@ -296,15 +296,22 @@ generate_new_data <- function(
   cli::cli_inform("Checking for mid-weekend data")
 
   # If we're not within a few days before the race don't bother checking for data
-  if (use_live_data && Sys.Date() > (as.Date(schedule[schedule$season == season & schedule$round == round, ]$date) - 3)) {
-      laps <- tryCatch(
-        get_laps(season = season, round = round),
-        error = function(e) NULL
-      )
-      quali <- tryCatch(
-        f1dataR::load_quali(season = season, round = round),
-        error = function(e) NULL
-      )
+  if (
+    use_live_data &&
+      Sys.Date() >
+        (as.Date(
+          schedule[schedule$season == season & schedule$round == round, ]$date
+        ) -
+          3)
+  ) {
+    laps <- tryCatch(
+      get_laps(season = season, round = round),
+      error = function(e) NULL
+    )
+    quali <- tryCatch(
+      f1dataR::load_quali(season = season, round = round),
+      error = function(e) NULL
+    )
   } else {
     laps <- NULL
     quali <- NULL

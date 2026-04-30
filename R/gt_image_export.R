@@ -27,14 +27,15 @@ save_gt_as_png_ragg <- function(
   dpi = 150,
   padding = 20
 ) {
-
   now <- Sys.time()
   tryCatch(
     gt::gtsave(gt_table, filename),
-    error = function(e) cli::cli_alert_danger("Couldn't save file with `gtsave`.")
+    error = function(e) {
+      cli::cli_alert_danger("Couldn't save file with `gtsave`.")
+    }
   )
 
-  if(file.exists(filename) && file.info(filename)$mtime >= now) {
+  if (file.exists(filename) && file.info(filename)$mtime >= now) {
     return(invisible(filename))
   }
   if (!requireNamespace("ragg", quietly = TRUE)) {

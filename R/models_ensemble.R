@@ -281,7 +281,11 @@ train_stacked_model <- function(
 #'   `tibble::tibble()` for engines with no tunable parameters (e.g., `"polr"`).
 #' @param save_model A logical value. If `TRUE` (default), the trained ensemble
 #'   model is automatically butchered and saved to the path specified in
-#'   `options('f1predicter.models')`.
+#'   `options('f1predicter.models')`. Requires `model_timing` to be provided.
+#' @param model_timing A character string indicating when during the race weekend
+#'   the model is trained. Required when `save_model = TRUE`. For qualifying
+#'   models one of `"early"` or `"late"`; for results models one of `"early"`,
+#'   `"late"`, or `"after_quali"`.
 #' @return A fitted `model_stack` object, ready for ordinal classification
 #'   prediction via `stats::predict(model, new_data, type = "class")` or
 #'   `stats::predict(model, new_data, type = "prob")`.
@@ -301,7 +305,8 @@ train_stacked_model <- function(
 #' #   data_folds  = my_data_folds,
 #' #   predictor_vars = my_predictor_vars,
 #' #   hyperparams = hyperparams,
-#' #   save_model  = FALSE
+#' #   save_model  = TRUE,
+#' #   model_timing = "early"
 #' # )
 #' # stats::predict(ordinal_ensemble, new_data = my_test_data, type = "class")
 #' }
@@ -313,7 +318,8 @@ train_ordinal_ensemble <- function(
   data_folds,
   predictor_vars,
   hyperparams,
-  save_model = TRUE
+  save_model = TRUE,
+  model_timing = NULL
 ) {
   if (missing(hyperparams)) {
     cli::cli_abort("{.arg hyperparams} must be provided.")
@@ -472,6 +478,69 @@ train_ordinal_ensemble <- function(
   cli::cli_alert_success(
     "Ordinal ensemble '{model_name}' trained successfully!"
   )
+
+  # Evaluate on the held-out test split when data_split is provided.
+  # This mirrors the test-set evaluation that last_fit() provides for single
+  # models, giving the user a realistic view of out-of-sample performance.
+  if (!missing(data_split) && !is.null(data_split)) {
+    cli::cli_inform("Evaluating ordinal ensemble on held-out test data...")
+    test_data <- rsample::testing(data_split)
+    test_preds <- stats::predict(
+      final_ensemble,
+      new_data = test_data,
+      type = "class"
+    )
+    test_probs <- stats::predict(
+      final_ensemble,
+      new_data = test_data,
+      type = "prob"
+    )
+    test_results <- dplyr::bind_cols(
+      test_data[outcome_var],
+      test_preds,
+      test_probs
+    )
+    test_metrics <- metrics_ordinal(
+      test_results,
+      truth = !!rlang::sym(outcome_var),
+      estimate = !!rlang::sym(".pred_class"),
+      dplyr::starts_with(".pred_") & !dplyr::matches("^[.]pred_class$")
+    )
+    cli::cli_inform("Test-set metrics:")
+    print(test_metrics)
+  }
+
+  # Butcher and save the ensemble when requested.
+  # This mirrors the save logic in save_models() / butcher_model_list() used by
+  # the wrapper functions (model_quali_early(), model_results_early(), etc.),
+  # allowing train_ordinal_ensemble() to also be used as a standalone call.
+  if (save_model) {
+    if (is.null(model_timing)) {
+      cli::cli_abort(
+        "{.arg model_timing} must be provided when {.arg save_model = TRUE}."
+      )
+    }
+    model_type <- if (grepl("quali", outcome_var, fixed = TRUE)) {
+      "quali"
+    } else {
+      "results"
+    }
+    # Use a name that is consistent with the key used in the full models list
+    save_name <- if (model_type == "quali") "quali_pos_class" else "pos_class"
+    model_list_to_save <- stats::setNames(list(final_ensemble), save_name)
+    butchered_list <- butcher_model_list(model_list_to_save)
+
+    file_path <- construct_model_path(
+      model_type = model_type,
+      model_timing = model_timing,
+      engine = "ensemble"
+    )
+    dir.create(dirname(file_path), showWarnings = FALSE, recursive = TRUE)
+    saveRDS(butchered_list, file = file_path)
+    cli::cli_inform(
+      "Ordinal ensemble successfully butchered and saved to {.path {file_path}}."
+    )
+  }
 
   return(final_ensemble)
 }

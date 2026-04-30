@@ -389,8 +389,14 @@ summarize_practice_laps <- function(processed_laps) {
       practice_avg_rank = suppressWarnings(mean(.data$rank, na.rm = TRUE)),
       practice_best_rank = suppressWarnings(min(.data$rank, na.rm = TRUE)),
       practice_num_laps = suppressWarnings(sum(.data$num_laps, na.rm = TRUE)),
-      practice_avg_gap = suppressWarnings(mean(.data$gap_to_best, na.rm = TRUE)),
-      practice_best_gap = suppressWarnings(min(.data$gap_to_best, na.rm = TRUE)),
+      practice_avg_gap = suppressWarnings(mean(
+        .data$gap_to_best,
+        na.rm = TRUE
+      )),
+      practice_best_gap = suppressWarnings(min(
+        .data$gap_to_best,
+        na.rm = TRUE
+      )),
       practice_optimal_rank = suppressWarnings(mean(
         .data$optimal_rank,
         na.rm = TRUE
@@ -489,8 +495,12 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
     # Calculate each driver's time as a percentage of the session's fastest time.
     dplyr::group_by(.data$season, .data$round) %>%
     dplyr::mutate(
-      q1_perc = suppressWarnings(.data$q1_sec / min(.data$q1_sec, na.rm = TRUE)),
-      q2_perc = suppressWarnings(.data$q2_sec / min(.data$q2_sec, na.rm = TRUE)),
+      q1_perc = suppressWarnings(
+        .data$q1_sec / min(.data$q1_sec, na.rm = TRUE)
+      ),
+      q2_perc = suppressWarnings(
+        .data$q2_sec / min(.data$q2_sec, na.rm = TRUE)
+      ),
       q3_perc = suppressWarnings(.data$q3_sec / min(.data$q3_sec, na.rm = TRUE))
     ) |>
     dplyr::mutate(
@@ -509,12 +519,12 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
         !is.na(.data$q2_sec) ~ .data$q2gap,
         !is.na(.data$q1_sec) ~ .data$q1gap,
         TRUE ~ max(q1gap, na.rm = TRUE) + 0.1
-      # ),
-      # qgap = dplyr::if_else(
-      #   .data$qgap > 5,
-      #   max(.data$qgap[.data$qgap < 5], na.rm = TRUE) + 0.1,
-      #   .data$qgap
-       )
+        # ),
+        # qgap = dplyr::if_else(
+        #   .data$qgap > 5,
+        #   max(.data$qgap[.data$qgap < 5], na.rm = TRUE) + 0.1,
+        #   .data$qgap
+      )
     ) %>%
     dplyr::mutate(
       qgap = tidyr::replace_na(.data$qgap, max(.data$qgap, na.rm = TRUE) + 0.1)
@@ -647,7 +657,10 @@ create_constructor_features <- function(
       constructor_best_grid = min(.data$grid, na.rm = TRUE),
       constructor_best_finish = min(.data$position, na.rm = TRUE),
       constructor_failure_race = mean(.data$constructor_failure, na.rm = TRUE),
-      constructor_pit_duration_perc = mean(.data$pit_duration_perc, na.rm = TRUE),
+      constructor_pit_duration_perc = mean(
+        .data$pit_duration_perc,
+        na.rm = TRUE
+      ),
       constructor_pit_num_perc = mean(.data$pit_num_perc)
     ) %>%
     dplyr::mutate(
@@ -734,7 +747,10 @@ create_circuit_features <- function(results, params = get_processing_params()) {
     dplyr::group_by(.data$round, .data$season, .data$circuit_id) %>%
     dplyr::summarise(
       driver_failure_circuit = mean(.data$driver_failure, na.rm = TRUE),
-      constructor_failure_circuit = mean(.data$constructor_failure, na.rm = TRUE),
+      constructor_failure_circuit = mean(
+        .data$constructor_failure,
+        na.rm = TRUE
+      ),
       grid_pos_corr = stats::cor(.data$grid, .data$position),
       .groups = "drop"
     )
@@ -949,8 +965,14 @@ combine_and_finalize_features <- function(
         .data$pit_num_perc,
         0
       ),
-      q_min_perc = tidyr::replace_na(.data$q_min_perc, mean(.data$q_min_perc, na.rm = TRUE)),
-      q_avg_perc = tidyr::replace_na(.data$q_avg_perc, mean(.data$q_avg_perc, na.rm = TRUE))
+      q_min_perc = tidyr::replace_na(
+        .data$q_min_perc,
+        mean(.data$q_min_perc, na.rm = TRUE)
+      ),
+      q_avg_perc = tidyr::replace_na(
+        .data$q_avg_perc,
+        mean(.data$q_avg_perc, na.rm = TRUE)
+      )
     ) |>
     dplyr::ungroup() |>
     dplyr::mutate(

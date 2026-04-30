@@ -12,7 +12,8 @@ train_ordinal_ensemble(
   data_folds,
   predictor_vars,
   hyperparams,
-  save_model = TRUE
+  save_model = TRUE,
+  model_timing = NULL
 )
 }
 \arguments{
@@ -36,7 +37,12 @@ value is a tibble of optimal hyperparameters for that engine. Use an empty
 
 \item{save_model}{A logical value. If `TRUE` (default), the trained ensemble
 model is automatically butchered and saved to the path specified in
-`options('f1predicter.models')`.}
+`options('f1predicter.models')`. Requires `model_timing` to be provided.}
+
+\item{model_timing}{A character string indicating when during the race weekend
+the model is trained. Required when `save_model = TRUE`. For qualifying
+models one of `"early"` or `"late"`; for results models one of `"early"`,
+`"late"`, or `"after_quali"`.}
 }
 \value{
 A fitted `model_stack` object, ready for ordinal classification
@@ -93,7 +99,8 @@ The outcome variable must be an **ordered factor** in `train_data`.
 #   data_folds  = my_data_folds,
 #   predictor_vars = my_predictor_vars,
 #   hyperparams = hyperparams,
-#   save_model  = FALSE
+#   save_model  = TRUE,
+#   model_timing = "early"
 # )
 # stats::predict(ordinal_ensemble, new_data = my_test_data, type = "class")
 }
