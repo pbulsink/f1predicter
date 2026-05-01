@@ -50,7 +50,7 @@ test_that("get_season_data() errors on invalid season", {
 
 test_that("get_weekend_data() returns data for valid race", {
   withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
-  if(!dir.exists(getOption('f1predicter.cache'))){
+  if (!dir.exists(getOption('f1predicter.cache'))) {
     skip("No cached data")
   }
   result <- get_weekend_data(2023, 1)
@@ -124,6 +124,284 @@ test_that("clean_data() respects custom params", {
   )
   result <- clean_data(params = custom_params)
   expect_s3_class(result, "tbl_df")
+})
+
+test_that("process_results_data() derives joined and rolling race features", {
+  base_results <- cleaned_data |>
+    dplyr::filter(.data$season == 2024, .data$round == 1) |>
+    dplyr::slice_head(n = 5)
+
+  raw_input <- list(
+    results = base_results |>
+      dplyr::transmute(
+        driver_id = .data$driver_id,
+        constructor_id = c("tyrrell", as.character(.data$constructor_id[-1])),
+        position = .data$position,
+        grid = c(0, .data$grid[-1]),
+        fastest_rank = .data$fastest_rank,
+        time_sec = .data$fastest_time,
+        points = .data$points,
+        status = .data$status,
+        season = .data$season,
+        round = .data$round
+      ),
+    rgrid = base_results |>
+      dplyr::transmute(
+        position = .data$quali_position,
+        quali_results = .data$driver_id,
+        season = .data$season,
+        round = .data$round
+      )
+  )
+
+  result <- process_results_data(raw_input)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), nrow(base_results))
+  expect_equal(result$constructor_id[[1]], "mercedes")
+  expect_equal(result$grid[[1]], nrow(base_results))
+  expect_true(all(result$points_after >= result$points_before))
+  expect_false(any(is.na(result$quali_position)))
+})
+
+test_that("process_lap_times() and summarize_practice_laps() rank practice sessions", {
+  base_results <- cleaned_data |>
+    dplyr::filter(.data$season == 2024, .data$round == 1) |>
+    dplyr::slice_head(n = 2)
+
+  laps <- tibble::tibble(
+    driver_id = c(
+      base_results$driver_id[[1]],
+      base_results$driver_id[[1]],
+      base_results$driver_id[[2]],
+      base_results$driver_id[[1]],
+      base_results$driver_id[[2]],
+      base_results$driver_id[[1]]
+    ),
+    season = 2024L,
+    round = 1L,
+    session_type = c("FP1", "FP1", "FP1", "FP2", "FP2", "Q"),
+    deleted = c(FALSE, TRUE, FALSE, FALSE, FALSE, FALSE),
+    lap_time = c(90, 91, 91, 89, 90, 88),
+    sector1time = c(30, 31, 30.5, 29.5, 30, 29),
+    sector2time = c(30, 30, 30.5, 29.5, 30, 29),
+    sector3time = c(30, 30, NA, 30, 30, 30)
+  )
+
+  processed_laps <- process_lap_times(laps)
+  practices <- summarize_practice_laps(processed_laps)
+
+  expect_s3_class(processed_laps, "data.frame")
+  expect_true(all(processed_laps$session_type %in% c("FP1", "FP2", "Q")))
+  expect_true(all(processed_laps$num_laps >= 1))
+  expect_false(any(is.na(processed_laps$rank)))
+  expect_false(any(is.na(processed_laps$optimal_rank)))
+
+  expect_s3_class(practices, "data.frame")
+  expect_equal(nrow(practices), 2)
+  expect_true(all(practices$practice_num_laps >= 2))
+  expect_true(all(practices$practice_best_rank <= practices$practice_avg_rank))
+})
+
+test_that("process_quali_times() and process_pit_stops() compute fallback metrics", {
+  quali_input <- cleaned_data |>
+    dplyr::filter(.data$season == 2024, .data$round %in% c(1, 2)) |>
+    dplyr::filter(.data$driver_id %in% unique(.data$driver_id)[1:2]) |>
+    dplyr::select(
+      "driver_id",
+      "q1_sec",
+      "q2_sec",
+      "q3_sec",
+      "season",
+      "round"
+    ) |>
+    dplyr::mutate(
+      q2_sec = dplyr::if_else(dplyr::row_number() == 1, NA_real_, .data$q2_sec),
+      q3_sec = dplyr::if_else(dplyr::row_number() == 1, NA_real_, .data$q3_sec)
+    )
+
+  params <- get_processing_params()
+  quali_result <- process_quali_times(quali_input, params = params)
+  first_driver_id <- quali_result$driver_id[[1]]
+
+  first_driver <- quali_result |>
+    dplyr::filter(.data$driver_id == first_driver_id) |>
+    dplyr::arrange(.data$season, .data$round)
+
+  pit_input <- tibble::tibble(
+    driver_id = c("driver_a", "driver_a", "driver_b"),
+    stop = c(1, 2, 1),
+    duration = c(24, 26, 25),
+    season = 2024L,
+    round = 1L
+  )
+  pit_result <- process_pit_stops(pit_input, params = params)
+
+  expect_false(any(is.na(quali_result$q_min_perc)))
+  expect_false(any(is.na(quali_result$qgap)))
+  expect_false(any(is.na(quali_result$q_avg_perc)))
+  expect_equal(first_driver$driver_avg_qgap[[1]], params$qgap)
+
+  expect_s3_class(pit_result, "data.frame")
+  expect_equal(nrow(pit_result), 2)
+  expect_true(all(pit_result$pit_duration_perc >= 1))
+  expect_true(pit_result$pit_num_perc[pit_result$driver_id == "driver_a"] > 1)
+})
+
+test_that("constructor, circuit, and final feature builders preserve modeled columns", {
+  base_results <- cleaned_data |>
+    dplyr::filter(.data$season == 2024, .data$round %in% c(1, 2))
+
+  pit_features <- base_results |>
+    dplyr::select(
+      "driver_id",
+      "season",
+      "round",
+      "pit_duration_perc",
+      "pit_num_perc"
+    )
+
+  constructor_results_input <- base_results |>
+    dplyr::select(-dplyr::any_of(c("pit_duration_perc", "pit_num_perc")))
+
+  constructor_features <- create_constructor_features(
+    constructor_results_input,
+    pit_features
+  )
+  circuit_features <- create_circuit_features(base_results)
+
+  qualis <- base_results |>
+    dplyr::select(
+      "driver_id",
+      "season",
+      "round",
+      "q_min_perc",
+      "q_avg_perc",
+      "driver_avg_qgap"
+    ) |>
+    dplyr::mutate(
+      q_min_perc = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_real_,
+        .data$q_min_perc
+      ),
+      q_avg_perc = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_real_,
+        .data$q_avg_perc
+      ),
+      driver_avg_qgap = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_real_,
+        .data$driver_avg_qgap
+      )
+    )
+
+  practices <- base_results |>
+    dplyr::select(
+      "driver_id",
+      "season",
+      "round",
+      "practice_avg_rank",
+      "practice_best_rank",
+      "practice_num_laps",
+      "practice_avg_gap",
+      "practice_best_gap",
+      "practice_optimal_rank"
+    ) |>
+    dplyr::mutate(
+      practice_best_gap = dplyr::if_else(
+        dplyr::row_number() == 1,
+        Inf,
+        .data$practice_best_gap
+      ),
+      practice_avg_gap = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_real_,
+        .data$practice_avg_gap
+      )
+    )
+
+  pitstops <- pit_features |>
+    dplyr::mutate(
+      pit_duration_perc = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_real_,
+        .data$pit_duration_perc
+      )
+    )
+
+  results <- base_results |>
+    dplyr::select(
+      "driver_id",
+      "constructor_id",
+      "position",
+      "grid",
+      "quali_position",
+      "pos_change",
+      "weighted_passes",
+      "pos_change_points",
+      "points",
+      "status",
+      "points_before",
+      "points_after",
+      "driver_experience",
+      "season",
+      "round",
+      "driver_failure",
+      "constructor_failure",
+      "finished"
+    ) |>
+    dplyr::mutate(
+      quali_position = dplyr::if_else(
+        dplyr::row_number() == 1,
+        NA_integer_,
+        .data$quali_position
+      )
+    )
+
+  sched <- schedule |>
+    dplyr::filter(.data$season == "2024", .data$round %in% c("1", "2"))
+
+  final_data <- combine_and_finalize_features(
+    results = results,
+    qualis = qualis,
+    practices = practices,
+    pitstops = pitstops,
+    constructor_results = constructor_features,
+    schedule = sched
+  )
+
+  expect_s3_class(constructor_features, "data.frame")
+  expect_false(any(is.na(constructor_features$constructor_grid_avg)))
+  expect_s3_class(circuit_features, "data.frame")
+  expect_false(any(is.na(circuit_features$grid_pos_corr_avg)))
+
+  expect_s3_class(final_data, "data.frame")
+  expect_true("round_id" %in% names(final_data))
+  expect_false(any(is.na(final_data$q_min_perc)))
+  expect_false(any(is.na(final_data$practice_best_gap)))
+  expect_false(any(is.na(final_data$pit_duration_perc)))
+  expect_equal(final_data$quali_position[[1]], final_data$grid[[1]])
+})
+
+test_that("clean_data() prefers cached processed data when requested", {
+  cache_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.cache = cache_dir))
+
+  cached <- tibble::tibble(
+    driver_id = "cached_driver",
+    season = 2026L,
+    round = 1L
+  )
+  saveRDS(cached, file.path(cache_dir, "processed_data.rds"))
+
+  result <- clean_data(
+    input = list(results = tibble::tibble(season = 2024L)),
+    cache_processed = TRUE
+  )
+
+  expect_identical(result, cached)
 })
 
 # ---- cache_to_rds / load_rds_or_csv round-trip ----

@@ -183,7 +183,9 @@ test_that("train_ordinal_ensemble() returns a model_stack", {
       # add_candidates() failures. The message mentions "one candidate member"
       # or "only.*candidate" depending on the stacks version.
       if (grepl("candidate member", conditionMessage(e), fixed = TRUE)) {
-        skip("ordinalNet OOF predictions incompatible with stacks in this environment")
+        skip(
+          "ordinalNet OOF predictions incompatible with stacks in this environment"
+        )
       }
       stop(e)
     }
@@ -272,4 +274,113 @@ test_that("predict_position_class() works with a last_fit ordinal model", {
   expect_true("likely_position_class" %in% names(preds))
   expect_true("driver_id" %in% names(preds))
   expect_type(preds$likely_position_class, "double")
+})
+
+test_that("report_model_metrics() formats only available metrics", {
+  fake_fit <- structure(list(), class = "last_fit")
+
+  local_mocked_bindings(
+    collect_metrics = function(...) {
+      tibble::tibble(
+        .metric = c("mn_log_loss", "roc_auc"),
+        .estimate = c(0.1234, 0.8765)
+      )
+    },
+    .package = "tune"
+  )
+
+  expect_message(
+    returned <- report_model_metrics(
+      fake_fit,
+      "Test model",
+      c(mn_log_loss = "log loss", roc_auc = "auc")
+    ),
+    "Test model with 0.1234 log loss, 0.8765 auc."
+  )
+  expect_identical(returned, fake_fit)
+})
+
+test_that("construct_model_path() validates model settings", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  expect_equal(
+    construct_model_path("results", "after_quali", "ranger"),
+    file.path(model_dir, "results_after_quali_ranger_models.rds")
+  )
+
+  withr::local_options(list(f1predicter.models = NULL))
+  expect_error(construct_model_path("quali", "early", "ranger"), "not set")
+
+  withr::local_options(list(f1predicter.models = model_dir))
+  expect_error(construct_model_path("invalid", "early", "ranger"), "model_type")
+  expect_error(
+    construct_model_path("quali", "after_quali", "ranger"),
+    "invalid"
+  )
+})
+
+test_that("save_models() and load_models() round-trip an inferred ensemble model", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  fake_model <- structure(list(payload = "model"), class = "model_stack")
+
+  local_mocked_bindings(
+    butcher_model_list = function(model_list) model_list,
+    .package = "f1predicter"
+  )
+
+  saved <- save_models(list(quali_pole = fake_model), model_timing = "early")
+  loaded <- load_models("quali", "early", engine = "ensemble")
+
+  expect_named(saved, "quali_pole")
+  expect_named(loaded, "quali_pole")
+  expect_identical(loaded$quali_pole$payload, "model")
+})
+
+test_that("save_models() rejects ambiguous or unknown model lists", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  fake_model <- structure(list(payload = 1), class = "model_stack")
+
+  expect_error(
+    save_models(
+      list(quali_pole = fake_model, win = fake_model),
+      model_timing = "early"
+    ),
+    "Ambiguous model list"
+  )
+  expect_error(
+    save_models(list(unknown = fake_model), model_timing = "early"),
+    "Could not automatically determine"
+  )
+})
+
+test_that("load_models() errors when the model file does not exist", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  expect_error(
+    load_models("quali", "late", engine = "ensemble"),
+    "Model file not found"
+  )
+})
+
+test_that("butcher_model_list() keeps original objects when butchering fails", {
+  original <- structure(list(payload = "keep-me"), class = "fake_model")
+
+  local_mocked_bindings(
+    butcher = function(...) {
+      stop("unsupported object")
+    },
+    .package = "butcher"
+  )
+
+  expect_warning(
+    result <- butcher_model_list(list(test_model = original)),
+    "Could not butcher model"
+  )
+  expect_identical(result$test_model, original)
 })
