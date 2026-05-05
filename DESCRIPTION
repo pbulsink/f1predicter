@@ -15,13 +15,14 @@ Imports:
     RSQLite,
     butcher,
     cli,
-    dials,
+    dials (>= 1.4.3),
     dplyr,
     f1dataR,
     glue,
     janitor,
     magrittr,
-    parsnip,
+    ordered,
+    parsnip (>= 1.5.0),
     purrr,
     RCurl,
     recipes,
@@ -33,10 +34,10 @@ Imports:
     tibble,
     tictoc,
     tidyr,
-    tune,
+    tune (>= 2.1.0),
     usethis,
     workflows,
-    yardstick
+    yardstick (>= 1.4.0)
 Suggests: 
     atrrr,
     future,
@@ -47,12 +48,15 @@ Suggests:
     knitr,
     magick,
     MASS,
+    ordinalForest,
+    ordinalNet,
     ragg,
     ranger,
     rmarkdown,
     stacks,
     withr,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    rpartScore
 VignetteBuilder: 
     knitr
 Encoding: UTF-8
