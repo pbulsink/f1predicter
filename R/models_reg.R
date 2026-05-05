@@ -166,7 +166,7 @@ train_quali_models <- function(
     "Scenario: {.val {ifelse(use_practice_data,'late','early')}}, Engine: {.val {engine}}"
   )
 
-  if (!requireNamespace('future', quietly = TRUE)) {
+  if (requireNamespace("future", quietly = TRUE)) {
     future::plan("multisession")
   }
 
@@ -883,7 +883,7 @@ train_results_models <- function(
     }
   }
 
-  if (!requireNamespace('future', quietly = TRUE)) {
+  if (requireNamespace("future", quietly = TRUE)) {
     future::plan("multisession")
   }
   # ---- Common Data Prep ----

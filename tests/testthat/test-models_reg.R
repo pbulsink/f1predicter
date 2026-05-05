@@ -300,6 +300,103 @@ test_that("report_model_metrics() formats only available metrics", {
   expect_identical(returned, fake_fit)
 })
 
+test_that("train_quali_models() errors when the requested engine is unavailable (#noissue)", {
+  base_require_namespace <- get("requireNamespace", envir = asNamespace("base"))
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = TRUE) {
+      if (identical(package, "glmnet")) {
+        return(FALSE)
+      }
+      base_require_namespace(package, quietly = quietly)
+    },
+    .package = "base"
+  )
+
+  expect_error(
+    train_quali_models(
+      data = tibble::tibble(season = 2024L, quali_position = 1L),
+      engine = "glmnet"
+    ),
+    'must be installed to use the "glmnet" engine'
+  )
+})
+
+test_that("train_results_models() errors when ensemble support is unavailable (#noissue)", {
+  base_require_namespace <- get("requireNamespace", envir = asNamespace("base"))
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = TRUE) {
+      if (identical(package, "stacks")) {
+        return(FALSE)
+      }
+      base_require_namespace(package, quietly = quietly)
+    },
+    .package = "base"
+  )
+
+  expect_error(
+    train_results_models(
+      data = tibble::tibble(
+        season = 2024L,
+        position = 1,
+        finished = 1,
+        round_id = "2024-1"
+      ),
+      scenario = "early",
+      engine = "ensemble"
+    ),
+    'must be installed to use the "ensemble" engine'
+  )
+})
+
+test_that("training helpers do not require future to be installed (#noissue)", {
+  base_require_namespace <- get("requireNamespace", envir = asNamespace("base"))
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = TRUE) {
+      if (identical(package, "future")) {
+        return(FALSE)
+      }
+      base_require_namespace(package, quietly = quietly)
+    },
+    .package = "base"
+  )
+  local_mocked_bindings(
+    prepare_and_split_data = function(...) {
+      stop("after future check")
+    },
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    plan = function(...) {
+      stop("future plan should not be called")
+    },
+    .package = "future"
+  )
+
+  expect_error(
+    train_quali_models(
+      data = tibble::tibble(season = 2024L, quali_position = 1L),
+      engine = "ranger"
+    ),
+    "after future check"
+  )
+  expect_error(
+    train_results_models(
+      data = tibble::tibble(
+        season = 2024L,
+        position = 1,
+        finished = 1,
+        round_id = "2024-1"
+      ),
+      scenario = "early",
+      engine = "ranger"
+    ),
+    "after future check"
+  )
+})
+
 test_that("construct_model_path() validates model settings", {
   model_dir <- withr::local_tempdir()
   withr::local_options(list(f1predicter.models = model_dir))

@@ -232,3 +232,51 @@ test_that("apply_grid_penalty() validates driver IDs and penalty values (#noissu
     "positive number"
   )
 })
+
+test_that("ensemble prediction helpers error clearly when stacks is unavailable (#noissue)", {
+  new_data <- tibble::tibble(driver_id = "driver_a", round = 1L, season = 2024L)
+  fake_stack <- structure(list(), class = "model_stack")
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = TRUE) {
+      if (identical(package, "stacks")) {
+        return(FALSE)
+      }
+      base::requireNamespace(package, quietly = quietly)
+    },
+    .package = "base"
+  )
+
+  expect_error(
+    predict_quali_pole(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_quali_pos(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_quali_pos_class(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_winner(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_podium(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_t10(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_position(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+  expect_error(
+    predict_position_class(new_data, fake_stack),
+    "must be installed to predict with an ensemble model"
+  )
+})
