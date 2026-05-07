@@ -170,13 +170,22 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
 })
 
 test_that("generate_next_race_data() forwards the next scheduled race (#noissue)", {
-  next_race <- schedule |>
+  schedule_dates <- schedule |>
     dplyr::mutate(date = as.Date(.data$date)) |>
-    dplyr::filter(.data$date >= Sys.Date()) |>
+    dplyr::filter(!is.na(.data$date))
+
+  if (nrow(schedule_dates) == 0) {
+    skip("schedule contains no parseable race dates")
+  }
+
+  reference_date <- min(schedule_dates$date)
+  next_race <- schedule_dates |>
+    dplyr::filter(.data$date >= reference_date) |>
     dplyr::arrange(.data$date) |>
     dplyr::slice(1)
 
   local_mocked_bindings(
+    Sys.Date = function() reference_date,
     generate_new_data = function(season, round, use_live_data = TRUE, ...) {
       list(season = season, round = round, use_live_data = use_live_data)
     },
