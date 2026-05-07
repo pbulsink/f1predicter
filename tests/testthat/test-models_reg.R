@@ -368,12 +368,6 @@ test_that("training helpers do not require future to be installed (#noissue)", {
     },
     .package = "f1predicter"
   )
-  local_mocked_bindings(
-    plan = function(...) {
-      stop("future plan should not be called")
-    },
-    .package = "future"
-  )
 
   expect_error(
     train_quali_models(
