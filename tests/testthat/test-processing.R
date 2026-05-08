@@ -442,6 +442,45 @@ test_that("load_rds_or_csv returns NULL when neither file exists", {
   expect_null(result)
 })
 
+test_that(".can_cache_event_data() waits until the day after the event (#9)", {
+  schedule <- tibble::tibble(
+    season = 2024,
+    round = 5,
+    date = as.Date("2024-05-12")
+  )
+
+  expect_false(.can_cache_event_data(2024, 5, schedule, today = "2024-05-12"))
+  expect_false(.can_cache_event_data(2024, 5, schedule, today = "2024-05-11"))
+  expect_true(.can_cache_event_data(2024, 5, schedule, today = "2024-05-13"))
+})
+
+test_that(".read_cache_with_legacy_fallback() skips SQLite writes when caching is disabled (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  legacy_results <- tibble::tibble(
+    season = 2024,
+    round = 5,
+    driver_id = "hamilton",
+    points = 25
+  )
+  legacy_path <- file.path(cache_dir, "2024_5_results.rds")
+  saveRDS(legacy_results, legacy_path)
+
+  loaded <- .read_cache_with_legacy_fallback(
+    table = "results",
+    con = con,
+    season = 2024,
+    round = 5,
+    rds_path = legacy_path,
+    cache_write = FALSE
+  )
+
+  expect_equal(loaded, legacy_results)
+  expect_null(read_cache_table("results", con, season = 2024, round = 5))
+})
+
 # ---- migrate_cache_to_rds() ----
 
 test_that("migrate_cache_to_rds() converts CSVs to RDS in a temp directory", {
@@ -485,4 +524,206 @@ test_that("migrate_cache_to_rds() skips files already migrated", {
 
   # Should not re-write anything
   expect_length(written, 0)
+})
+
+test_that("SQLite cache helpers round-trip filtered data (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  results <- tibble::tibble(
+    season = c(2024, 2024, 2025),
+    round = c(1, 2, 1),
+    driver_id = c("hamilton", "leclerc", "piastri"),
+    points = c(25, 18, 15)
+  )
+
+  write_cache_table(results, "results", con, overwrite = TRUE)
+
+  filtered <- read_cache_table("results", con, season = 2024, round = 2)
+  expect_equal(filtered$driver_id, "leclerc")
+  expect_equal(filtered$points, 18)
+
+  season_data <- read_cache_table("results", con, season = 2024)
+  expect_equal(sort(season_data$round), c(1, 2))
+})
+
+test_that("read_cache_table() returns NULL for missing SQLite tables or rows (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  expect_null(read_cache_table("results", con))
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "results",
+    con,
+    overwrite = TRUE
+  )
+
+  expect_null(read_cache_table("results", con, season = 2023))
+  expect_null(read_cache_table("results", con, season = 2024, round = 2))
+})
+
+test_that("write_cache_table() replaces matching season-round rows on append (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  initial_results <- tibble::tibble(
+    season = c(2024, 2024),
+    round = c(1, 2),
+    driver_id = c("hamilton", "leclerc"),
+    points = c(25, 18)
+  )
+  updated_round <- tibble::tibble(
+    season = 2024,
+    round = 2,
+    driver_id = "leclerc",
+    points = 19
+  )
+
+  write_cache_table(initial_results, "results", con, overwrite = TRUE)
+  write_cache_table(updated_round, "results", con, overwrite = FALSE)
+
+  all_results <- read_cache_table("results", con, season = 2024)
+  expect_equal(nrow(all_results), 2)
+  expect_equal(
+    all_results$points[all_results$round == 2],
+    19
+  )
+})
+
+test_that("migrate_cache_to_sqlite() migrates cached season files into SQLite (#9)", {
+  cache_dir <- withr::local_tempdir()
+  results <- tibble::tibble(
+    season = c(2022, 2022),
+    round = c(1, 2),
+    driver_id = c("hamilton", "russell"),
+    points = c(25, 18)
+  )
+  results_path <- file.path(cache_dir, "2022_season_results.rds")
+  saveRDS(results, results_path)
+
+  written <- migrate_cache_to_sqlite(cache = cache_dir, years = 2022)
+
+  expect_true("results" %in% written)
+
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  migrated <- read_cache_table("results", con, season = 2022)
+  expect_equal(migrated$driver_id, c("hamilton", "russell"))
+})
+
+test_that("load_all_data() reads SQLite cache tables (#9)", {
+  cache_dir <- withr::local_tempdir()
+  withr::local_options(f1predicter.cache = cache_dir)
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "results",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "sprint_results",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(
+      season = 2024,
+      round = 1,
+      driver_id = "hamilton",
+      deleted_reason = NA_character_
+    ),
+    "laps",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "pitstops",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, position = 1L),
+    "sgrid",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, position = 1L),
+    "rgrid",
+    con,
+    overwrite = TRUE
+  )
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "qualis",
+    con,
+    overwrite = TRUE
+  )
+
+  all_data <- load_all_data()
+
+  expect_named(
+    all_data,
+    c(
+      "results",
+      "sprint_results",
+      "laps",
+      "pitstops",
+      "sgrid",
+      "rgrid",
+      "qualis"
+    )
+  )
+  expect_equal(all_data$results$driver_id, "hamilton")
+  expect_equal(all_data$laps$deleted_reason, NA_character_)
+})
+
+test_that("clean_data() reads processed data from SQLite cache (#9)", {
+  cache_dir <- withr::local_tempdir()
+  withr::local_options(f1predicter.cache = cache_dir)
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  cached_processed <- tibble::tibble(
+    season = 2024,
+    round = 1,
+    driver_id = "hamilton",
+    finished = 1
+  )
+  write_cache_table(cached_processed, "processed_data", con, overwrite = TRUE)
+
+  loaded <- clean_data(
+    input = list(results = tibble::tibble(season = 2024)),
+    cache_processed = TRUE
+  )
+
+  expect_equal(loaded, cached_processed)
+})
+
+test_that(".sqlite_cache_populated() includes processed data tables (#9)", {
+  cache_dir <- withr::local_tempdir()
+  con <- open_cache_db(cache = cache_dir)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  expect_false(.sqlite_cache_populated(con))
+
+  write_cache_table(
+    tibble::tibble(season = 2024, round = 1, driver_id = "hamilton"),
+    "processed_data",
+    con,
+    overwrite = TRUE
+  )
+
+  expect_true(.sqlite_cache_populated(con))
 })

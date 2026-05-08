@@ -40,6 +40,274 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
   NULL
 }
 
+# Expected SQLite cache table names used by the package cache helpers.
+.raw_cache_tables <- c(
+  "results",
+  "qualis",
+  "pitstops",
+  "rgrid",
+  "sgrid",
+  "sprint_results",
+  "laps"
+)
+
+.cache_tables <- c(.raw_cache_tables, "processed_data")
+
+#' Build the SQLite Cache Path
+#'
+#' @param cache Cache directory path.
+#'
+#' @return Path to the SQLite cache file.
+#' @noRd
+cache_db_path <- function(
+  cache = getOption("f1predicter.cache", default = tempdir())
+) {
+  if (is.null(cache) || !nzchar(cache)) {
+    cache <- tempdir()
+  }
+
+  file.path(cache, "f1predicter.sqlite")
+}
+
+#' Open the SQLite Cache
+#'
+#' @param cache Cache directory path.
+#'
+#' @return A live SQLite connection. Callers are responsible for disconnecting it.
+#' @noRd
+open_cache_db <- function(
+  cache = getOption("f1predicter.cache", default = tempdir())
+) {
+  path <- cache_db_path(cache)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  DBI::dbConnect(RSQLite::SQLite(), path)
+}
+
+.has_cache_rows <- function(data) {
+  is.data.frame(data) && nrow(data) > 0
+}
+
+#' Check Whether Event Data Can Be Cached
+#'
+#' @param season Season year.
+#' @param round Round number.
+#' @param schedule Schedule data containing `season`, `round`, and `date`.
+#' @param today Date used for the cacheability check.
+#'
+#' @return `TRUE` when the scheduled race date has fully passed, otherwise
+#'   `FALSE`.
+#' @noRd
+.can_cache_event_data <- function(
+    season,
+    round,
+    schedule,
+    today = Sys.Date()
+) {
+  event_row <- schedule[schedule$season == season & schedule$round == round, ]
+  if (nrow(event_row) == 0 || is.na(event_row$date[[1]])) {
+    return(FALSE)
+  }
+
+  as.Date(today) > as.Date(event_row$date[[1]])
+}
+
+#' Coerce Cached Lap Data Types
+#'
+#' @param data Lap cache data.
+#'
+#' @return Lap cache data with `deleted_reason` stored as character when present.
+#' @noRd
+.coerce_laps_cache <- function(data) {
+  if (!.has_cache_rows(data) || !("deleted_reason" %in% names(data))) {
+    return(data)
+  }
+
+  data %>%
+    dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
+    ensure_tidy()
+}
+
+#' Create Cache Query Indexes
+#'
+#' @param con A live SQLite connection.
+#' @param table Cache table name.
+#'
+#' @return Invisibly returns `NULL`.
+#' @noRd
+.create_cache_index <- function(con, table) {
+  if (!DBI::dbExistsTable(con, table)) {
+    return(invisible(NULL))
+  }
+
+  fields <- DBI::dbListFields(con, table)
+  if (!all(c("season", "round") %in% fields)) {
+    return(invisible(NULL))
+  }
+
+  DBI::dbExecute(
+    con,
+    paste0(
+      'CREATE INDEX IF NOT EXISTS "',
+      table,
+      '_season_round_idx" ON "',
+      table,
+      '" ("season", "round")'
+    )
+  )
+
+  invisible(NULL)
+}
+
+.delete_cache_rows <- function(con, table, data) {
+  if (!DBI::dbExistsTable(con, table) || !.has_cache_rows(data)) {
+    return(invisible(NULL))
+  }
+
+  key_cols <- intersect(c("season", "round"), DBI::dbListFields(con, table))
+  if (length(key_cols) == 0) {
+    return(invisible(NULL))
+  }
+
+  key_data <- unique(data[, key_cols, drop = FALSE])
+  where <- paste(sprintf('"%s" = ?', key_cols), collapse = " AND ")
+  query <- paste0('DELETE FROM "', table, '" WHERE ', where)
+
+  for (i in seq_len(nrow(key_data))) {
+    DBI::dbExecute(
+      con,
+      query,
+      params = unname(as.list(key_data[i, , drop = TRUE]))
+    )
+  }
+
+  invisible(NULL)
+}
+
+#' Write a Cached SQLite Table
+#'
+#' @description
+#' Internal helper to write a cache table into the SQLite database. When
+#' `overwrite = TRUE`, the full table is replaced. When `overwrite = FALSE`,
+#' rows for matching `season`/`round` keys are deleted before appending the new
+#' rows.
+#'
+#' @param data A data frame to store.
+#' @param table Cache table name.
+#' @param con A live SQLite connection created by [open_cache_db()].
+#' @param overwrite Logical indicating whether to replace the full table.
+#'
+#' @return Invisibly returns `data`.
+#' @noRd
+write_cache_table <- function(data, table, con, overwrite = FALSE) {
+  if (is.null(data) || !.has_cache_rows(data)) {
+    return(invisible(data))
+  }
+
+  data <- ensure_tidy(data)
+
+  if (overwrite || !DBI::dbExistsTable(con, table)) {
+    DBI::dbWriteTable(con, table, data, overwrite = TRUE)
+  } else {
+    .delete_cache_rows(con, table, data)
+    DBI::dbAppendTable(con, table, data)
+  }
+
+  .create_cache_index(con, table)
+
+  invisible(data)
+}
+
+#' Read a Cached SQLite Table
+#'
+#' @description
+#' Internal helper to read one cache table from the SQLite database, optionally
+#' filtered to a single season and/or round.
+#'
+#' @param table Cache table name.
+#' @param con A live SQLite connection created by [open_cache_db()].
+#' @param season Optional season filter.
+#' @param round Optional round filter.
+#'
+#' @return A tibble when rows are found, otherwise `NULL`.
+#' @noRd
+read_cache_table <- function(table, con, season = NULL, round = NULL) {
+  if (!DBI::dbExistsTable(con, table)) {
+    return(NULL)
+  }
+
+  query <- paste0('SELECT * FROM "', table, '"')
+  clauses <- character(0)
+  params <- list()
+
+  if (!is.null(season)) {
+    clauses <- c(clauses, '"season" = ?')
+    params <- c(params, list(as.numeric(season)))
+  }
+  if (!is.null(round)) {
+    clauses <- c(clauses, '"round" = ?')
+    params <- c(params, list(as.numeric(round)))
+  }
+  if (length(clauses) > 0) {
+    query <- paste(query, "WHERE", paste(clauses, collapse = " AND "))
+  }
+
+  data <- if (length(params) == 0) {
+    DBI::dbGetQuery(con, query)
+  } else {
+    DBI::dbGetQuery(con, query, params = params)
+  }
+  if (nrow(data) == 0) {
+    return(NULL)
+  }
+
+  data %>%
+    tibble::as_tibble() %>%
+    ensure_tidy()
+}
+
+.read_cache_with_legacy_fallback <- function(
+  table,
+  con,
+  season = NULL,
+  round = NULL,
+  rds_path,
+  csv_path = NULL,
+  col_classes = NULL,
+  cache_write = TRUE
+) {
+  data <- read_cache_table(table, con, season = season, round = round)
+
+  if (is.null(data)) {
+    data <- load_rds_or_csv(
+      rds_path = rds_path,
+      csv_path = csv_path,
+      col_classes = col_classes
+    ) %>%
+      ensure_tidy()
+
+    if (isTRUE(cache_write)) {
+      write_cache_table(data, table, con, overwrite = FALSE)
+    }
+  }
+
+  data
+}
+
+#' Check Whether the SQLite Cache Has Data
+#'
+#' @param con A live SQLite connection.
+#' @param tables Cache table names to inspect.
+#'
+#' @return `TRUE` when any cache table exists, otherwise `FALSE`.
+#' @noRd
+.sqlite_cache_populated <- function(con, tables = .cache_tables) {
+  any(vapply(
+    tables,
+    function(table) DBI::dbExistsTable(con, table),
+    logical(1)
+  ))
+}
+
 #' Get Weekend's laps
 #'
 #' @description
@@ -222,6 +490,9 @@ get_grids <- function(season, round, session) {
 #' data <- get_weekend_data(season = 2024, round = 1)
 #' }
 get_weekend_data <- function(season, round, force = FALSE) {
+  con <- open_cache_db()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
   schedule <- f1predicter::schedule %>%
     dplyr::mutate(
       date = as.Date(.data$date),
@@ -239,85 +510,106 @@ get_weekend_data <- function(season, round, force = FALSE) {
     )
   }
 
-  rgrid <- NA
-  sgrid <- NA
-  results <- NA
-  sprint_results <- NA
-  pitstops <- NA
-  quali <- NA
-  laps <- NA
+  cache_writes_allowed <- .can_cache_event_data(
+    season = season,
+    round = round,
+    schedule = schedule
+  )
+
+  if (!cache_writes_allowed) {
+    cli::cli_inform(
+      "Skipping cache writes for {season} round {round} until the day after the scheduled race date."
+    )
+  }
+
+  rgrid <- NULL
+  sgrid <- NULL
+  results <- NULL
+  sprint_results <- NULL
+  pitstops <- NULL
+  quali <- NULL
+  laps <- NULL
 
   if (!force) {
     cache <- getOption("f1predicter.cache")
     pfx <- paste0(season, "_", round, "_")
 
-    rgrid <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "rgrid.rds")),
-      file.path(cache, paste0(pfx, "rgrid.csv"))
-    ) %>%
-      ensure_tidy()
-    sgrid <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "sgrid.rds")),
-      file.path(cache, paste0(pfx, "sgrid.csv"))
-    ) %>%
-      ensure_tidy()
-    results <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "results.rds")),
-      file.path(cache, paste0(pfx, "results.csv"))
-    ) %>%
-      ensure_tidy()
-    sprint_results <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "sprint_results.rds")),
-      # note: old files used the typo "sptrint_results"
-      file.path(cache, paste0(pfx, "sptrint_results.csv"))
-    ) %>%
-      ensure_tidy()
-    pitstops <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "pitstops.rds")),
-      file.path(cache, paste0(pfx, "pitstops.csv"))
-    ) %>%
-      ensure_tidy()
-    quali <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "quali.rds")),
-      file.path(cache, paste0(pfx, "quali.csv"))
-    ) %>%
-      ensure_tidy()
-    laps <- load_rds_or_csv(
-      file.path(cache, paste0(pfx, "laps.rds")),
-      file.path(cache, paste0(pfx, "laps.csv"))
-    ) %>%
-      ensure_tidy()
+    rgrid <- .read_cache_with_legacy_fallback(
+      table = "rgrid",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "rgrid.rds")),
+      csv_path = file.path(cache, paste0(pfx, "rgrid.csv")),
+      cache_write = cache_writes_allowed
+    )
+    sgrid <- .read_cache_with_legacy_fallback(
+      table = "sgrid",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "sgrid.rds")),
+      csv_path = file.path(cache, paste0(pfx, "sgrid.csv")),
+      cache_write = cache_writes_allowed
+    )
+    results <- .read_cache_with_legacy_fallback(
+      table = "results",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "results.rds")),
+      csv_path = file.path(cache, paste0(pfx, "results.csv")),
+      cache_write = cache_writes_allowed
+    )
+    sprint_results <- .read_cache_with_legacy_fallback(
+      table = "sprint_results",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "sprint_results.rds")),
+      csv_path = file.path(cache, paste0(pfx, "sptrint_results.csv")),
+      cache_write = cache_writes_allowed
+    )
+    pitstops <- .read_cache_with_legacy_fallback(
+      table = "pitstops",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "pitstops.rds")),
+      csv_path = file.path(cache, paste0(pfx, "pitstops.csv")),
+      cache_write = cache_writes_allowed
+    )
+    quali <- .read_cache_with_legacy_fallback(
+      table = "qualis",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "quali.rds")),
+      csv_path = file.path(cache, paste0(pfx, "quali.csv")),
+      cache_write = cache_writes_allowed
+    )
+    laps <- .read_cache_with_legacy_fallback(
+      table = "laps",
+      con = con,
+      season = season,
+      round = round,
+      rds_path = file.path(cache, paste0(pfx, "laps.rds")),
+      csv_path = file.path(cache, paste0(pfx, "laps.csv")),
+      cache_write = cache_writes_allowed
+    )
 
-    # Convert NULLs from the loader back to NA so downstream !is.na() checks work
-    if (is.null(rgrid)) {
-      rgrid <- NA
-    }
-    if (is.null(sgrid)) {
-      sgrid <- NA
-    }
-    if (is.null(results)) {
-      results <- NA
-    }
-    if (is.null(sprint_results)) {
-      sprint_results <- NA
-    }
-    if (is.null(pitstops)) {
-      pitstops <- NA
-    }
-    if (is.null(quali)) {
-      quali <- NA
-    }
-    if (is.null(laps)) {
-      laps <- NA
-    }
-
-    if (any(!is.na(c(rgrid, sgrid, results, pitstops, quali, laps)))) {
+    if (
+      any(vapply(
+        list(rgrid, sgrid, results, pitstops, quali, laps),
+        .has_cache_rows,
+        logical(1)
+      ))
+    ) {
       cat("Found some old data - won't reload what's already available.\n")
     }
   }
 
-  if (!any(!is.na(results))) {
-    results <- NULL
+  if (!.has_cache_rows(results)) {
     try(
       results <- f1dataR::load_results(season = season, round = round)
     )
@@ -341,18 +633,14 @@ get_weekend_data <- function(season, round, force = FALSE) {
           round = round
         ) %>%
         janitor::clean_names()
-      cache_to_rds(
-        results,
-        file.path(
-          getOption("f1predicter.cache"),
-          paste0(season, "_", round, "_results.rds")
-        )
-      )
+      if (cache_writes_allowed) {
+        write_cache_table(results, "results", con, overwrite = FALSE)
+      }
     }
   }
 
   if (season >= 2021) {
-    if (!any(!is.na(sprint_results))) {
+    if (!.has_cache_rows(sprint_results)) {
       if (
         !is.null(
           schedule[
@@ -371,13 +659,14 @@ get_weekend_data <- function(season, round, force = FALSE) {
               lap = as.numeric(.data$lap)
             ) %>%
             janitor::clean_names()
-          cache_to_rds(
-            sprint_results,
-            file.path(
-              getOption("f1predicter.cache"),
-              paste0(season, "_", round, "_sprint_results.rds")
+          if (cache_writes_allowed) {
+            write_cache_table(
+              sprint_results,
+              "sprint_results",
+              con,
+              overwrite = FALSE
             )
-          )
+          }
         }
       }
     }
@@ -386,7 +675,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
   }
 
   if (season >= 2011) {
-    if (!any(!is.na(pitstops))) {
+    if (!.has_cache_rows(pitstops)) {
       pitstops <- try(f1dataR::load_pitstops(season = season, round = round))
       if (!is.null(pitstops)) {
         if (length(pitstops) == 0) {
@@ -401,13 +690,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               round = round
             ) %>%
             janitor::clean_names()
-          cache_to_rds(
-            pitstops,
-            file.path(
-              getOption("f1predicter.cache"),
-              paste0(season, "_", round, "_pitstops.rds")
-            )
-          )
+          if (cache_writes_allowed) {
+            write_cache_table(pitstops, "pitstops", con, overwrite = FALSE)
+          }
         }
       }
     }
@@ -416,40 +701,32 @@ get_weekend_data <- function(season, round, force = FALSE) {
   }
 
   if (season >= 2003) {
-    if (!any(!is.na(rgrid))) {
+    if (!.has_cache_rows(rgrid)) {
       rgrid <- get_grids(season = season, round = round, session = "R")
       if (!is.null(rgrid)) {
         rgrid <- rgrid %>%
           dplyr::mutate(season = season, round = round) %>%
           dplyr::mutate(position = as.integer(.data$position)) %>%
           janitor::clean_names()
-        cache_to_rds(
-          rgrid,
-          file.path(
-            getOption("f1predicter.cache"),
-            paste0(season, "_", round, "_rgrid.rds")
-          )
-        )
+        if (cache_writes_allowed) {
+          write_cache_table(rgrid, "rgrid", con, overwrite = FALSE)
+        }
       }
     }
 
-    if (!any(!is.na(sgrid))) {
+    if (!.has_cache_rows(sgrid)) {
       sgrid <- get_grids(season = season, round = round, session = "S")
       if (!is.null(sgrid)) {
         sgrid <- sgrid %>%
           dplyr::mutate(season = season, round = round) %>%
           janitor::clean_names()
-        cache_to_rds(
-          sgrid,
-          file.path(
-            getOption("f1predicter.cache"),
-            paste0(season, "_", round, "_sgrid.rds")
-          )
-        )
+        if (cache_writes_allowed) {
+          write_cache_table(sgrid, "sgrid", con, overwrite = FALSE)
+        }
       }
     }
 
-    if (!any(!is.na(quali))) {
+    if (!.has_cache_rows(quali)) {
       try(quali <- f1dataR::load_quali(season = season, round = round))
       if (!is.null(quali)) {
         if (all(is.na(quali)) | length(quali) == 0) {
@@ -467,13 +744,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               q3_sec = expand_val(unlist(.data$q3_sec), dplyr::n())
             ) %>%
             janitor::clean_names()
-          cache_to_rds(
-            quali,
-            file.path(
-              getOption("f1predicter.cache"),
-              paste0(season, "_", round, "_quali.rds")
-            )
-          )
+          if (cache_writes_allowed) {
+            write_cache_table(quali, "qualis", con, overwrite = FALSE)
+          }
         }
       }
     }
@@ -484,7 +757,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
   }
 
   if (season >= 2018) {
-    if (!any(!is.na(laps))) {
+    if (!.has_cache_rows(laps)) {
       laps <- get_laps(season = season, round = round)
       laps <- add_drivers_to_laps(laps, season = season)
       xresults <- FALSE
@@ -540,19 +813,15 @@ get_weekend_data <- function(season, round, force = FALSE) {
         if (xresults) {
           results <- NULL
         }
-        cache_to_rds(
-          laps,
-          file.path(
-            getOption("f1predicter.cache"),
-            paste0(season, "_", round, "_laps.rds")
-          )
-        )
+        if (cache_writes_allowed) {
+          write_cache_table(laps, "laps", con, overwrite = FALSE)
+        }
       }
     }
   } else {
-    laps = NULL
+    laps <- NULL
   }
-  closeAllConnections()
+
   return(list(
     rgrid = rgrid,
     sgrid = sgrid,
@@ -676,77 +945,6 @@ get_season_data <- function(
     }
   }
 
-  if (!is.null(rgrid)) {
-    cache_to_rds(
-      janitor::clean_names(rgrid),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_rgrid.rds")
-      )
-    )
-  }
-
-  if (!is.null(sgrid)) {
-    cache_to_rds(
-      janitor::clean_names(sgrid),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_sgrid.rds")
-      )
-    )
-  }
-
-  if (!is.null(laps)) {
-    cache_to_rds(
-      janitor::clean_names(laps),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_laps.rds")
-      )
-    )
-  }
-
-  if (!is.null(sprint_results)) {
-    cache_to_rds(
-      janitor::clean_names(sprint_results),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_sprint_results.rds")
-      )
-    )
-  }
-
-  if (!is.null(results)) {
-    cache_to_rds(
-      janitor::clean_names(results),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_results.rds")
-      )
-    )
-  }
-
-  if (!is.null(pitstops)) {
-    cache_to_rds(
-      janitor::clean_names(pitstops),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_pitstops.rds")
-      )
-    )
-  }
-
-  if (!is.null(qualis)) {
-    cache_to_rds(
-      janitor::clean_names(qualis),
-      file.path(
-        getOption("f1predicter.cache"),
-        paste0(season, "_season_qualis.rds")
-      )
-    )
-  }
-
-  closeAllConnections()
   cat("Success\n")
 }
 
@@ -809,19 +1007,75 @@ migrate_cache_to_rds <- function(
   invisible(written)
 }
 
-
-#' Load All Data
+#' Migrate Legacy Cache Files to SQLite Format
 #'
 #' @description
-#' Loads all data previously saved to cache at options('f1predicter.cache') location
+#' One-time maintenance utility that converts existing season-level cache files
+#' (`.rds` preferred, `.csv` fallback) into the SQLite cache used by current
+#' versions of the package.
 #'
-#' @return a list of data.frames
-#' @export
-#' @examples
-#' \dontrun{
-#' all_data <- load_all_data()
-#' }
-load_all_data <- function() {
+#' @param cache Path to the cache directory. Defaults to
+#'   `getOption("f1predicter.cache")`.
+#' @param years Integer vector of season years to migrate. Defaults to
+#'   `1990:f1dataR::get_current_season()`.
+#'
+#' @return Invisibly returns a character vector of table names written during
+#'   this call.
+#' @noRd
+migrate_cache_to_sqlite <- function(
+  cache = getOption("f1predicter.cache"),
+  years = 1990:f1dataR::get_current_season()
+) {
+  written <- character(0)
+  con <- open_cache_db(cache = cache)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  for (y in years) {
+    for (type in .raw_cache_tables) {
+      rds_path <- file.path(cache, paste0(y, "_season_", type, ".rds"))
+      csv_path <- file.path(cache, paste0(y, "_season_", type, ".csv"))
+      dat <- load_rds_or_csv(rds_path = rds_path, csv_path = csv_path)
+
+      if (.has_cache_rows(dat)) {
+        source_path <- if (file.exists(rds_path)) rds_path else csv_path
+        write_cache_table(dat, type, con, overwrite = FALSE)
+        written <- c(written, type)
+        cli::cli_inform(
+          "Migrated {.file {source_path}} into {.file {cache_db_path(cache)}}"
+        )
+      }
+    }
+  }
+
+  processed_path <- file.path(cache, "processed_data.rds")
+  if (file.exists(processed_path)) {
+    processed_data <- tryCatch(
+      readRDS(processed_path),
+      error = function(e) NULL
+    )
+
+    if (.has_cache_rows(processed_data)) {
+      write_cache_table(processed_data, "processed_data", con, overwrite = TRUE)
+      written <- c(written, "processed_data")
+      cli::cli_inform(
+        "Migrated {.file {processed_path}} into {.file {cache_db_path(cache)}}"
+      )
+    }
+  }
+
+  written <- unique(written)
+  cli::cli_inform("Migration complete: {length(written)} table{?s} written.")
+  invisible(written)
+}
+
+
+#' Load All Data from Legacy Season Cache Files
+#'
+#' @param cache Cache directory path.
+#'
+#' @return A named list of cached data frames loaded from legacy season files.
+#' @noRd
+.load_all_data_from_files <- function(cache = getOption("f1predicter.cache")) {
   rgrid <- NULL
   sgrid <- NULL
   results <- NULL
@@ -829,8 +1083,6 @@ load_all_data <- function() {
   pitstops <- NULL
   laps <- NULL
   qualis <- NULL
-
-  cache <- getOption("f1predicter.cache")
 
   for (y in c(1990:f1dataR::get_current_season())) {
     cat("Reading", y, "data...\n")
@@ -886,15 +1138,12 @@ load_all_data <- function() {
         file.path(cache, paste0(y, "_season_laps.rds")),
         file.path(cache, paste0(y, "_season_laps.csv"))
       ) %>%
-        dplyr::mutate("deleted_reason" = as.character(.data$deleted_reason)) %>%
-        ensure_tidy()
+        .coerce_laps_cache()
       laps <- dplyr::bind_rows(laps, lp)
     }
-
-    closeAllConnections()
   }
 
-  return(list(
+  list(
     results = results,
     sprint_results = sprint_results,
     laps = laps,
@@ -902,7 +1151,57 @@ load_all_data <- function() {
     sgrid = sgrid,
     rgrid = rgrid,
     qualis = qualis
-  ))
+  )
+}
+
+#' Load All Data
+#'
+#' @description
+#' Loads all data previously saved to cache at options('f1predicter.cache') location
+#'
+#' @return a list of data.frames
+#' @export
+#' @examples
+#' \dontrun{
+#' all_data <- load_all_data()
+#' }
+load_all_data <- function() {
+  cache <- getOption("f1predicter.cache")
+  con <- open_cache_db(cache = cache)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  if (.sqlite_cache_populated(con)) {
+    cached_data <- list(
+      results = read_cache_table("results", con),
+      sprint_results = read_cache_table("sprint_results", con),
+      laps = read_cache_table("laps", con),
+      pitstops = read_cache_table("pitstops", con),
+      sgrid = read_cache_table("sgrid", con),
+      rgrid = read_cache_table("rgrid", con),
+      qualis = read_cache_table("qualis", con)
+    )
+
+    if (.has_cache_rows(cached_data$laps)) {
+      cached_data$laps <- cached_data$laps %>%
+        .coerce_laps_cache()
+    }
+
+    if (any(vapply(cached_data, is.null, logical(1)))) {
+      legacy_data <- .load_all_data_from_files(cache = cache)
+      missing_tables <- names(cached_data)[vapply(
+        cached_data,
+        is.null,
+        logical(1)
+      )]
+      for (table in missing_tables) {
+        cached_data[[table]] <- legacy_data[[table]]
+      }
+    }
+
+    return(cached_data)
+  }
+
+  .load_all_data_from_files(cache = cache)
 }
 
 #' Get Drivers from the Most Recent Race
@@ -918,11 +1217,18 @@ load_all_data <- function() {
 get_last_drivers <- function() {
   season <- f1dataR::get_current_season()
   cache <- getOption("f1predicter.cache")
-  res <- load_rds_or_csv(
-    file.path(cache, paste0(season, "_season_results.rds")),
-    file.path(cache, paste0(season, "_season_results.csv"))
-  ) %>%
-    ensure_tidy()
+  con <- open_cache_db(cache = cache)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+  res <- read_cache_table("results", con, season = season)
+
+  if (is.null(res)) {
+    res <- load_rds_or_csv(
+      file.path(cache, paste0(season, "_season_results.rds")),
+      file.path(cache, paste0(season, "_season_results.csv"))
+    ) %>%
+      ensure_tidy()
+  }
 
   if (is.null(res)) {
     stop("f1predictor::get_last_drivers: Error loading last drivers.")

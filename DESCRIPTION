@@ -11,6 +11,8 @@ BugReports: https://github.com/pbulsink/f1predicter/issues
 Depends: 
     R (>= 3.5)
 Imports:
+    DBI,
+    RSQLite,
     butcher,
     cli,
     dials (>= 1.4.3),

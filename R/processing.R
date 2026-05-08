@@ -998,13 +998,13 @@ combine_and_finalize_features <- function(
 #'   Modify individual elements to tune the pipeline without rewriting code, e.g.
 #'   `params <- get_processing_params(); params$fastest_pit <- 2.3`.
 #' @param cache_processed Logical. When `TRUE`, the cleaned data frame is saved
-#'   to the cache directory (see `options("f1predicter.cache")`) as
-#'   `"processed_data.rds"`. On subsequent calls with `cache_processed = TRUE`
-#'   the cached file is returned immediately **without** reprocessing, regardless
-#'   of the `params` or `input` arguments. Set to `FALSE` (default) to always
-#'   reprocess. If you change `params` or `input`, delete the cached file
-#'   (`"processed_data.rds"` in the cache directory) before calling with
-#'   `cache_processed = TRUE` again.
+#'   to the cache directory (see `options("f1predicter.cache")`) in the
+#'   `processed_data` table of `"f1predicter.sqlite"`. On subsequent calls with
+#'   `cache_processed = TRUE` the cached table is returned immediately
+#'   **without** reprocessing, regardless of the `params` or `input` arguments.
+#'   Set to `FALSE` (default) to always reprocess. Existing
+#'   `"processed_data.rds"` files are still read as a fallback for backward
+#'   compatibility.
 #' @return A single, cleaned data frame.
 #' @importFrom rlang .data
 #' @export
@@ -1018,9 +1018,20 @@ clean_data <- function(
     "processed_data.rds"
   )
 
-  if (isTRUE(cache_processed) && file.exists(cache_file)) {
-    cli::cli_inform("Loading processed data from cache: {.file {cache_file}}")
-    return(readRDS(cache_file))
+  if (isTRUE(cache_processed)) {
+    read_con <- open_cache_db()
+    on.exit(if (DBI::dbIsValid(read_con)) DBI::dbDisconnect(read_con), add = TRUE)
+
+    cached_processed <- read_cache_table("processed_data", read_con)
+    if (!is.null(cached_processed)) {
+      cli::cli_inform("Loading processed data from cache")
+      return(cached_processed)
+    }
+
+    if (file.exists(cache_file)) {
+      cli::cli_inform("Loading processed data from cache: {.file {cache_file}}")
+      return(readRDS(cache_file))
+    }
   }
 
   nseasons <- length(unique(input$results$season))
@@ -1052,8 +1063,13 @@ clean_data <- function(
   cli::cli_inform("Returning {nrow(final_data)} rows of data.")
 
   if (isTRUE(cache_processed)) {
-    cli::cli_inform("Saving processed data to cache: {.file {cache_file}}")
-    saveRDS(final_data, cache_file)
+    write_con <- open_cache_db()
+    on.exit(
+      if (DBI::dbIsValid(write_con)) DBI::dbDisconnect(write_con),
+      add = TRUE
+    )
+    cli::cli_inform("Saving processed data to cache")
+    write_cache_table(final_data, "processed_data", write_con, overwrite = TRUE)
   }
 
   return(final_data)
