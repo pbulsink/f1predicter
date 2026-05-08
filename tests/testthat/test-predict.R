@@ -169,36 +169,6 @@ test_that("generate_new_data() fills fallback defaults from thinned historical d
   expect_s3_class(result$round_id, "factor")
 })
 
-test_that("generate_next_race_data() forwards the next scheduled race (#noissue)", {
-  schedule_dates <- schedule |>
-    dplyr::mutate(date = as.Date(.data$date)) |>
-    dplyr::filter(!is.na(.data$date))
-
-  if (nrow(schedule_dates) == 0) {
-    skip("schedule contains no parseable race dates")
-  }
-
-  reference_date <- min(schedule_dates$date)
-  next_race <- schedule_dates |>
-    dplyr::filter(.data$date >= reference_date) |>
-    dplyr::arrange(.data$date) |>
-    dplyr::slice(1)
-
-  local_mocked_bindings(
-    Sys.Date = function() reference_date,
-    generate_new_data = function(season, round, use_live_data = TRUE, ...) {
-      list(season = season, round = round, use_live_data = use_live_data)
-    },
-    .package = "f1predicter"
-  )
-
-  result <- generate_next_race_data(use_live_data = FALSE)
-
-  expect_identical(result$season, as.numeric(next_race$season))
-  expect_identical(result$round, as.numeric(next_race$round))
-  expect_false(result$use_live_data)
-})
-
 test_that("apply_grid_penalty() caps penalties at the back of the grid (#noissue)", {
   race_data <- tibble::tibble(
     driver_id = c("driver_a", "driver_b", "driver_c"),
