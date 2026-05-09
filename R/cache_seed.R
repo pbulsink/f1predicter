@@ -52,14 +52,6 @@
   invisible(TRUE)
 }
 
-.pb_download <- function(...) {
-  utils::getFromNamespace("pb_download", "piggyback")(...)
-}
-
-.pb_upload <- function(...) {
-  utils::getFromNamespace("pb_upload", "piggyback")(...)
-}
-
 #' Seed Cache Data from a GitHub Release Asset
 #'
 #' @description
@@ -104,7 +96,7 @@ seed_cache_from_release <- function(
   download_path <- tempfile(fileext = ".sqlite")
   on.exit(unlink(download_path), add = TRUE)
 
-  .pb_download(
+  piggyback::pb_download(
     file = asset_name,
     repo = repo,
     tag = tag,
@@ -162,7 +154,7 @@ publish_cache_snapshot <- function(
   .validate_cache_snapshot(snapshot)
   .check_piggyback_installed()
 
-  upload <- .pb_upload(
+  upload <- piggyback::pb_upload(
     file = snapshot,
     repo = repo,
     tag = tag,
