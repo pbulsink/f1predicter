@@ -53,6 +53,7 @@ Suggests:
     ragg,
     ranger,
     rmarkdown,
+    piggyback,
     stacks,
     withr,
     testthat (>= 3.0.0),
