@@ -53,11 +53,11 @@
 }
 
 .pb_download <- function(...) {
-  getFromNamespace("pb_download", "piggyback")(...)
+  utils::getFromNamespace("pb_download", "piggyback")(...)
 }
 
 .pb_upload <- function(...) {
-  getFromNamespace("pb_upload", "piggyback")(...)
+  utils::getFromNamespace("pb_upload", "piggyback")(...)
 }
 
 #' Seed Cache Data from a GitHub Release Asset
