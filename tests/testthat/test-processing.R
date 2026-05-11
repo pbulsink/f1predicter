@@ -268,7 +268,14 @@ test_that("process_sprint_data() builds sprint features by driver and weekend (#
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 3)
   expect_true(all(
-    c("driver_id", "has_sprint", "sprint_era") %in% names(result)
+    c(
+      "driver_id",
+      "has_sprint",
+      "sprint_era",
+      "sprint_grid",
+      "sprint_finish_pos",
+      "sprint_points"
+    ) %in% names(result)
   ))
   expect_equal(
     unique(result$has_sprint[result$season == 2024L & result$round == 1L]),
