@@ -248,6 +248,42 @@ test_that("process_quali_times() and process_pit_stops() compute fallback metric
   expect_true(pit_result$pit_num_perc[pit_result$driver_id == "driver_a"] > 1)
 })
 
+test_that("process_sprint_data() builds sprint features by driver and weekend (#noissue)", {
+  sprint_results <- tibble::tibble(
+    driver_id = c("driver_a", "driver_b", "driver_a"),
+    season = c(2024L, 2024L, 2022L),
+    round = c(1L, 1L, 2L),
+    grid = c(2, 5, 3),
+    position = c(1, 4, 2),
+    points = c(8, 5, 7)
+  )
+  sched <- tibble::tibble(
+    season = c("2024", "2022"),
+    round = c("1", "2"),
+    sprint_date = as.Date(c("2024-03-01", NA))
+  )
+
+  result <- process_sprint_data(sprint_results, sched)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 3)
+  expect_true(all(
+    c("driver_id", "has_sprint", "sprint_era") %in% names(result)
+  ))
+  expect_equal(
+    unique(result$has_sprint[result$season == 2024L & result$round == 1L]),
+    "Yes"
+  )
+  expect_equal(
+    unique(result$has_sprint[result$season == 2022L & result$round == 2L]),
+    "No"
+  )
+  expect_equal(
+    unique(result$sprint_era[result$season == 2024L]),
+    "2023+"
+  )
+})
+
 test_that("constructor, circuit, and final feature builders preserve modeled columns", {
   base_results <- cleaned_data |>
     dplyr::filter(.data$season == 2024, .data$round %in% c(1, 2))
@@ -369,6 +405,16 @@ test_that("constructor, circuit, and final feature builders preserve modeled col
     practices = practices,
     pitstops = pitstops,
     constructor_results = constructor_features,
+    sprint_features = tibble::tibble(
+      season = c(2024L, 2024L),
+      round = c(1L, 2L),
+      driver_id = c(results$driver_id[[1]], results$driver_id[[2]]),
+      has_sprint = c("Yes", "No"),
+      sprint_era = c("2023+", "2023+"),
+      sprint_grid = c(NA_real_, 4),
+      sprint_finish_pos = c(NA_real_, 5),
+      sprint_points = c(NA_real_, 6)
+    ),
     schedule = sched
   )
 
@@ -382,6 +428,9 @@ test_that("constructor, circuit, and final feature builders preserve modeled col
   expect_false(any(is.na(final_data$q_min_perc)))
   expect_false(any(is.na(final_data$practice_best_gap)))
   expect_false(any(is.na(final_data$pit_duration_perc)))
+  expect_false(any(is.na(final_data$sprint_grid)))
+  expect_false(any(is.na(final_data$sprint_finish_pos)))
+  expect_false(any(is.na(final_data$sprint_points)))
   expect_equal(final_data$quali_position[[1]], final_data$grid[[1]])
 })
 

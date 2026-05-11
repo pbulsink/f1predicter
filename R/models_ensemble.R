@@ -102,8 +102,18 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
+  sprint_cols <- c("sprint_grid", "sprint_finish_pos", "sprint_points")
+  sprint_cols_exist <- sprint_cols[sprint_cols %in% names(train_data)]
+
   base_recipe <- recipes::recipe(formula, data = train_data) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors())
+
+  if (length(sprint_cols_exist) > 0) {
+    base_recipe <- base_recipe %>%
+      recipes::step_impute_mean(dplyr::all_of(sprint_cols_exist))
+  }
+
+  base_recipe <- base_recipe %>%
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(recipes::all_predictors())
 
