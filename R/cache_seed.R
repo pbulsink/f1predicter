@@ -42,16 +42,6 @@
   invisible(path)
 }
 
-.check_piggyback_installed <- function() {
-  if (!requireNamespace("piggyback", quietly = TRUE)) {
-    cli::cli_abort(
-      "Error in f1predicter::seed_cache_from_release(). Package {.pkg piggyback} is required. Install it with install.packages(\"piggyback\")."
-    )
-  }
-
-  invisible(TRUE)
-}
-
 #' Seed Cache Data from a GitHub Release Asset
 #'
 #' @description
@@ -82,6 +72,12 @@ seed_cache_from_release <- function(
   cache = getOption("f1predicter.cache", default = tempdir()),
   overwrite = FALSE
 ) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort(
+      "Error in f1predicter::seed_cache_from_release(). Package {.pkg piggyback} is required. Install it with install.packages(\"piggyback\")."
+    )
+  }
+
   destination <- cache_db_path(cache = cache)
   dir.create(dirname(destination), recursive = TRUE, showWarnings = FALSE)
 
@@ -90,8 +86,6 @@ seed_cache_from_release <- function(
       "Error in f1predicter::seed_cache_from_release(). Cache already exists at {.file {destination}}. Set {.code overwrite = TRUE} to replace it."
     )
   }
-
-  .check_piggyback_installed()
 
   download_path <- tempfile(fileext = ".sqlite")
   on.exit(unlink(download_path), add = TRUE)
@@ -144,6 +138,12 @@ publish_cache_snapshot <- function(
   cache = getOption("f1predicter.cache", default = tempdir()),
   overwrite = TRUE
 ) {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort(
+      "Error in f1predicter::publish_cache_snapshot(). Package {.pkg piggyback} is required. Install it with install.packages(\"piggyback\")."
+    )
+  }
+
   snapshot <- cache_db_path(cache = cache)
   if (!file.exists(snapshot)) {
     cli::cli_abort(
@@ -152,7 +152,6 @@ publish_cache_snapshot <- function(
   }
 
   .validate_cache_snapshot(snapshot)
-  .check_piggyback_installed()
 
   upload <- piggyback::pb_upload(
     file = snapshot,

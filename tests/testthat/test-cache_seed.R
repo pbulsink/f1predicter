@@ -33,9 +33,6 @@ test_that("seed_cache_from_release() downloads and validates release asset (#14)
   )
 
   local_mocked_bindings(
-    .check_piggyback_installed = function() invisible(TRUE)
-  )
-  local_mocked_bindings(
     pb_download = function(file, repo, tag, dest, overwrite) {
       file.copy(source_db, dest, overwrite = TRUE)
       invisible(dest)
@@ -69,6 +66,24 @@ test_that("seed_cache_from_release() errors if cache exists and overwrite is FAL
   )
 })
 
+test_that("seed_cache_from_release() checks piggyback before overwrite checks (#14)", {
+  cache_dir <- withr::local_tempdir()
+  existing <- cache_db_path(cache_dir)
+  file.create(existing)
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = FALSE) {
+      FALSE
+    },
+    .package = "base"
+  )
+
+  expect_error(
+    seed_cache_from_release(cache = cache_dir),
+    "Package.*piggyback.*is required"
+  )
+})
+
 test_that("publish_cache_snapshot() uploads local snapshot with piggyback (#14)", {
   skip_if_not_installed("piggyback")
   cache_dir <- withr::local_tempdir()
@@ -82,9 +97,6 @@ test_that("publish_cache_snapshot() uploads local snapshot with piggyback (#14)"
   )
 
   uploaded <- NULL
-  local_mocked_bindings(
-    .check_piggyback_installed = function() invisible(TRUE)
-  )
   local_mocked_bindings(
     pb_upload = function(file, repo, tag, overwrite) {
       uploaded <<- list(
@@ -112,6 +124,22 @@ test_that("publish_cache_snapshot() uploads local snapshot with piggyback (#14)"
   expect_false(uploaded$overwrite)
 })
 
+test_that("publish_cache_snapshot() checks piggyback before local cache checks (#14)", {
+  cache_dir <- withr::local_tempdir()
+
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = FALSE) {
+      FALSE
+    },
+    .package = "base"
+  )
+
+  expect_error(
+    publish_cache_snapshot(cache = cache_dir),
+    "Package.*piggyback.*is required"
+  )
+})
+
 test_that("seed_cache_from_release() seeds cache used by clean_data() (#14)", {
   skip_if_not_installed("piggyback")
   cache_dir <- withr::local_tempdir()
@@ -136,9 +164,6 @@ test_that("seed_cache_from_release() seeds cache used by clean_data() (#14)", {
     )
   )
 
-  local_mocked_bindings(
-    .check_piggyback_installed = function() invisible(TRUE)
-  )
   local_mocked_bindings(
     pb_download = function(file, repo, tag, dest, overwrite) {
       file.copy(source_db, dest, overwrite = TRUE)
