@@ -1020,7 +1020,10 @@ clean_data <- function(
 
   if (isTRUE(cache_processed)) {
     read_con <- open_cache_db()
-    on.exit(if (DBI::dbIsValid(read_con)) DBI::dbDisconnect(read_con), add = TRUE)
+    on.exit(
+      if (DBI::dbIsValid(read_con)) DBI::dbDisconnect(read_con),
+      add = TRUE
+    )
 
     cached_processed <- read_cache_table("processed_data", read_con)
     if (!is.null(cached_processed)) {

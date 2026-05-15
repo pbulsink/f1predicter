@@ -98,10 +98,10 @@ open_cache_db <- function(
 #'   `FALSE`.
 #' @noRd
 .can_cache_event_data <- function(
-    season,
-    round,
-    schedule,
-    today = Sys.Date()
+  season,
+  round,
+  schedule,
+  today = Sys.Date()
 ) {
   event_row <- schedule[schedule$season == season & schedule$round == round, ]
   if (nrow(event_row) == 0 || is.na(event_row$date[[1]])) {
