@@ -166,14 +166,20 @@ test_that("get_race_name() returns a fallback string for unknown season/round (#
 # ---- format_results_prob_table() --------------------------------------------
 
 test_that("format_results_prob_table() errors when .probs column is missing (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_prob_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   preds <- make_race_preds()
   preds$.probs <- NULL
   expect_error(format_results_prob_table(preds), "\\.probs")
 })
 
 test_that("format_results_prob_table() returns a gt_tbl for valid predictions (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_prob_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -183,7 +189,10 @@ test_that("format_results_prob_table() returns a gt_tbl for valid predictions (#
 })
 
 test_that("format_results_prob_table() with save_image=TRUE returns a list with a filename (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_prob_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -201,14 +210,20 @@ test_that("format_results_prob_table() with save_image=TRUE returns a list with 
 # ---- format_quali_prob_table() -----------------------------------------------
 
 test_that("format_quali_prob_table() errors when .probs column is missing (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_quali_prob_table(make_quali_preds()), "gt")
+    skip("gt not installed")
+  }
   preds <- make_quali_preds()
   preds$.probs <- NULL
   expect_error(format_quali_prob_table(preds), "\\.probs")
 })
 
 test_that("format_quali_prob_table() returns a gt_tbl for valid predictions (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_quali_prob_table(make_quali_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -218,7 +233,10 @@ test_that("format_quali_prob_table() returns a gt_tbl for valid predictions (#no
 })
 
 test_that("format_quali_prob_table() with save_image=TRUE returns a list with a filename (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_quali_prob_table(make_quali_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -236,14 +254,20 @@ test_that("format_quali_prob_table() with save_image=TRUE returns a list with a 
 # ---- format_results_odds_table() --------------------------------------------
 
 test_that("format_results_odds_table() errors when .probs column is missing (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_odds_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   preds <- make_race_preds()
   preds$.probs <- NULL
   expect_error(format_results_odds_table(preds), "\\.probs")
 })
 
 test_that("format_results_odds_table() returns a gt_tbl for valid predictions (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_odds_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -253,7 +277,10 @@ test_that("format_results_odds_table() returns a gt_tbl for valid predictions (#
 })
 
 test_that("format_results_odds_table() with save_image=TRUE returns a list with a filename (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_odds_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -271,7 +298,13 @@ test_that("format_results_odds_table() with save_image=TRUE returns a list with 
 # ---- format_race_skeet_predictions() ----------------------------------------
 
 test_that("format_race_skeet_predictions() returns a 3-element list (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_race_skeet_predictions(make_race_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -284,7 +317,13 @@ test_that("format_race_skeet_predictions() returns a 3-element list (#noissue)",
 })
 
 test_that("format_race_skeet_predictions() first skeet has text, tags, image, and image_alt (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_race_skeet_predictions(make_race_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -305,7 +344,13 @@ test_that("format_race_skeet_predictions() first skeet has text, tags, image, an
 })
 
 test_that("format_race_skeet_predictions() third skeet has text and image fields (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_race_skeet_predictions(make_race_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -322,7 +367,13 @@ test_that("format_race_skeet_predictions() third skeet has text and image fields
 # ---- format_quali_skeet_predictions() ---------------------------------------
 
 test_that("format_quali_skeet_predictions() returns a 2-element list (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_quali_skeet_predictions(make_quali_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -335,7 +386,13 @@ test_that("format_quali_skeet_predictions() returns a 2-element list (#noissue)"
 })
 
 test_that("format_quali_skeet_predictions() first skeet has text and tags (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_quali_skeet_predictions(make_quali_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -352,7 +409,13 @@ test_that("format_quali_skeet_predictions() first skeet has text and tags (#nois
 })
 
 test_that("format_quali_skeet_predictions() second skeet has image and image_alt fields (#noissue)", {
-  skip_if_not_installed("gt")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::format_quali_skeet_predictions(make_quali_preds()),
+      "gt"
+    )
+    skip("gt not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -380,7 +443,13 @@ test_that("post_skeet_predictions() errors when input is not a list of lists (#n
 })
 
 test_that("post_skeet_predictions() posts all skeets successfully with mocked atrrr (#noissue)", {
-  skip_if_not_installed("atrrr")
+  if (!requireNamespace("atrrr", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::post_skeet_predictions(list(list(text = "test"))),
+      "atrrr"
+    )
+    skip("atrrr not installed")
+  }
   post_count <- 0L
   local_mocked_bindings(
     post_skeet = function(
@@ -407,7 +476,13 @@ test_that("post_skeet_predictions() posts all skeets successfully with mocked at
 })
 
 test_that("post_skeet_predictions() aborts thread when a post fails (#noissue)", {
-  skip_if_not_installed("atrrr")
+  if (!requireNamespace("atrrr", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::post_skeet_predictions(list(list(text = "test"))),
+      "atrrr"
+    )
+    skip("atrrr not installed")
+  }
   local_mocked_bindings(
     post_skeet = function(text, ...) stop("posting failed"),
     .package = "atrrr"
@@ -425,8 +500,17 @@ test_that("post_skeet_predictions() aborts thread when a post fails (#noissue)",
 # ---- post_quali_predictions() / post_race_predictions() ---------------------
 
 test_that("post_quali_predictions() formats and posts qualifying predictions (#noissue)", {
-  skip_if_not_installed("gt")
-  skip_if_not_installed("atrrr")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_quali_prob_table(make_quali_preds()), "gt")
+    skip("gt not installed")
+  }
+  if (!requireNamespace("atrrr", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::post_skeet_predictions(list(list(text = "test"))),
+      "atrrr"
+    )
+    skip("atrrr not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
@@ -454,8 +538,17 @@ test_that("post_quali_predictions() formats and posts qualifying predictions (#n
 })
 
 test_that("post_race_predictions() formats and posts race predictions (#noissue)", {
-  skip_if_not_installed("gt")
-  skip_if_not_installed("atrrr")
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    expect_error(format_results_prob_table(make_race_preds()), "gt")
+    skip("gt not installed")
+  }
+  if (!requireNamespace("atrrr", quietly = TRUE)) {
+    expect_error(
+      f1predicter:::post_skeet_predictions(list(list(text = "test"))),
+      "atrrr"
+    )
+    skip("atrrr not installed")
+  }
   local_mocked_bindings(
     load_drivers = function(season) mock_drivers(),
     .package = "f1dataR"
