@@ -792,6 +792,7 @@ create_circuit_features <- function(results, params = get_processing_params()) {
 #' @param practices Processed practice data.
 #' @param pitstops Processed pitstop data.
 #' @param constructor_results Processed constructor data.
+#' @param sprint_features Processed sprint data.
 #' @param schedule Raw schedule data.
 #' @param params Named list of processing parameters; see [get_processing_params()].
 #' @return A final, cleaned data frame ready for modeling.
@@ -802,6 +803,7 @@ combine_and_finalize_features <- function(
   practices,
   pitstops,
   constructor_results,
+  sprint_features = NULL,
   schedule,
   params = get_processing_params()
 ) {
@@ -816,6 +818,20 @@ combine_and_finalize_features <- function(
       constructor_results,
       by = c("round", "season", "constructor_id")
     )
+
+  if (!is.null(sprint_features)) {
+    results <- results %>%
+      dplyr::left_join(sprint_features, by = c("round", "season", "driver_id"))
+  } else {
+    results <- results %>%
+      dplyr::mutate(
+        has_sprint = "No",
+        sprint_era = dplyr::if_else(.data$season >= 2023, "2023+", "2021-2022"),
+        sprint_grid = NA_real_,
+        sprint_finish_pos = NA_real_,
+        sprint_points = NA_real_
+      )
+  }
 
   # Process and join schedule data
   schedule_clean <- schedule %>%
@@ -965,6 +981,18 @@ combine_and_finalize_features <- function(
         .data$pit_num_perc,
         0
       ),
+      sprint_grid = tidyr::replace_na(
+        .data$sprint_grid,
+        mean(.data$sprint_grid, na.rm = TRUE)
+      ),
+      sprint_finish_pos = tidyr::replace_na(
+        .data$sprint_finish_pos,
+        mean(.data$sprint_finish_pos, na.rm = TRUE)
+      ),
+      sprint_points = tidyr::replace_na(
+        .data$sprint_points,
+        mean(.data$sprint_points, na.rm = TRUE)
+      ),
       q_min_perc = tidyr::replace_na(
         .data$q_min_perc,
         mean(.data$q_min_perc, na.rm = TRUE)
@@ -976,6 +1004,12 @@ combine_and_finalize_features <- function(
     ) |>
     dplyr::ungroup() |>
     dplyr::mutate(
+      sprint_grid = tidyr::replace_na(.data$sprint_grid, params$grid),
+      sprint_finish_pos = tidyr::replace_na(
+        .data$sprint_finish_pos,
+        params$position
+      ),
+      sprint_points = tidyr::replace_na(.data$sprint_points, 0),
       q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.012),
       q_avg_perc = tidyr::replace_na(.data$q_avg_perc, 1.015),
       practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, 1.6),
@@ -985,6 +1019,62 @@ combine_and_finalize_features <- function(
     janitor::clean_names()
 
   return(final_data)
+}
+
+#' Process Sprint Data
+#'
+#' @param sprint_results Raw sprint results data frame.
+#' @param schedule Raw schedule data frame.
+#' @return A processed data frame of sprint features by weekend and driver.
+#' @noRd
+process_sprint_data <- function(sprint_results, schedule) {
+  if (is.null(sprint_results) || nrow(sprint_results) == 0) {
+    return(NULL)
+  }
+
+  schedule_sprint <- schedule %>%
+    dplyr::select("season", "round", "sprint_date") %>%
+    dplyr::mutate(
+      season = as.integer(.data$season),
+      round = as.integer(.data$round)
+    )
+
+  sprint_results %>%
+    dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
+    dplyr::summarise(
+      sprint_grid = dplyr::first(
+        stats::na.omit(.data$grid),
+        default = NA_real_
+      ),
+      sprint_finish_pos = dplyr::first(
+        stats::na.omit(.data$position),
+        default = NA_real_
+      ),
+      sprint_points = dplyr::first(
+        stats::na.omit(.data$points),
+        default = NA_real_
+      ),
+      .groups = "drop"
+    ) %>%
+    dplyr::left_join(
+      schedule_sprint,
+      by = c("season", "round")
+    ) %>%
+    dplyr::mutate(
+      has_sprint = dplyr::if_else(!is.na(.data$sprint_date), "Yes", "No"),
+      sprint_era = dplyr::if_else(.data$season >= 2023, "2023+", "2021-2022")
+    ) %>%
+    dplyr::select(
+      "season",
+      "round",
+      "driver_id",
+      "has_sprint",
+      "sprint_era",
+      "sprint_grid",
+      "sprint_finish_pos",
+      "sprint_points"
+    ) %>%
+    janitor::clean_names()
 }
 
 #' Clean Data
@@ -1052,6 +1142,10 @@ clean_data <- function(
     pitstops_processed,
     params = params
   )
+  sprint_features <- process_sprint_data(
+    input$sprint_results,
+    f1predicter::schedule
+  )
 
   # 2. Combine all processed data and finalize features
   final_data <- combine_and_finalize_features(
@@ -1060,6 +1154,7 @@ clean_data <- function(
     practices = practices_summarized,
     pitstops = pitstops_processed,
     constructor_results = constructor_features,
+    sprint_features = sprint_features,
     schedule = f1predicter::schedule,
     params = params
   )

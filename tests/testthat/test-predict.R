@@ -23,6 +23,12 @@ test_that("generate_new_data() returns a tibble", {
   expect_true("constructor_id" %in% names(result))
   expect_true("season" %in% names(result))
   expect_true("round" %in% names(result))
+  expect_true("has_sprint" %in% names(result))
+  expect_true("sprint_grid" %in% names(result))
+  expect_true("sprint_finish_pos" %in% names(result))
+  expect_true("sprint_points" %in% names(result))
+  expect_true("sprint_era" %in% names(result))
+  expect_true(all(result$has_sprint == "No"))
 
   # Use invalid season/round
   expect_error(

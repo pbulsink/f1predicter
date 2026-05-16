@@ -288,6 +288,13 @@ generate_new_data <- function(
         .data$constructor_grid_avg,
         params$grid
       )
+    ) %>%
+    dplyr::mutate(
+      has_sprint = "No",
+      sprint_grid = NA_real_,
+      sprint_finish_pos = NA_real_,
+      sprint_points = NA_real_,
+      sprint_era = dplyr::if_else(season >= 2023, "2023+", "2021-2022")
     )
 
   # TODO Refactor processing code to subfunctions to do the same laps calculations for practice there as here
@@ -312,9 +319,14 @@ generate_new_data <- function(
       f1dataR::load_quali(season = season, round = round),
       error = function(e) NULL
     )
+    sprint_results <- tryCatch(
+      f1dataR::load_sprint(season = season, round = round),
+      error = function(e) NULL
+    )
   } else {
     laps <- NULL
     quali <- NULL
+    sprint_results <- NULL
   }
 
   if (!is.null(laps) && nrow(laps) > 0) {
@@ -410,6 +422,47 @@ generate_new_data <- function(
       )
   }
 
+  if (!is.null(sprint_results) && nrow(sprint_results) > 0) {
+    cli::cli_inform("Found sprint data for {season} round {round}.")
+    sprint_features <- sprint_results %>%
+      janitor::clean_names() %>%
+      dplyr::transmute(
+        driver_id = .data$driver_id,
+        sprint_grid_live = as.numeric(.data$grid),
+        sprint_finish_pos_live = as.numeric(.data$position),
+        sprint_points_live = as.numeric(.data$points)
+      )
+
+    new_data <- new_data %>%
+      dplyr::left_join(sprint_features, by = "driver_id") %>%
+      dplyr::mutate(
+        has_sprint = dplyr::if_else(
+          !is.na(.data$sprint_grid_live) |
+            !is.na(.data$sprint_finish_pos_live) |
+            !is.na(.data$sprint_points_live),
+          "Yes",
+          .data$has_sprint
+        ),
+        sprint_grid = dplyr::coalesce(
+          .data$sprint_grid_live,
+          .data$sprint_grid
+        ),
+        sprint_finish_pos = dplyr::coalesce(
+          .data$sprint_finish_pos_live,
+          .data$sprint_finish_pos
+        ),
+        sprint_points = dplyr::coalesce(
+          .data$sprint_points_live,
+          .data$sprint_points
+        )
+      ) %>%
+      dplyr::select(
+        -"sprint_grid_live",
+        -"sprint_finish_pos_live",
+        -"sprint_points_live"
+      )
+  }
+
   new_data <- new_data %>%
     dplyr::select(
       "driver_id",
@@ -436,6 +489,11 @@ generate_new_data <- function(
       "practice_best_gap",
       "q_min_perc",
       "q_avg_perc",
+      "has_sprint",
+      "sprint_era",
+      "sprint_grid",
+      "sprint_finish_pos",
+      "sprint_points",
       "season",
       "round",
       "round_id"
