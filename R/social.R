@@ -312,7 +312,7 @@ format_quali_skeet_predictions <- function(predictions) {
     "Pole Position Chance:"
   }
   position_label <- if (sprint_weekend) {
-    "\\U0001F52E Most Likely Drivers to qualify in top 5 for sprint, with position:"
+    "\\U0001F52E Most Likely Drivers to qualify in top 5 for the Sprint, with position:"
   } else {
     "\\U0001F52E Most Likely Drivers to qualify in top 5, with position:"
   }
