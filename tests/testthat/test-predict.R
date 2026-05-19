@@ -265,3 +265,17 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
     "must be installed to predict with an ensemble model"
   )
 })
+
+test_that("predict_sprint_winner() maps qualifying outputs to sprint win odds (#noissue)", {
+  quali_preds <- tibble::tibble(
+    driver_id = c("driver_a", "driver_b"),
+    round = 10L,
+    season = 2025L,
+    pole_odd = c(0.25, 0.75)
+  )
+
+  result <- predict_sprint_winner(quali_preds = quali_preds)
+
+  expect_named(result, c("driver_id", "round", "season", "sprint_win_odd"))
+  expect_equal(result$sprint_win_odd, quali_preds$pole_odd)
+})

@@ -85,6 +85,30 @@ get_race_name <- function(season, round) {
   return(race_info$race_name[1])
 }
 
+#' Check Whether a Weekend Includes a Sprint
+#'
+#' @param season The season year.
+#' @param round The round number.
+#' @param schedule A schedule data frame with `season`, `round`, and
+#'   `sprint_date` columns.
+#'
+#' @return Logical scalar, `TRUE` when sprint data is present for the round.
+#' @noRd
+is_sprint_weekend <- function(
+  season,
+  round,
+  schedule = f1predicter::schedule
+) {
+  weekend_row <- schedule %>%
+    dplyr::filter(.data$season == !!season, .data$round == !!round)
+
+  if (nrow(weekend_row) == 0) {
+    return(FALSE)
+  }
+
+  !is.na(weekend_row$sprint_date[[1]])
+}
+
 
 #' Format Predictions for a Skeet
 #'
@@ -224,6 +248,7 @@ format_race_skeet_predictions <- function(predictions) {
 format_quali_skeet_predictions <- function(predictions) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
+  sprint_weekend <- is_sprint_weekend(current_season, current_round)
 
   predictions_formatted <- predictions %>%
     dplyr::mutate(
@@ -276,18 +301,38 @@ format_quali_skeet_predictions <- function(predictions) {
   )
 
   # Bluesky tags are handled separately from the text and don't use '#'
-  tags <- c("F1", "F1Predictions", "F1Quali", race_hashtag)
+  session_name <- if (sprint_weekend) {
+    "Sprint Qualifying"
+  } else {
+    "Qualifying"
+  }
+  win_label <- if (sprint_weekend) {
+    "Sprint Win Chance:"
+  } else {
+    "Pole Position Chance:"
+  }
+  position_label <- if (sprint_weekend) {
+    "\\U0001F52E Most Likely Drivers to qualify in top 5 for sprint, with position:"
+  } else {
+    "\\U0001F52E Most Likely Drivers to qualify in top 5, with position:"
+  }
+  tags <- c(
+    "F1",
+    "F1Predictions",
+    if (sprint_weekend) "F1Sprint" else "F1Quali",
+    race_hashtag
+  )
 
   skeet1_body <- glue::glue(
-    "#F1 Qualifying Predictions for the {race_name} \\U0001F3CE\\ufe0f",
+    "#F1 {session_name} Predictions for the {race_name} \\U0001F3CE\\ufe0f",
     "",
-    "Pole Position Chance:",
+    "{win_label}",
     "{pole_preds}",
     .sep = "\n"
   )
 
   skeet2_body <- glue::glue(
-    "\\U0001F52E Most Likely Drivers to qualify in top 5, with position:",
+    "{position_label}",
     "{position_preds}",
     "\n#F1 #{race_hashtag}",
     .sep = "\n"
@@ -297,6 +342,49 @@ format_quali_skeet_predictions <- function(predictions) {
     list(text = skeet1_body, tags = tags),
     list(text = skeet2_body, image = image$filename, image_alt = image_alt)
   ))
+}
+
+#' Format Sprint Win Predictions for a Skeet
+#'
+#' @param predictions A data frame containing sprint winner probabilities.
+#' @return A list containing the formatted skeet body and tags.
+#' @noRd
+format_sprint_skeet_predictions <- function(predictions) {
+  current_season <- predictions$season[1]
+  current_round <- predictions$round[1]
+
+  predictions_formatted <- predictions %>%
+    dplyr::mutate(
+      driver_name = get_driver_name(current_season, .data$driver_id)
+    ) %>%
+    dplyr::arrange(dplyr::desc(.data$sprint_win_odd))
+
+  race_name <- get_race_name(current_season, current_round)
+  race_hashtag <- stringr::str_replace_all(race_name, "Grand", "G")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
+  race_hashtag <- stringr::str_replace_all(race_hashtag, " ", "")
+
+  sprint_win_preds <- predictions_formatted %>%
+    dplyr::slice_head(n = 5) %>%
+    dplyr::mutate(
+      text = glue::glue(
+        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$sprint_win_odd, 0.1)}"
+      )
+    ) %>%
+    dplyr::pull(.data$text) %>%
+    paste(collapse = "\n")
+
+  tags <- c("F1", "F1Predictions", "F1Sprint", race_hashtag)
+  skeet_body <- glue::glue(
+    "#F1 Sprint Win Predictions for the {race_name} \\U0001F3CE\\ufe0f",
+    "",
+    "\\U0001F3C6 Sprint Win Chance (Top 5):",
+    "{sprint_win_preds}",
+    "\n#F1 #{race_hashtag}",
+    .sep = "\n"
+  )
+
+  list(list(text = skeet_body, tags = tags))
 }
 
 
@@ -405,6 +493,24 @@ post_race_predictions <- function(predictions = predict_round()) {
   # Race predictions are shorter, so we post as a single skeet
   skeet_list <- format_race_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_list)
+}
+
+#' Post Sprint Win Predictions to Bluesky
+#'
+#' A wrapper function that formats sprint winner predictions and posts them to
+#' Bluesky.
+#'
+#' @param predictions A data frame of sprint win predictions from
+#'   `predict_sprint_winner()`.
+#'
+#' @return Invisibly returns the response from the Bluesky API, or NULL on
+#'   failure.
+#' @noRd
+post_sprint_predictions <- function(
+  predictions = predict_sprint_winner()
+) {
+  skeet_thread <- format_sprint_skeet_predictions(predictions)
+  post_skeet_predictions(skeets = skeet_thread)
 }
 
 #' Format Results Probabilities as a Table

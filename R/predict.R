@@ -974,6 +974,49 @@ predict_quali_round <- function(
   return(all_preds)
 }
 
+#' Predict Sprint Winner
+#'
+#' @param new_data A data frame of new data, typically from
+#'   `generate_next_race_data()`.
+#' @param quali_models A list of fitted `workflow` objects for qualifying
+#'   prediction. Passed to `predict_quali_round()` when `quali_preds` is `NULL`.
+#' @param engine The model engine to use if loading models from disk. Defaults
+#'   to `"ensemble"`.
+#' @param quali_preds Optional precomputed qualifying predictions. When
+#'   provided, this should include `driver_id`, `round`, `season`, and
+#'   `pole_odd`.
+#' @return A tibble with `driver_id`, `round`, `season`, and `sprint_win_odd`.
+#' @noRd
+predict_sprint_winner <- function(
+  new_data = generate_next_race_data(),
+  quali_models = NULL,
+  engine = "ensemble",
+  quali_preds = NULL
+) {
+  if (is.null(quali_preds)) {
+    quali_preds <- predict_quali_round(
+      new_data = new_data,
+      quali_models = quali_models,
+      engine = engine
+    )
+  }
+
+  required_cols <- c("driver_id", "round", "season", "pole_odd")
+  if (!all(required_cols %in% names(quali_preds))) {
+    cli::cli_abort(
+      "{.arg quali_preds} must contain columns: {.val {required_cols}}"
+    )
+  }
+
+  quali_preds %>%
+    dplyr::transmute(
+      driver_id = .data$driver_id,
+      round = .data$round,
+      season = .data$season,
+      sprint_win_odd = .data$pole_odd
+    )
+}
+
 #' Predict Race Winner
 #'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.
