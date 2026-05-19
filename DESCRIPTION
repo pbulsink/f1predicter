@@ -13,7 +13,6 @@ Depends:
 Imports:
     DBI,
     RSQLite,
-    butcher,
     cli,
     dials (>= 1.4.3),
     dplyr,
@@ -24,7 +23,6 @@ Imports:
     ordered,
     parsnip (>= 1.5.0),
     purrr,
-    RCurl,
     recipes,
     rlang,
     rsample,
@@ -35,11 +33,11 @@ Imports:
     tictoc,
     tidyr,
     tune (>= 2.1.0),
-    usethis,
     workflows,
     yardstick (>= 1.4.0)
 Suggests: 
     atrrr,
+    butcher,
     future,
     glmnet,
     gt,
@@ -47,6 +45,7 @@ Suggests:
     kknn,
     knitr,
     magick,
+    RCurl,
     MASS,
     ordinalForest,
     ordinalNet,
@@ -55,6 +54,7 @@ Suggests:
     rmarkdown,
     stacks,
     withr,
+    usethis,
     testthat (>= 3.0.0),
     rpartScore
 VignetteBuilder: 

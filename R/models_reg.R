@@ -1624,6 +1624,9 @@ load_models <- function(model_type, model_timing, engine = "ranger") {
 #'   where butchering failed).
 #' @noRd
 butcher_model_list <- function(model_list) {
+  if(!requireNamespace('butcher')) {
+    cli::cli_abort("Error in f1predicter::butcher_model_list. Package {.pkg butcher} is required to butcher models.")
+  }
   final_list <- list()
   for (model_name in names(model_list)) {
     model_object <- model_list[[model_name]]

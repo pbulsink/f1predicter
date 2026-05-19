@@ -575,7 +575,7 @@ process_pit_stops <- function(pitstops, params = get_processing_params()) {
     # For each driver in a race, count their total number of stops.
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
     dplyr::mutate(stops = dplyr::n()) %>%
-    dplyr::ungroup(.data$driver_id) %>%
+    dplyr::ungroup("driver_id") %>%
     # Adjust pit stop durations relative to the fastest stop in the race.
     # TODO: Unless a fastest stop time can be found online
     dplyr::mutate(
@@ -599,7 +599,7 @@ process_pit_stops <- function(pitstops, params = get_processing_params()) {
     dplyr::ungroup() %>%
     dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
     dplyr::mutate(pit_duration_avg = mean(.data$pit_duration, na.rm = TRUE)) %>%
-    dplyr::ungroup(.data$driver_id) %>%
+    dplyr::ungroup("driver_id") %>%
     dplyr::mutate(
       pit_duration_perc = .data$pit_duration_avg /
         min(.data$pit_duration, na.rm = TRUE)

@@ -1034,7 +1034,7 @@ predict_position <- function(
   preds <- new_data %>%
     dplyr::select("driver_id", "round", "season") %>%
     dplyr::bind_cols(position_preds) %>%
-    dplyr::rename(likely_position = .data$.pred)
+    dplyr::rename("likely_position" = ".pred")
   return(preds)
 }
 
