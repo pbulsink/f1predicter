@@ -98,10 +98,10 @@ open_cache_db <- function(
 #'   `FALSE`.
 #' @noRd
 .can_cache_event_data <- function(
-    season,
-    round,
-    schedule,
-    today = Sys.Date()
+  season,
+  round,
+  schedule,
+  today = Sys.Date()
 ) {
   event_row <- schedule[schedule$season == season & schedule$round == round, ]
   if (nrow(event_row) == 0 || is.na(event_row$date[[1]])) {
@@ -449,7 +449,7 @@ get_grids <- function(season, round, session) {
   if (is.null(results) & !is.null(quali)) {
     # this is the situation that quali is done but not the race
     grid <- quali %>%
-      dplyr::select(.data$position, .data$driver_id) %>%
+      dplyr::select("position", "driver_id") %>%
       dplyr::rename("quali_results" = "driver_id") %>%
       dplyr::mutate(
         'start_grid' = NA_character_,
@@ -862,7 +862,7 @@ get_schedule <- function(save_data = FALSE) {
   schedule$season <- as.numeric(schedule$season)
   schedule$round <- as.numeric(schedule$round)
 
-  if (save_data) {
+  if (save_data & requireNamespace('usethis', quietly = TRUE)) {
     usethis::use_data(schedule, overwrite = TRUE)
   }
 
@@ -1282,7 +1282,7 @@ getWeather <- function(round_url) {
     }
   )
 
-  if (is.null(round_weather)) {
+  if (is.null(round_weather) & requireNamespace('RCurl', quietly = TRUE)){
     # Try the italian site - it's apparently more robust
     message(glue::glue(
       "f1predictor::getWeather: Trying to get weather from Italian Wikipedia instead of {url}",
