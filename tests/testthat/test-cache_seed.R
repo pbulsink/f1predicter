@@ -60,6 +60,24 @@ test_that("seed_cache_from_release() errors if cache exists and overwrite is FAL
   existing <- cache_db_path(cache_dir)
   file.create(existing)
 
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    expect_error(
+      seed_cache_from_release(cache = cache_dir),
+      "Package.*piggyback.*is required"
+    )
+  }
+
+  base_require_namespace <- get("requireNamespace", envir = asNamespace("base"))
+  local_mocked_bindings(
+    requireNamespace = function(package, quietly = TRUE) {
+      if (identical(package, "piggyback")) {
+        return(TRUE)
+      }
+      base_require_namespace(package, quietly = quietly)
+    },
+    .package = "base"
+  )
+
   expect_error(
     seed_cache_from_release(cache = cache_dir),
     "Cache already exists"
