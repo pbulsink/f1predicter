@@ -52,6 +52,7 @@ Suggests:
     ragg,
     ranger,
     rmarkdown,
+    piggyback,
     stacks,
     withr,
     usethis,
