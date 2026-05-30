@@ -14,16 +14,16 @@ seed_cache_from_release(
 }
 \arguments{
 \item{tag}{GitHub release tag containing the snapshot asset. Defaults to
-\code{"latest"}.}
+`"latest"`.}
 
-\item{repo}{Repository in \code{"owner/repo"} format.}
+\item{repo}{Repository in `"owner/repo"` format.}
 
 \item{asset_name}{Release asset filename to download.}
 
 \item{cache}{Cache directory path. Defaults to
-\code{getOption("f1predicter.cache", tempdir())}.}
+`getOption("f1predicter.cache", tempdir())`.}
 
-\item{overwrite}{Logical. When \code{FALSE}, errors if a local cache database
+\item{overwrite}{Logical. When `FALSE`, errors if a local cache database
 already exists.}
 }
 \value{
@@ -31,7 +31,7 @@ Invisibly returns the local SQLite cache path.
 }
 \description{
 Downloads a prebuilt SQLite cache snapshot from a GitHub release asset using
-\code{{piggyback}}, validates it, and stores it as \code{f1predicter.sqlite} in the
+`{piggyback}`, validates it, and stores it as `f1predicter.sqlite` in the
 configured cache directory.
 }
 \examples{
