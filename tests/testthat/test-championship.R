@@ -325,6 +325,8 @@ test_that("format_championship_skeet returns proper skeet structure", {
   expect_match(result[[1]]$text, "Championship")
   # Check probabilities appear
   expect_match(result[[1]]$text, "55.0%")
+  # Check simulation count is dynamic
+  expect_match(result[[2]]$text, "10,000")
 })
 
 test_that("format_championship_skeet includes all contenders up to 5", {

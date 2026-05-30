@@ -381,11 +381,6 @@ simulate_championship_odds <- function(
   )
 
   # Calculate average final position from simulations
-  for (sim in seq_len(n_simulations)) {
-    ranks <- rank(-total_points_matrix[sim, ], ties.method = "min")
-    results$avg_final_position <- results$avg_final_position + ranks
-  }
-  # Replace initial NA with 0 before accumulating
   results$avg_final_position <- 0
   for (sim in seq_len(n_simulations)) {
     ranks <- rank(-total_points_matrix[sim, ], ties.method = "min")
@@ -470,10 +465,13 @@ simulate_race_positions <- function(
 #' posting on Bluesky, following the existing social post patterns.
 #'
 #' @param odds A tibble from `simulate_championship_odds()`.
+#' @param odds A tibble from `simulate_championship_odds()`.
+#' @param n_simulations Integer number of simulations that were run (for display).
+#'   Defaults to 10000.
 #'
 #' @return A list of lists suitable for `post_skeet_predictions()`.
 #' @noRd
-format_championship_skeet <- function(odds) {
+format_championship_skeet <- function(odds, n_simulations = 10000L) {
   current_season <- odds$season[1]
 
   odds_formatted <- odds %>%
@@ -516,7 +514,7 @@ format_championship_skeet <- function(odds) {
 
   skeet2_body <- glue::glue(
     "\\U0001F4CA Simulation details:",
-    "Based on 10,000 Monte Carlo simulations",
+    "Based on {scales::comma(n_simulations)} Monte Carlo simulations",
     "Performance: 70% recent (last 5) / 30% season",
     "Accounts for DNFs and sprint races",
     "",
@@ -560,6 +558,6 @@ post_championship_predictions <- function(
       n_simulations = n_simulations
     )
   }
-  skeet_thread <- format_championship_skeet(odds)
+  skeet_thread <- format_championship_skeet(odds, n_simulations = n_simulations)
   post_skeet_predictions(skeets = skeet_thread)
 }
