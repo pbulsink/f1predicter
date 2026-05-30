@@ -23,12 +23,11 @@ test_that("generate_new_data() returns a tibble", {
   expect_true("constructor_id" %in% names(result))
   expect_true("season" %in% names(result))
   expect_true("round" %in% names(result))
-  expect_true("has_sprint" %in% names(result))
-  expect_true("sprint_grid" %in% names(result))
-  expect_true("sprint_finish_pos" %in% names(result))
-  expect_true("sprint_points" %in% names(result))
-  expect_true("sprint_era" %in% names(result))
-  expect_true(all(result$has_sprint == "No"))
+
+  # Sprint columns are NOT present by default (only added when sprint_results is provided)
+  expect_false("sprint_grid" %in% names(result))
+  expect_false("sprint_finish_pos" %in% names(result))
+  expect_false("sprint_points" %in% names(result))
 
   # Use invalid season/round
   expect_error(
@@ -266,18 +265,69 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
   )
 })
 
-test_that("predict_sprint_winner() maps qualifying outputs to sprint win odds (#noissue)", {
-  quali_preds <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
+test_that("predict_sprint_round() renames race columns to sprint_* columns (#noissue)", {
+  # Build a minimal mock result matching predict_round() output
+  race_preds <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
     round = 10L,
     season = 2025L,
-    pole_odd = c(0.25, 0.75)
+    win_odd = c(0.25, 0.75),
+    podium_odd = c(0.60, 0.90),
+    t10_odd = c(0.80, 0.95),
+    likely_position = c(3L, 1L),
+    likely_position_class = ordered(c("P3-P5", "P1"), levels = c("P1", "P2", "P3-P5"))
   )
 
-  result <- predict_sprint_winner(quali_preds = quali_preds)
+  # Stub predict_round to avoid model loading
+  local_mocked_bindings(
+    predict_round = function(...) race_preds,
+    .package = "f1predicter"
+  )
 
-  expect_named(result, c("driver_id", "round", "season", "sprint_win_odd"))
-  expect_equal(result$sprint_win_odd, quali_preds$pole_odd)
+  result <- predict_sprint_round(new_data = tibble::tibble(driver_id = factor("driver_a")))
+
+  expected_names <- c(
+    "driver_id", "round", "season",
+    "sprint_win_odd", "sprint_podium_odd", "sprint_t10_odd",
+    "sprint_likely_position", "sprint_likely_position_class"
+  )
+  expect_named(result, expected_names)
+  expect_equal(result$sprint_win_odd, race_preds$win_odd)
+  expect_equal(result$sprint_podium_odd, race_preds$podium_odd)
+})
+
+test_that("generate_new_data() adds sprint columns only when sprint_results is provided (#noissue)", {
+  skip_if_not_installed("f1dataR")
+  withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
+
+  historical_data <- cleaned_data
+
+  # Without sprint_results: no sprint columns
+  result_no_sprint <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE
+  )
+  expect_false("sprint_grid" %in% names(result_no_sprint))
+
+  # With sprint_results: sprint columns are added
+  sprint_df <- tibble::tibble(
+    driver_id = result_no_sprint$driver_id,
+    grid = seq_len(nrow(result_no_sprint)),
+    position = seq_len(nrow(result_no_sprint)),
+    points = rep(0, nrow(result_no_sprint))
+  )
+  result_with_sprint <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE,
+    sprint_results = sprint_df
+  )
+  expect_true("sprint_grid" %in% names(result_with_sprint))
+  expect_true("sprint_finish_pos" %in% names(result_with_sprint))
+  expect_true("sprint_points" %in% names(result_with_sprint))
 })
 # ---- load_models() validation -----------------------------------------------
 

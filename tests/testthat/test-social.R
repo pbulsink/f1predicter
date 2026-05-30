@@ -238,7 +238,11 @@ test_that("post_sprint_predictions() formats then posts sprint skeets (#noissue)
     driver_id = "driver_a",
     round = 1L,
     season = 2026L,
-    sprint_win_odd = 0.5
+    sprint_win_odd = 0.5,
+    sprint_podium_odd = 0.8,
+    sprint_t10_odd = 0.95,
+    sprint_likely_position = 1L,
+    sprint_likely_position_class = ordered("P1", levels = c("P1", "P2", "P3-P5"))
   )
   captured <- NULL
 
@@ -256,12 +260,13 @@ test_that("post_sprint_predictions() formats then posts sprint skeets (#noissue)
   expect_identical(captured, list(list(text = "Sprint post")))
 })
 
-test_that("format_sprint_skeet_predictions() formats top sprint win odds (#noissue)", {
+test_that("format_sprint_skeet_predictions() formats sprint win and podium predictions (#noissue)", {
   predictions <- tibble::tibble(
     driver_id = c("driver_a", "driver_b"),
     round = 3L,
     season = 2026L,
-    sprint_win_odd = c(0.7, 0.3)
+    sprint_win_odd = c(0.7, 0.3),
+    sprint_podium_odd = c(0.85, 0.55)
   )
 
   local_mocked_bindings(
@@ -271,9 +276,13 @@ test_that("format_sprint_skeet_predictions() formats top sprint win odds (#noiss
 
   result <- format_sprint_skeet_predictions(predictions)
 
-  expect_match(result[[1]]$text, "Sprint Win Predictions")
+  # Two skeets: win and podium
+  expect_length(result, 2)
+  expect_match(result[[1]]$text, "Sprint Predictions")
+  expect_match(result[[1]]$text, "Sprint Win Chance")
   expect_match(result[[1]]$text, "Driver A")
   expect_true("F1Sprint" %in% result[[1]]$tags)
+  expect_match(result[[2]]$text, "Sprint Podium Chance")
 })
 
 test_that("format_quali_prob_table() produces gt table", {

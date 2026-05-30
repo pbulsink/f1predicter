@@ -21,6 +21,12 @@
 #' finishing positions, constructor averages, and circuit-specific performance
 #' metrics.
 #'
+#' On sprint weekends, if sprint results have been recorded, they can be passed
+#' via `sprint_results` to include sprint finish position, starting grid, and
+#' points as additional features. These are used by models trained with sprint
+#' data (i.e., an "after_sprint" timing variant) to improve main race and
+#' qualifying predictions.
+#'
 #' @param season A numeric value for the season year (e.g., 2023).
 #' @param round A numeric value for the round number of the season.
 #' @param drivers A data frame or tibble containing the drivers for the race.
@@ -36,8 +42,15 @@
 #'   defaults. Defaults to `get_processing_params()`.
 #' @param use_live_data Whether or not to check for weekend data (e.g. recent qualis).
 #'   Default TRUE
+#' @param sprint_results Optional data frame of sprint results for the round
+#'   (e.g., from `f1dataR::load_sprint()`). When provided, the sprint starting
+#'   grid position (`sprint_grid`), finishing position (`sprint_finish_pos`),
+#'   and points (`sprint_points`) are appended as features. Leave `NULL`
+#'   (default) if sprint results are not yet available or the round is not a
+#'   sprint weekend.
 #' @return A tibble where each row corresponds to a driver for the specified
 #'   race, and columns are the features required for the modeling functions.
+#'   Sprint feature columns are only present when `sprint_results` is provided.
 #' @export
 #' @examples
 #' \dontrun{
@@ -50,7 +63,8 @@ generate_new_data <- function(
   penalties = NULL,
   historical_data = clean_data(),
   params = get_processing_params(),
-  use_live_data = TRUE
+  use_live_data = TRUE,
+  sprint_results = NULL
 ) {
   # drivers should be a data.frame or tibble with: driver_id, constructor_id, (optional any of: quali_position, grid, practice_optimal_rank, practice_best_rank,
   # practice_avg_rank) Any missing round-specific values will be given as current moved averages Any other values will be calculated from historical data,
@@ -288,13 +302,6 @@ generate_new_data <- function(
         .data$constructor_grid_avg,
         params$grid
       )
-    ) %>%
-    dplyr::mutate(
-      has_sprint = "No",
-      sprint_grid = NA_real_,
-      sprint_finish_pos = NA_real_,
-      sprint_points = NA_real_,
-      sprint_era = dplyr::if_else(season >= 2023, "2023+", "2021-2022")
     )
 
   # TODO Refactor processing code to subfunctions to do the same laps calculations for practice there as here
@@ -319,14 +326,9 @@ generate_new_data <- function(
       f1dataR::load_quali(season = season, round = round),
       error = function(e) NULL
     )
-    sprint_results <- tryCatch(
-      f1dataR::load_sprint(season = season, round = round),
-      error = function(e) NULL
-    )
   } else {
     laps <- NULL
     quali <- NULL
-    sprint_results <- NULL
   }
 
   if (!is.null(laps) && nrow(laps) > 0) {
@@ -422,82 +424,58 @@ generate_new_data <- function(
       )
   }
 
+  # If sprint results are explicitly provided, join them as additional features.
+  # This supports an "after_sprint" model that was trained to use sprint
+  # finish position, grid, and points as predictors for the main race/quali.
   if (!is.null(sprint_results) && nrow(sprint_results) > 0) {
-    cli::cli_inform("Found sprint data for {season} round {round}.")
+    cli::cli_inform("Merging provided sprint results as prediction features.")
     sprint_features <- sprint_results %>%
       janitor::clean_names() %>%
       dplyr::transmute(
         driver_id = .data$driver_id,
-        sprint_grid_live = as.numeric(.data$grid),
-        sprint_finish_pos_live = as.numeric(.data$position),
-        sprint_points_live = as.numeric(.data$points)
+        sprint_grid = as.numeric(.data$grid),
+        sprint_finish_pos = as.numeric(.data$position),
+        sprint_points = as.numeric(.data$points)
       )
 
     new_data <- new_data %>%
-      dplyr::left_join(sprint_features, by = "driver_id") %>%
-      dplyr::mutate(
-        has_sprint = dplyr::if_else(
-          !is.na(.data$sprint_grid_live) |
-            !is.na(.data$sprint_finish_pos_live) |
-            !is.na(.data$sprint_points_live),
-          "Yes",
-          .data$has_sprint
-        ),
-        sprint_grid = dplyr::coalesce(
-          .data$sprint_grid_live,
-          .data$sprint_grid
-        ),
-        sprint_finish_pos = dplyr::coalesce(
-          .data$sprint_finish_pos_live,
-          .data$sprint_finish_pos
-        ),
-        sprint_points = dplyr::coalesce(
-          .data$sprint_points_live,
-          .data$sprint_points
-        )
-      ) %>%
-      dplyr::select(
-        -"sprint_grid_live",
-        -"sprint_finish_pos_live",
-        -"sprint_points_live"
-      )
+      dplyr::left_join(sprint_features, by = "driver_id")
   }
 
+  base_cols <- c(
+    "driver_id",
+    "constructor_id",
+    "grid",
+    "quali_position",
+    "driver_experience",
+    "driver_failure_avg",
+    "constructor_grid_avg",
+    "constructor_finish_avg",
+    "constructor_failure_avg",
+    "driver_grid_avg",
+    "driver_position_avg",
+    "driver_finish_avg",
+    "driver_avg_qgap",
+    "grid_pos_corr_avg",
+    "driver_failure_circuit_avg",
+    "constructor_failure_circuit_avg",
+    "driver_practice_optimal_rank_avg",
+    "practice_avg_rank",
+    "practice_best_rank",
+    "practice_optimal_rank",
+    "practice_avg_gap",
+    "practice_best_gap",
+    "q_min_perc",
+    "q_avg_perc",
+    "season",
+    "round",
+    "round_id"
+  )
+  sprint_cols <- c("sprint_grid", "sprint_finish_pos", "sprint_points")
+  sprint_cols_present <- sprint_cols[sprint_cols %in% names(new_data)]
+
   new_data <- new_data %>%
-    dplyr::select(
-      "driver_id",
-      "constructor_id",
-      "grid",
-      "quali_position",
-      "driver_experience",
-      "driver_failure_avg",
-      "constructor_grid_avg",
-      "constructor_finish_avg",
-      "constructor_failure_avg",
-      "driver_grid_avg",
-      "driver_position_avg",
-      "driver_finish_avg",
-      "driver_avg_qgap",
-      "grid_pos_corr_avg",
-      "driver_failure_circuit_avg",
-      "constructor_failure_circuit_avg",
-      "driver_practice_optimal_rank_avg",
-      "practice_avg_rank",
-      "practice_best_rank",
-      "practice_optimal_rank",
-      "practice_avg_gap",
-      "practice_best_gap",
-      "q_min_perc",
-      "q_avg_perc",
-      "has_sprint",
-      "sprint_era",
-      "sprint_grid",
-      "sprint_finish_pos",
-      "sprint_points",
-      "season",
-      "round",
-      "round_id"
-    ) %>%
+    dplyr::select(dplyr::all_of(c(base_cols, sprint_cols_present))) %>%
     unique() %>%
     dplyr::mutate(
       round_id = as.factor(.data$round_id),
@@ -974,46 +952,50 @@ predict_quali_round <- function(
   return(all_preds)
 }
 
-#' Predict Sprint Winner
+#' Predict Sprint Race Outcomes
+#'
+#' @description
+#' Predicts sprint race outcomes by treating the sprint as a normal race.
+#' On a sprint weekend, only FP1 data is available before the sprint runs, so
+#' the underlying race models are applied with whatever practice data is
+#' accessible at that point (exactly as they would be for an early-timing race
+#' prediction).
 #'
 #' @param new_data A data frame of new data, typically from
-#'   `generate_next_race_data()`.
-#' @param quali_models A list of fitted `workflow` objects for qualifying
-#'   prediction. Passed to `predict_quali_round()` when `quali_preds` is `NULL`.
+#'   `generate_next_race_data()` or `generate_new_data()`.
+#' @param results_models A list of race-prediction model workflows. Passed
+#'   directly to `predict_round()`. See `predict_round()` for details.
 #' @param engine The model engine to use if loading models from disk. Defaults
 #'   to `"ensemble"`.
-#' @param quali_preds Optional precomputed qualifying predictions. When
-#'   provided, this should include `driver_id`, `round`, `season`, and
-#'   `pole_odd`.
-#' @return A tibble with `driver_id`, `round`, `season`, and `sprint_win_odd`.
-#' @noRd
-predict_sprint_winner <- function(
+#'
+#' @return A tibble with the same structure as `predict_round()`, with columns
+#'   `driver_id`, `round`, `season`, `sprint_win_odd`, `sprint_podium_odd`,
+#'   `sprint_t10_odd`, `sprint_likely_position`, and
+#'   `sprint_likely_position_class`.
+#' @export
+#' @examples
+#' \dontrun{
+#' new_data <- generate_next_race_data()
+#' sprint_preds <- predict_sprint_round(new_data)
+#' }
+predict_sprint_round <- function(
   new_data = generate_next_race_data(),
-  quali_models = NULL,
-  engine = "ensemble",
-  quali_preds = NULL
+  results_models = NULL,
+  engine = "ensemble"
 ) {
-  if (is.null(quali_preds)) {
-    quali_preds <- predict_quali_round(
-      new_data = new_data,
-      quali_models = quali_models,
-      engine = engine
-    )
-  }
+  race_preds <- predict_round(
+    new_data = new_data,
+    results_models = results_models,
+    engine = engine
+  )
 
-  required_cols <- c("driver_id", "round", "season", "pole_odd")
-  if (!all(required_cols %in% names(quali_preds))) {
-    cli::cli_abort(
-      "{.arg quali_preds} must contain columns: {.val {required_cols}}"
-    )
-  }
-
-  quali_preds %>%
-    dplyr::transmute(
-      driver_id = .data$driver_id,
-      round = .data$round,
-      season = .data$season,
-      sprint_win_odd = .data$pole_odd
+  race_preds %>%
+    dplyr::rename(
+      sprint_win_odd = "win_odd",
+      sprint_podium_odd = "podium_odd",
+      sprint_t10_odd = "t10_odd",
+      sprint_likely_position = "likely_position",
+      sprint_likely_position_class = "likely_position_class"
     )
 }
 
