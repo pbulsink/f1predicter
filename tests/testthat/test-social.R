@@ -281,8 +281,13 @@ test_that("format_sprint_skeet_predictions() formats sprint win and podium predi
   expect_match(result[[1]]$text, "Sprint Predictions")
   expect_match(result[[1]]$text, "Sprint Win Chance")
   expect_match(result[[1]]$text, "Driver A")
+  # Confirm the top driver's win percentage is in the output
+  expect_match(result[[1]]$text, "70.0%")
   expect_true("F1Sprint" %in% result[[1]]$tags)
   expect_match(result[[2]]$text, "Sprint Podium Chance")
+  # Confirm podium odds are rendered in the second skeet
+  expect_match(result[[2]]$text, "Driver A")
+  expect_match(result[[2]]$text, "85.0%")
 })
 
 test_that("format_quali_prob_table() produces gt table", {
