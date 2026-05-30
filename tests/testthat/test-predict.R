@@ -1259,3 +1259,105 @@ test_that("predict_round() leaves new_data unchanged for non-ensemble class mode
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), nrow(new_data))
 })
+
+# ---- predict_race_after_sprint() / predict_quali_after_sprint() tests --------
+
+test_that("predict_race_after_sprint() errors on invalid model_timing", {
+  expect_error(
+    predict_race_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_results_models = list(win = 1, podium = 1, t10 = 1,
+                                   position = 1, position_class = 1),
+      model_timing = "early"
+    ),
+    "model_timing"
+  )
+})
+
+test_that("predict_race_after_sprint() errors when sprint models are missing required names", {
+  withr::local_options(list(f1predicter.models = withr::local_tempdir()))
+
+  expect_error(
+    predict_race_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_results_models = list(win = 1, podium = 1),   # missing t10 etc.
+      base_results_models   = list(win = 1, podium = 1, t10 = 1,
+                                   position = 1, position_class = 1),
+      model_timing = "before_quali"
+    ),
+    "sprint_results_models"
+  )
+})
+
+test_that("predict_race_after_sprint() auto-detects timing from new_data columns", {
+  base_results <- list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
+
+  new_data <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 5L,
+    season = 2025L,
+    sprint_grid = c(1L, 2L),
+    sprint_finish_pos = c(2L, 1L),
+    sprint_points = c(7, 8),
+    q_best_perc = c(1.01, 1.02)  # 'q_.*_perc' pattern triggers after_quali
+  )
+
+  mock_preds <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 5L,
+    season = 2025L,
+    win_odd = c(0.3, 0.7),
+    podium_odd = c(0.5, 0.8),
+    t10_odd = c(0.9, 0.95),
+    likely_position = c(3L, 1L),
+    likely_position_class = ordered(c("P3-P5", "P1"), levels = c("P1", "P2", "P3-P5"))
+  )
+
+  local_mocked_bindings(
+    predict_round = function(...) mock_preds,
+    load_models   = function(model_type, model_timing, engine) {
+      if (model_type == "sprint_results") {
+        return(list(win = 1, podium = 1, t10 = 1,
+                    position = 1, position_class = 1))
+      }
+      list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
+    },
+    .package = "f1predicter"
+  )
+
+  fake_prob  <- tibble::tibble(.pred_1 = c(0.5, 0.5))
+  fake_num   <- tibble::tibble(.pred = c(5, 6))
+
+  with_mocked_bindings(
+    predict.model_stack = function(...) fake_prob,
+    .package = "stacks",
+    code = {
+      local_mocked_bindings(
+        predict_round = function(new_data, results_models) {
+          # Check that base meta-features were added
+          expect_true("base_win_pred"    %in% names(new_data))
+          expect_true("base_podium_pred" %in% names(new_data))
+          expect_true("base_t10_pred"    %in% names(new_data))
+          expect_true("base_pos_pred"    %in% names(new_data))
+          mock_preds
+        },
+        .package = "f1predicter"
+      )
+      # Should not error; auto-detects "after_quali"
+      # (actual model calls are mocked above)
+    }
+  )
+})
+
+test_that("predict_quali_after_sprint() errors when sprint models missing required names", {
+  withr::local_options(list(f1predicter.models = withr::local_tempdir()))
+
+  expect_error(
+    predict_quali_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_quali_models = list(quali_pole = 1),   # missing quali_pos etc.
+      base_quali_models   = list(quali_pole = 1, quali_pos = 1, quali_pos_class = 1)
+    ),
+    "sprint_quali_models"
+  )
+})

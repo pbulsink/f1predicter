@@ -999,6 +999,229 @@ predict_sprint_round <- function(
     )
 }
 
+#' Predict Race Outcome After Sprint (Sprint Weekend)
+#'
+#' @description
+#' Applies a sprint-specific race-results model to predict the main race
+#' outcome on a sprint weekend. The sprint models supplement the standard
+#' feature set with base race-model predictions
+#' (`base_win_pred`, `base_podium_pred`, `base_t10_pred`, `base_pos_pred`)
+#' and sprint race features (`sprint_grid`, `sprint_finish_pos`,
+#' `sprint_points`).
+#'
+#' Two timing variants are supported:
+#' \describe{
+#'   \item{`"before_quali"`}{Uses only sprint features and base race
+#'     predictions — appropriate after the sprint has been run but before
+#'     main qualifying.}
+#'   \item{`"after_quali"`}{Adds actual qualifying data (`grid`,
+#'     `q_min_perc`, `q_avg_perc`) to the above — appropriate after the
+#'     main qualifying session.}
+#' }
+#'
+#' @param new_data A data frame of new data, typically from
+#'   `generate_new_data()` with `sprint_results` supplied. Must contain
+#'   columns `sprint_grid`, `sprint_finish_pos`, and `sprint_points`.
+#' @param sprint_results_models A named list of fitted sprint-results
+#'   model objects (as returned by `model_sprint_results_before_quali()` or
+#'   `model_sprint_results_after_quali()`). When `NULL` (default), models are
+#'   loaded from disk using `model_timing` and `engine`.
+#' @param base_results_models A named list of base race-results models used
+#'   to generate meta-features. When `NULL` (default), the `"early"` results
+#'   models are loaded from disk.
+#' @param model_timing Character string: `"before_quali"` or `"after_quali"`.
+#'   Used both for loading sprint models from disk and for detecting which
+#'   features are present in `new_data`. Ignored when `sprint_results_models`
+#'   is supplied explicitly.
+#' @param engine The model engine key used for loading models from disk.
+#'   Defaults to `"ensemble"`.
+#' @return A tibble with columns `driver_id`, `round`, `season`,
+#'   `win_odd`, `podium_odd`, `t10_odd`, `likely_position`, and
+#'   `likely_position_class`.
+#' @export
+#' @examples
+#' \dontrun{
+#' sprint_res <- f1dataR::load_sprint(season = 2024, round = 5)
+#' new_data <- generate_new_data(season = 2024, round = 5, sprint_results = sprint_res)
+#' preds <- predict_race_after_sprint(new_data)
+#' }
+predict_race_after_sprint <- function(
+  new_data = generate_next_race_data(),
+  sprint_results_models = NULL,
+  base_results_models = NULL,
+  model_timing = NULL,
+  engine = "ensemble"
+) {
+  # Auto-detect timing from new_data columns when not specified
+  if (is.null(model_timing)) {
+    model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
+      "after_quali"
+    } else {
+      "before_quali"
+    }
+    cli::cli_inform("Auto-detected sprint model timing: {.val {model_timing}}")
+  }
+
+  valid_timings <- c("before_quali", "after_quali")
+  if (!model_timing %in% valid_timings) {
+    cli::cli_abort(
+      "{.arg model_timing} must be one of {.val {valid_timings}}, not {.val {model_timing}}."
+    )
+  }
+
+  # Load sprint models if needed
+  if (is.null(sprint_results_models)) {
+    cli::cli_inform(
+      "Loading sprint results models ({model_timing}, engine: {.val {engine}}) from disk."
+    )
+    sprint_results_models <- load_models(
+      model_type = "sprint_results",
+      model_timing = model_timing,
+      engine = engine
+    )
+  }
+
+  required_models <- c("win", "podium", "t10", "position", "position_class")
+  if (!all(required_models %in% names(sprint_results_models))) {
+    cli::cli_abort(
+      "The {.arg sprint_results_models} list must contain: {.val {required_models}}"
+    )
+  }
+
+  # Load base race-results models to generate meta-features
+  if (is.null(base_results_models)) {
+    base_results_models <- load_models(
+      model_type = "results",
+      model_timing = "early",
+      engine = engine
+    )
+  }
+
+  # Build meta-feature columns from the base race model
+  base_win_probs  <- stats::predict(
+    if (inherits(base_results_models$win, "model_stack")) base_results_models$win
+    else tune::extract_workflow(base_results_models$win),
+    new_data, type = "prob"
+  )
+  base_podium_probs <- stats::predict(
+    if (inherits(base_results_models$podium, "model_stack")) base_results_models$podium
+    else tune::extract_workflow(base_results_models$podium),
+    new_data, type = "prob"
+  )
+  base_t10_probs <- stats::predict(
+    if (inherits(base_results_models$t10, "model_stack")) base_results_models$t10
+    else tune::extract_workflow(base_results_models$t10),
+    new_data, type = "prob"
+  )
+  base_pos_preds  <- stats::predict(
+    if (inherits(base_results_models$position, "model_stack")) base_results_models$position
+    else tune::extract_workflow(base_results_models$position),
+    new_data, type = "numeric"
+  )
+
+  sprint_new_data <- new_data %>%
+    dplyr::mutate(
+      base_win_pred    = base_win_probs$.pred_1,
+      base_podium_pred = base_podium_probs$.pred_1,
+      base_t10_pred    = base_t10_probs$.pred_1,
+      base_pos_pred    = base_pos_preds$.pred
+    )
+
+  # Delegate to predict_round() using the sprint models
+  predict_round(
+    new_data       = sprint_new_data,
+    results_models = sprint_results_models
+  )
+}
+
+
+#' Predict Qualifying Outcome After Sprint (Sprint Weekend)
+#'
+#' @description
+#' Applies a sprint-specific qualifying model to predict the main qualifying
+#' session outcome on a sprint weekend. The sprint qualifying models supplement
+#' base qualifying predictions (`base_pole_pred`, `base_quali_pos_pred`) with
+#' sprint race features (`sprint_grid`, `sprint_finish_pos`, `sprint_points`).
+#'
+#' @param new_data A data frame of new data, typically from
+#'   `generate_new_data()` with `sprint_results` supplied. Must contain
+#'   columns `sprint_grid`, `sprint_finish_pos`, and `sprint_points`.
+#' @param sprint_quali_models A named list of fitted sprint-qualifying model
+#'   objects (as returned by `model_sprint_quali()`). When `NULL` (default),
+#'   models are loaded from disk.
+#' @param base_quali_models A named list of base qualifying models used to
+#'   generate meta-features. When `NULL` (default), the `"early"` qualifying
+#'   models are loaded from disk.
+#' @param engine The model engine key used for loading models from disk.
+#'   Defaults to `"ensemble"`.
+#' @return A tibble with columns `driver_id`, `round`, `season`,
+#'   `pole_odd`, `likely_quali_position`, and `likely_quali_position_class`.
+#' @export
+#' @examples
+#' \dontrun{
+#' sprint_res <- f1dataR::load_sprint(season = 2024, round = 5)
+#' new_data <- generate_new_data(season = 2024, round = 5, sprint_results = sprint_res)
+#' preds <- predict_quali_after_sprint(new_data)
+#' }
+predict_quali_after_sprint <- function(
+  new_data = generate_next_race_data(),
+  sprint_quali_models = NULL,
+  base_quali_models = NULL,
+  engine = "ensemble"
+) {
+  # Load sprint qualifying models if needed
+  if (is.null(sprint_quali_models)) {
+    cli::cli_inform(
+      "Loading sprint qualifying models (after_sprint, engine: {.val {engine}}) from disk."
+    )
+    sprint_quali_models <- load_models(
+      model_type = "sprint_quali",
+      model_timing = "after_sprint",
+      engine = engine
+    )
+  }
+
+  required_models <- c("quali_pole", "quali_pos", "quali_pos_class")
+  if (!all(required_models %in% names(sprint_quali_models))) {
+    cli::cli_abort(
+      "The {.arg sprint_quali_models} list must contain: {.val {required_models}}"
+    )
+  }
+
+  # Load base qualifying models to generate meta-features
+  if (is.null(base_quali_models)) {
+    base_quali_models <- load_models(
+      model_type = "quali",
+      model_timing = "early",
+      engine = engine
+    )
+  }
+
+  # Build meta-feature columns from base qualifying model
+  base_pole_probs <- stats::predict(
+    if (inherits(base_quali_models$quali_pole, "model_stack")) base_quali_models$quali_pole
+    else tune::extract_workflow(base_quali_models$quali_pole),
+    new_data, type = "prob"
+  )
+  base_pos_preds  <- stats::predict(
+    if (inherits(base_quali_models$quali_pos, "model_stack")) base_quali_models$quali_pos
+    else tune::extract_workflow(base_quali_models$quali_pos),
+    new_data, type = "numeric"
+  )
+
+  sprint_new_data <- new_data %>%
+    dplyr::mutate(
+      base_pole_pred      = base_pole_probs$.pred_1,
+      base_quali_pos_pred = base_pos_preds$.pred
+    )
+
+  # Delegate to predict_quali_round() using the sprint qualifying models
+  predict_quali_round(
+    new_data      = sprint_new_data,
+    quali_models  = sprint_quali_models
+  )
+}
+
 #' Predict Race Winner
 #'
 #' @param new_data A data frame of new data, typically from `generate_new_data()`.

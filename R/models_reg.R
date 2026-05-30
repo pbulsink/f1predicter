@@ -1450,13 +1450,994 @@ model_results_early <- function(
   invisible(models)
 }
 
-#' Construct Model File Path
+# ========================= Sprint-Specific Models ===========================
+
+#' Prepare Sprint Weekend Training Data
+#'
+#' @description
+#' Assembles a training dataset for sprint-specific prediction models. For every
+#' sprint weekend that appears in both the package schedule and `historical_data`,
+#' this function:
+#' \enumerate{
+#'   \item Loads the sprint race results from the `f1dataR` API.
+#'   \item Generates the standard feature set via `generate_new_data()`, using
+#'     only data available before the round to avoid target leakage.
+#'   \item Obtains base-model predictions from the supplied `results_models` and
+#'     `quali_models` (renamed to `base_win_pred`, `base_podium_pred`,
+#'     `base_t10_pred`, `base_pos_pred`, `base_pole_pred`,
+#'     `base_quali_pos_pred`).
+#'   \item Joins with the actual race and qualifying outcomes recorded in
+#'     `historical_data`.
+#' }
+#' The resulting data frame contains both the sprint-specific features and the
+#' base-model meta-features needed to train the sprint ensemble models
+#' (`model_sprint_results_before_quali()`, `model_sprint_results_after_quali()`,
+#' `model_sprint_quali()`).
+#'
+#' @param historical_data A data frame of historical race data, typically the
+#'   output of `clean_data()`.
+#' @param results_models A named list of fitted race-results models (as returned
+#'   by `model_results_early()` etc.). When `NULL` (default) the models are
+#'   loaded from the path set in `options("f1predicter.models")`.
+#' @param quali_models A named list of fitted qualifying models. When `NULL`
+#'   (default) the models are loaded from disk.
+#' @param engine The engine key used when loading models from disk. Defaults to
+#'   `"ensemble"`.
+#' @param seasons Optional numeric vector restricting processing to specific
+#'   seasons. When `NULL` (default) all available sprint seasons are used.
+#' @return A tibble with one row per driver per sprint weekend, containing base
+#'   model predictions, sprint features, and actual race / qualifying outcomes.
+#'   Returns `NULL` with a warning when no sprint rounds can be processed.
+#' @export
+#' @examples
+#' \dontrun{
+#' sprint_train <- prepare_sprint_training_data(clean_data())
+#' }
+prepare_sprint_training_data <- function(
+  historical_data = clean_data(),
+  results_models = NULL,
+  quali_models = NULL,
+  engine = "ensemble",
+  seasons = NULL
+) {
+  # Identify sprint weekends present in historical_data
+  sprint_rounds <- f1predicter::schedule %>%
+    dplyr::filter(!is.na(.data$sprint_date)) %>%
+    dplyr::mutate(
+      season = as.numeric(.data$season),
+      round = as.numeric(.data$round),
+      round_id = paste0(.data$season, "-", .data$round)
+    ) %>%
+    dplyr::filter(.data$round_id %in% historical_data$round_id)
+
+  if (!is.null(seasons)) {
+    sprint_rounds <- sprint_rounds %>%
+      dplyr::filter(.data$season %in% seasons)
+  }
+
+  if (nrow(sprint_rounds) == 0) {
+    cli::cli_warn(
+      "No sprint weekends found in historical_data. Returning NULL."
+    )
+    return(NULL)
+  }
+
+  # Load base models if not provided
+  if (is.null(results_models)) {
+    cli::cli_inform("Loading base results models (engine: {.val {engine}}).")
+    results_models <- load_models("results", "early", engine = engine)
+  }
+  if (is.null(quali_models)) {
+    cli::cli_inform("Loading base qualifying models (engine: {.val {engine}}).")
+    quali_models <- load_models("quali", "early", engine = engine)
+  }
+
+  cli::cli_inform(
+    "Preparing sprint training data from {nrow(sprint_rounds)} round(s)."
+  )
+
+  sprint_rows <- purrr::map(seq_len(nrow(sprint_rounds)), function(i) {
+    season_i <- sprint_rounds$season[[i]]
+    round_i <- sprint_rounds$round[[i]]
+    round_id_i <- sprint_rounds$round_id[[i]]
+
+    cli::cli_inform("  Sprint round {season_i}-R{round_i}")
+
+    # Actual outcomes for this round
+    round_hist <- historical_data %>%
+      dplyr::filter(.data$round_id == round_id_i)
+    if (nrow(round_hist) == 0) return(NULL)
+
+    # Load sprint race results
+    sprint_results <- tryCatch(
+      f1dataR::load_sprint(season = season_i, round = round_i),
+      error = function(e) {
+        cli::cli_warn(
+          "Could not load sprint results for {season_i} R{round_i}: {e$message}"
+        )
+        NULL
+      }
+    )
+    if (is.null(sprint_results) || nrow(sprint_results) == 0) return(NULL)
+
+    # Use only data available before this round (avoid target leakage)
+    prior_hist <- historical_data %>%
+      dplyr::filter(
+        .data$season < season_i |
+          (.data$season == season_i & .data$round < round_i)
+      )
+    if (nrow(prior_hist) == 0) return(NULL)
+
+    # Generate the standard feature set
+    new_data_round <- tryCatch(
+      generate_new_data(
+        season = season_i,
+        round = round_i,
+        drivers = round_hist[, c("driver_id", "constructor_id")],
+        historical_data = prior_hist,
+        use_live_data = FALSE,
+        sprint_results = sprint_results
+      ),
+      error = function(e) {
+        cli::cli_warn(
+          "Could not generate data for {season_i} R{round_i}: {e$message}"
+        )
+        NULL
+      }
+    )
+    if (is.null(new_data_round) || nrow(new_data_round) == 0) return(NULL)
+
+    # Get base model predictions
+    race_preds <- tryCatch(
+      predict_round(new_data_round, results_models),
+      error = function(e) NULL
+    )
+    quali_preds <- tryCatch(
+      predict_quali_round(new_data_round, quali_models),
+      error = function(e) NULL
+    )
+    if (is.null(race_preds) || is.null(quali_preds)) return(NULL)
+
+    # Attach base predictions as meta-features
+    train_row <- new_data_round %>%
+      dplyr::left_join(
+        race_preds %>%
+          dplyr::select(
+            "driver_id", "win_odd", "podium_odd", "t10_odd", "likely_position"
+          ),
+        by = "driver_id"
+      ) %>%
+      dplyr::rename(
+        base_win_pred    = "win_odd",
+        base_podium_pred = "podium_odd",
+        base_t10_pred    = "t10_odd",
+        base_pos_pred    = "likely_position"
+      ) %>%
+      dplyr::left_join(
+        quali_preds %>%
+          dplyr::select("driver_id", "pole_odd", "likely_quali_position"),
+        by = "driver_id"
+      ) %>%
+      dplyr::rename(
+        base_pole_pred       = "pole_odd",
+        base_quali_pos_pred  = "likely_quali_position"
+      )
+
+    # Attach actual race and qualifying outcomes
+    outcome_cols <- intersect(
+      c(
+        "driver_id", "position", "quali_position",
+        "grid", "q_min_perc", "q_avg_perc"
+      ),
+      names(round_hist)
+    )
+    outcomes <- round_hist %>%
+      dplyr::select(dplyr::all_of(outcome_cols))
+
+    train_row <- train_row %>%
+      dplyr::select(
+        -dplyr::any_of(c("position", "quali_position", "q_min_perc", "q_avg_perc"))
+      ) %>%
+      dplyr::left_join(outcomes, by = "driver_id")
+
+    return(train_row)
+  })
+
+  sprint_rows <- purrr::compact(sprint_rows)
+  if (length(sprint_rows) == 0) {
+    cli::cli_warn(
+      "No sprint rounds could be processed. Returning NULL."
+    )
+    return(NULL)
+  }
+
+  result <- dplyr::bind_rows(sprint_rows)
+  cli::cli_inform(
+    "Sprint training data: {nrow(result)} rows from {length(sprint_rows)} round(s)."
+  )
+  result
+}
+
+
+#' Train Sprint Race Result Models
+#'
+#' @description
+#' Trains a suite of race-result prediction models that are specific to sprint
+#' weekends. Unlike the standard `train_results_models()`, these models accept
+#' the predictions produced by the base race ensemble (`base_win_pred`,
+#' `base_podium_pred`, `base_t10_pred`, `base_pos_pred`) and sprint race
+#' features (`sprint_grid`, `sprint_finish_pos`, `sprint_points`) as predictors.
+#'
+#' Two scenarios are supported:
+#' \describe{
+#'   \item{`"before_quali"`}{Prediction before the main qualifying session (uses
+#'     sprint data and base predictions only).}
+#'   \item{`"after_quali"`}{Prediction after the main qualifying session (adds
+#'     `grid`, `q_min_perc`, and `q_avg_perc` from the qualifying result).}
+#' }
+#'
+#' @param sprint_data A data frame of sprint-weekend training rows, typically
+#'   the output of `prepare_sprint_training_data()`.
+#' @param scenario A character string: `"before_quali"` or `"after_quali"`.
+#' @param engine A character string specifying the model engine. One of
+#'   `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
+#' @return A named list with elements `"win"`, `"podium"`, `"t10"`,
+#'   `"position"`, and `"position_class"`.
+#' @noRd
+train_sprint_results_models <- function(
+  sprint_data,
+  scenario,
+  engine = "ranger"
+) {
+  valid_scenarios <- c("before_quali", "after_quali")
+  if (!scenario %in% valid_scenarios) {
+    cli::cli_abort(
+      "{.arg scenario} must be one of {.val {valid_scenarios}}."
+    )
+  }
+
+  valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
+  if (!engine %in% valid_engines) {
+    cli::cli_abort(
+      "{.arg engine} must be one of {.val {valid_engines}}, not {.val {engine}}."
+    )
+  }
+  if (engine != "ensemble" && !requireNamespace(engine, quietly = TRUE)) {
+    cli::cli_abort(
+      "Package {.pkg {engine}} must be installed to use the {.val {engine}} engine."
+    )
+  }
+  if (engine == "ensemble" && !requireNamespace("stacks", quietly = TRUE)) {
+    cli::cli_abort(
+      "Package {.pkg stacks} must be installed to use the {.val ensemble} engine."
+    )
+  }
+
+  if (requireNamespace("future", quietly = TRUE)) {
+    future::plan("multisession")
+  }
+
+  cli::cli_h1(
+    "Training Sprint Race Result Models ({scenario}, engine: {engine})"
+  )
+
+  # Outcome variables
+  sprint_data <- sprint_data %>%
+    dplyr::filter(!is.na(.data$sprint_finish_pos)) %>%
+    dplyr::mutate(
+      win    = factor(ifelse(.data$position == 1L, 1L, 0L), levels = c(1L, 0L)),
+      podium = factor(ifelse(.data$position <= 3L, 1L, 0L), levels = c(1L, 0L)),
+      t10    = factor(ifelse(.data$position <= 10L, 1L, 0L), levels = c(1L, 0L))
+    )
+
+  id_cols <- c("driver_id", "constructor_id", "round_id", "season", "round")
+  outcome_cols <- c("win", "podium", "t10", "position")
+
+  base_sprint_cols <- c(
+    id_cols,
+    "base_win_pred", "base_podium_pred", "base_t10_pred", "base_pos_pred",
+    "sprint_grid", "sprint_finish_pos", "sprint_points"
+  )
+
+  results_cols <- if (scenario == "before_quali") {
+    c(base_sprint_cols, outcome_cols)
+  } else {
+    # after_quali: add main qualifying features
+    c(base_sprint_cols, "grid", "q_min_perc", "q_avg_perc", outcome_cols)
+  }
+
+  # Drop rows with NAs in predictor columns
+  predictor_only_cols <- setdiff(results_cols, c(outcome_cols, id_cols))
+  sprint_data <- sprint_data %>%
+    dplyr::select(dplyr::all_of(results_cols)) %>%
+    tidyr::drop_na(dplyr::all_of(predictor_only_cols))
+
+  if (nrow(sprint_data) < 10L) {
+    cli::cli_abort(
+      "Insufficient sprint training data: only {nrow(sprint_data)} complete rows."
+    )
+  }
+
+  predictor_vars <- setdiff(results_cols, c(outcome_cols, id_cols))
+
+  splits     <- prepare_and_split_data(sprint_data, columns = results_cols)
+  train_data <- splits$train_data
+  data_split <- splits$data_split
+  data_folds <- splits$data_folds
+
+  all_hyperparams <- get_hyperparameters(
+    "sprint_results",
+    ifelse(scenario == "before_quali", "before_quali", "after_quali")
+  )
+
+  if (engine == "ensemble") {
+    win_final <- train_stacked_model(
+      outcome_var    = "win",
+      model_name     = paste("Sprint Win", scenario),
+      train_data     = train_data,
+      data_split     = data_split,
+      data_folds     = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams    = all_hyperparams$win_hyperparameters,
+      model_mode     = "classification",
+      save_model     = FALSE
+    )
+    podium_final <- train_stacked_model(
+      outcome_var    = "podium",
+      model_name     = paste("Sprint Podium", scenario),
+      train_data     = train_data,
+      data_split     = data_split,
+      data_folds     = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams    = all_hyperparams$podium_hyperparameters,
+      model_mode     = "classification",
+      save_model     = FALSE
+    )
+    t10_final <- train_stacked_model(
+      outcome_var    = "t10",
+      model_name     = paste("Sprint T10", scenario),
+      train_data     = train_data,
+      data_split     = data_split,
+      data_folds     = data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams    = all_hyperparams$t10_hyperparameters,
+      model_mode     = "classification",
+      save_model     = FALSE
+    )
+  } else {
+    class_mod_spec <- switch(
+      engine,
+      "ranger" = parsnip::rand_forest(
+        trees = 1000, mtry = tune::tune(), min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("ranger"),
+      "glmnet" = parsnip::logistic_reg(
+        penalty = tune::tune(), mixture = tune::tune()
+      ) %>%
+        parsnip::set_engine("glmnet"),
+      "nnet" = parsnip::mlp(
+        hidden_units = tune::tune(), penalty = tune::tune(), epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("nnet"),
+      "kernlab" = parsnip::svm_rbf(
+        cost = tune::tune(), rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kernlab"),
+      "kknn" = parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kknn")
+    )
+    grid <- switch(
+      engine,
+      "ranger"  = dials::grid_regular(
+        dials::finalize(dials::mtry(), train_data[, predictor_vars]),
+        dials::finalize(dials::min_n(), train_data[, predictor_vars]),
+        levels = 4L
+      ),
+      "glmnet"  = dials::grid_regular(dials::penalty(), dials::mixture(), levels = 4L),
+      "nnet"    = dials::grid_regular(
+        dials::hidden_units(), dials::penalty(), dials::epochs(), levels = 3L
+      ),
+      "kernlab" = dials::grid_regular(dials::cost(), dials::rbf_sigma(), levels = 3L),
+      "kknn"    = dials::grid_regular(dials::neighbors(range = c(3L, 15L)), levels = 4L)
+    )
+    win_final <- train_binary_result_model(
+      "win", "Sprint Win Model",
+      train_data, data_split, data_folds,
+      class_mod_spec, grid, predictor_vars
+    )
+    podium_final <- train_binary_result_model(
+      "podium", "Sprint Podium Model",
+      train_data, data_split, data_folds,
+      class_mod_spec, grid, predictor_vars
+    )
+    t10_final <- train_binary_result_model(
+      "t10", "Sprint T10 Model",
+      train_data, data_split, data_folds,
+      class_mod_spec, grid, predictor_vars
+    )
+  }
+
+  # ---- Position (regression) model ----
+  pos_cols    <- setdiff(results_cols, c("win", "podium", "t10"))
+  pos_data    <- sprint_data %>% dplyr::select(dplyr::all_of(pos_cols))
+  pos_splits  <- prepare_and_split_data(pos_data)
+  pos_predictor_vars <- setdiff(pos_cols, c("position", id_cols))
+
+  if (engine == "ensemble") {
+    position_final_fit <- train_stacked_model(
+      outcome_var    = "position",
+      model_name     = paste("Sprint Position", scenario),
+      train_data     = pos_splits$train_data,
+      data_split     = pos_splits$data_split,
+      data_folds     = pos_splits$data_folds,
+      predictor_vars = pos_predictor_vars,
+      hyperparams    = all_hyperparams$position_hyperparameters,
+      model_mode     = "regression",
+      save_model     = FALSE
+    )
+  } else {
+    reg_mod_spec <- switch(
+      engine,
+      "ranger" = parsnip::rand_forest(
+        trees = 1000, mtry = tune::tune(), min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("ranger"),
+      "glmnet" = parsnip::linear_reg(
+        penalty = tune::tune(), mixture = tune::tune()
+      ) %>%
+        parsnip::set_engine("glmnet"),
+      "nnet" = parsnip::mlp(
+        hidden_units = tune::tune(), penalty = tune::tune(), epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("nnet"),
+      "kernlab" = parsnip::svm_rbf(
+        cost = tune::tune(), rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kernlab"),
+      "kknn" = parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kknn")
+    )
+    pos_formula <- stats::reformulate(pos_predictor_vars, response = "position")
+    rlang::f_env(pos_formula) <- rlang::base_env()
+    pos_recipe <- recipes::recipe(pos_formula, data = pos_splits$train_data) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+    pos_wflow <- workflows::workflow() %>%
+      workflows::add_model(reg_mod_spec) %>%
+      workflows::add_recipe(pos_recipe)
+    metrics_reg <- yardstick::metric_set(yardstick::rmse, yardstick::mae, yardstick::rsq)
+    pos_res <- tune::tune_grid(
+      pos_wflow,
+      resamples = pos_splits$data_folds,
+      grid = grid,
+      metrics = metrics_reg
+    )
+    position_final_fit <- pos_wflow %>%
+      tune::finalize_workflow(tune::select_best(pos_res, metric = "rmse")) %>%
+      tune::last_fit(pos_splits$data_split, metrics = metrics_reg)
+  }
+
+  # ---- Position (ordinal) model ----
+  cli::cli_rule("Training Sprint Position Model (Ordinal)")
+  pos_class_data <- pos_data %>%
+    dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+  pos_class_predictor_vars <- pos_predictor_vars
+
+  if (engine == "ensemble") {
+    win_probs  <- stats::predict(win_final,          new_data = pos_class_data, type = "prob")
+    pos_preds  <- stats::predict(position_final_fit, new_data = pos_class_data, type = "numeric")
+    pos_class_data <- pos_class_data %>%
+      dplyr::mutate(
+        ensemble_win_pred = win_probs$.pred_1,
+        ensemble_pos_pred = pos_preds$.pred
+      )
+    pos_class_predictor_vars <- c(pos_class_predictor_vars, "ensemble_win_pred", "ensemble_pos_pred")
+  }
+
+  pos_class_splits <- prepare_and_split_data(pos_class_data)
+
+  if (engine == "ensemble") {
+    position_class_final_fit <- train_ordinal_ensemble(
+      outcome_var    = "position",
+      model_name     = paste("Sprint Position Class", scenario),
+      train_data     = pos_class_splits$train_data,
+      data_split     = pos_class_splits$data_split,
+      data_folds     = pos_class_splits$data_folds,
+      predictor_vars = pos_class_predictor_vars,
+      hyperparams    = all_hyperparams$ordinal_class_hyperparameters,
+      save_model     = FALSE
+    )
+  } else {
+    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+    class(kap_linear) <- c("class_metric", "metric", "function")
+    attr(kap_linear, "direction") <- "maximize"
+    metrics_ordinal <- yardstick::metric_set(
+      yardstick::ranked_prob_score, kap_linear, yardstick::accuracy
+    )
+    formula_class <- stats::reformulate(pos_class_predictor_vars, response = "position")
+    rlang::f_env(formula_class) <- rlang::base_env()
+    pos_class_recipe <- recipes::recipe(
+      formula_class, data = pos_class_splits$train_data
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+    ordinal_spec <- parsnip::ordinal_reg() %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("polr")
+    position_class_final_fit <- workflows::workflow() %>%
+      workflows::add_model(ordinal_spec) %>%
+      workflows::add_recipe(pos_class_recipe) %>%
+      tune::last_fit(pos_class_splits$data_split, metrics = metrics_ordinal)
+  }
+
+  list(
+    "win"            = win_final,
+    "podium"         = podium_final,
+    "t10"            = t10_final,
+    "position"       = position_final_fit,
+    "position_class" = position_class_final_fit
+  )
+}
+
+
+#' Train Sprint Qualifying Prediction Models
+#'
+#' @description
+#' Trains qualifying prediction models for sprint weekends. These models use
+#' the predictions produced by the base qualifying ensemble (`base_pole_pred`,
+#' `base_quali_pos_pred`) together with sprint race features (`sprint_grid`,
+#' `sprint_finish_pos`, `sprint_points`) to predict the outcome of the main
+#' qualifying session on a sprint weekend.
+#'
+#' @param sprint_data A data frame of sprint-weekend training rows, typically
+#'   the output of `prepare_sprint_training_data()`.
+#' @param engine A character string specifying the model engine. One of
+#'   `"ranger"`, `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
+#' @return A named list with elements `"quali_pole"`, `"quali_pos"`, and
+#'   `"quali_pos_class"`.
+#' @noRd
+train_sprint_quali_models <- function(sprint_data, engine = "ranger") {
+  valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
+  if (!engine %in% valid_engines) {
+    cli::cli_abort(
+      "{.arg engine} must be one of {.val {valid_engines}}, not {.val {engine}}."
+    )
+  }
+  if (engine != "ensemble" && !requireNamespace(engine, quietly = TRUE)) {
+    cli::cli_abort(
+      "Package {.pkg {engine}} must be installed to use the {.val {engine}} engine."
+    )
+  }
+  if (engine == "ensemble" && !requireNamespace("stacks", quietly = TRUE)) {
+    cli::cli_abort(
+      "Package {.pkg stacks} must be installed to use the {.val ensemble} engine."
+    )
+  }
+
+  if (requireNamespace("future", quietly = TRUE)) {
+    future::plan("multisession")
+  }
+
+  cli::cli_h1("Training Sprint Qualifying Models (engine: {engine})")
+
+  sprint_data <- sprint_data %>%
+    dplyr::filter(!is.na(.data$sprint_finish_pos), !is.na(.data$quali_position)) %>%
+    dplyr::mutate(
+      pole = factor(
+        ifelse(.data$quali_position == 1L, 1L, 0L), levels = c(1L, 0L)
+      )
+    )
+
+  id_cols      <- c("driver_id", "constructor_id", "round_id", "season", "round")
+  outcome_cols <- c("pole", "quali_position")
+
+  sprint_quali_cols <- c(
+    id_cols,
+    "base_pole_pred", "base_quali_pos_pred",
+    "sprint_grid", "sprint_finish_pos", "sprint_points",
+    outcome_cols
+  )
+
+  predictor_only_cols <- setdiff(sprint_quali_cols, c(outcome_cols, id_cols))
+  sprint_data <- sprint_data %>%
+    dplyr::select(dplyr::all_of(sprint_quali_cols)) %>%
+    tidyr::drop_na(dplyr::all_of(predictor_only_cols))
+
+  if (nrow(sprint_data) < 10L) {
+    cli::cli_abort(
+      "Insufficient sprint qualifying training data: only {nrow(sprint_data)} rows."
+    )
+  }
+
+  predictor_vars <- setdiff(sprint_quali_cols, c(outcome_cols, id_cols))
+
+  all_hyperparams <- get_hyperparameters("sprint_quali", "after_sprint")
+
+  # ---- Pole model ----
+  pole_splits <- prepare_and_split_data(sprint_data, columns = sprint_quali_cols)
+
+  if (engine == "ensemble") {
+    pole_final_fit <- train_stacked_model(
+      outcome_var    = "pole",
+      model_name     = "Sprint Quali Pole After Sprint",
+      train_data     = pole_splits$train_data,
+      data_split     = pole_splits$data_split,
+      data_folds     = pole_splits$data_folds,
+      predictor_vars = predictor_vars,
+      hyperparams    = all_hyperparams$pole_hyperparameters,
+      model_mode     = "classification",
+      save_model     = FALSE
+    )
+  } else {
+    class_mod_spec <- switch(
+      engine,
+      "ranger" = parsnip::rand_forest(
+        trees = 1000, mtry = tune::tune(), min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("ranger"),
+      "glmnet" = parsnip::logistic_reg(
+        penalty = tune::tune(), mixture = tune::tune()
+      ) %>%
+        parsnip::set_engine("glmnet"),
+      "nnet" = parsnip::mlp(
+        hidden_units = tune::tune(), penalty = tune::tune(), epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("nnet"),
+      "kernlab" = parsnip::svm_rbf(
+        cost = tune::tune(), rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kernlab"),
+      "kknn" = parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
+        parsnip::set_mode("classification") %>%
+        parsnip::set_engine("kknn")
+    )
+    grid <- switch(
+      engine,
+      "ranger"  = dials::grid_regular(
+        dials::finalize(dials::mtry(), pole_splits$train_data[, predictor_vars]),
+        dials::finalize(dials::min_n(), pole_splits$train_data[, predictor_vars]),
+        levels = 4L
+      ),
+      "glmnet"  = dials::grid_regular(dials::penalty(), dials::mixture(), levels = 4L),
+      "nnet"    = dials::grid_regular(
+        dials::hidden_units(), dials::penalty(), dials::epochs(), levels = 3L
+      ),
+      "kernlab" = dials::grid_regular(dials::cost(), dials::rbf_sigma(), levels = 3L),
+      "kknn"    = dials::grid_regular(dials::neighbors(range = c(3L, 15L)), levels = 4L)
+    )
+    pole_formula <- stats::reformulate(predictor_vars, response = "pole")
+    rlang::f_env(pole_formula) <- rlang::base_env()
+    pole_recipe <- recipes::recipe(pole_formula, data = pole_splits$train_data) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+    pole_wflow <- workflows::workflow() %>%
+      workflows::add_model(class_mod_spec) %>%
+      workflows::add_recipe(pole_recipe)
+    metrics_binary <- yardstick::metric_set(
+      yardstick::accuracy, yardstick::mn_log_loss, yardstick::roc_auc
+    )
+    pole_res <- pole_wflow %>%
+      tune::tune_grid(
+        resamples = pole_splits$data_folds, grid = grid, metrics = metrics_binary
+      )
+    pole_final_fit <- pole_wflow %>%
+      tune::finalize_workflow(tune::select_best(pole_res, metric = "mn_log_loss")) %>%
+      tune::last_fit(pole_splits$data_split, metrics = metrics_binary)
+    report_model_metrics(
+      pole_final_fit, "Sprint Quali Pole Model",
+      c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
+    )
+  }
+
+  # ---- Qualifying position (regression) model ----
+  pos_cols  <- setdiff(sprint_quali_cols, "pole")
+  pos_data  <- sprint_data %>%
+    dplyr::filter(!is.na(.data$quali_position)) %>%
+    dplyr::select(dplyr::all_of(pos_cols))
+  pos_splits <- prepare_and_split_data(pos_data)
+  pos_predictor_vars <- setdiff(pos_cols, c("quali_position", id_cols))
+
+  if (engine == "ensemble") {
+    position_final_fit <- train_stacked_model(
+      outcome_var    = "quali_position",
+      model_name     = "Sprint Quali Position After Sprint",
+      train_data     = pos_splits$train_data,
+      data_split     = pos_splits$data_split,
+      data_folds     = pos_splits$data_folds,
+      predictor_vars = pos_predictor_vars,
+      hyperparams    = all_hyperparams$position_hyperparameters,
+      model_mode     = "regression",
+      save_model     = FALSE
+    )
+  } else {
+    reg_mod_spec <- switch(
+      engine,
+      "ranger" = parsnip::rand_forest(
+        trees = 1000, mtry = tune::tune(), min_n = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("ranger"),
+      "glmnet" = parsnip::linear_reg(
+        penalty = tune::tune(), mixture = tune::tune()
+      ) %>%
+        parsnip::set_engine("glmnet"),
+      "nnet" = parsnip::mlp(
+        hidden_units = tune::tune(), penalty = tune::tune(), epochs = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("nnet"),
+      "kernlab" = parsnip::svm_rbf(
+        cost = tune::tune(), rbf_sigma = tune::tune()
+      ) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kernlab"),
+      "kknn" = parsnip::nearest_neighbor(neighbors = tune::tune()) %>%
+        parsnip::set_mode("regression") %>%
+        parsnip::set_engine("kknn")
+    )
+    pos_formula <- stats::reformulate(pos_predictor_vars, response = "quali_position")
+    rlang::f_env(pos_formula) <- rlang::base_env()
+    pos_recipe <- recipes::recipe(pos_formula, data = pos_splits$train_data) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+    pos_wflow <- workflows::workflow() %>%
+      workflows::add_model(reg_mod_spec) %>%
+      workflows::add_recipe(pos_recipe)
+    metrics_reg <- yardstick::metric_set(yardstick::rmse, yardstick::mae, yardstick::rsq)
+    pos_res <- pos_wflow %>%
+      tune::tune_grid(
+        resamples = pos_splits$data_folds, grid = grid, metrics = metrics_reg
+      )
+    position_final_fit <- pos_wflow %>%
+      tune::finalize_workflow(tune::select_best(pos_res, metric = "rmse")) %>%
+      tune::last_fit(pos_splits$data_split, metrics = metrics_reg)
+    report_model_metrics(
+      position_final_fit, "Sprint Quali Position Model",
+      c("rmse" = "rmse", "mae" = "mae", "rsq" = "r-squared")
+    )
+  }
+
+  # ---- Qualifying position (ordinal) model ----
+  cli::cli_rule("Training Sprint Qualifying Position Model (Ordinal)")
+  pos_class_data <- pos_data %>%
+    dplyr::mutate(quali_position = factor(.data$quali_position, ordered = TRUE))
+  pos_class_predictor_vars <- pos_predictor_vars
+
+  if (engine == "ensemble") {
+    pole_probs  <- stats::predict(pole_final_fit,     new_data = pos_class_data, type = "prob")
+    pos_nums    <- stats::predict(position_final_fit, new_data = pos_class_data, type = "numeric")
+    pos_class_data <- pos_class_data %>%
+      dplyr::mutate(
+        ensemble_pole_pred = pole_probs$.pred_1,
+        ensemble_pos_pred  = pos_nums$.pred
+      )
+    pos_class_predictor_vars <- c(
+      pos_class_predictor_vars, "ensemble_pole_pred", "ensemble_pos_pred"
+    )
+  }
+
+  pos_class_splits <- prepare_and_split_data(pos_class_data)
+
+  if (engine == "ensemble") {
+    pos_class_final_fit <- train_ordinal_ensemble(
+      outcome_var    = "quali_position",
+      model_name     = "Sprint Quali Position Class After Sprint",
+      train_data     = pos_class_splits$train_data,
+      data_split     = pos_class_splits$data_split,
+      data_folds     = pos_class_splits$data_folds,
+      predictor_vars = pos_class_predictor_vars,
+      hyperparams    = all_hyperparams$ordinal_class_hyperparameters,
+      save_model     = FALSE
+    )
+  } else {
+    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+    class(kap_linear) <- c("class_metric", "metric", "function")
+    attr(kap_linear, "direction") <- "maximize"
+    metrics_ordinal <- yardstick::metric_set(
+      yardstick::ranked_prob_score, kap_linear, yardstick::accuracy
+    )
+    formula_class <- stats::reformulate(
+      pos_class_predictor_vars, response = "quali_position"
+    )
+    rlang::f_env(formula_class) <- rlang::base_env()
+    pos_class_recipe <- recipes::recipe(
+      formula_class, data = pos_class_splits$train_data
+    ) %>%
+      recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_predictors())
+    ordinal_spec <- parsnip::ordinal_reg() %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("polr")
+    pos_class_final_fit <- workflows::workflow() %>%
+      workflows::add_model(ordinal_spec) %>%
+      workflows::add_recipe(pos_class_recipe) %>%
+      tune::last_fit(pos_class_splits$data_split, metrics = metrics_ordinal)
+    report_model_metrics(
+      pos_class_final_fit, "Sprint Quali Position Ordinal Model (polr)",
+      c("ranked_prob_score" = "RPS", "kap" = "kappa", "accuracy" = "accuracy")
+    )
+  }
+
+  list(
+    "quali_pole"      = pole_final_fit,
+    "quali_pos"       = position_final_fit,
+    "quali_pos_class" = pos_class_final_fit
+  )
+}
+
+
+#' Train Sprint Race Models (Before Main Qualifying)
+#'
+#' @description
+#' Trains race-result prediction models for sprint weekends using data available
+#' *before* the main qualifying session. The models combine base ensemble
+#' predictions with sprint race features (`sprint_grid`, `sprint_finish_pos`,
+#' `sprint_points`).
+#'
+#' The training data is assembled automatically by `prepare_sprint_training_data()`
+#' when `sprint_data` is `NULL`.
+#'
+#' @param sprint_data A data frame of sprint-weekend training rows from
+#'   `prepare_sprint_training_data()`. When `NULL` (default), data is assembled
+#'   automatically.
+#' @param engine A character string specifying the model engine. One of
+#'   `"ranger"` (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or
+#'   `"ensemble"`.
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically saved to the path specified in
+#'   `options("f1predicter.models")`.
+#' @return A named list with elements `"win"`, `"podium"`, `"t10"`,
+#'   `"position"`, and `"position_class"`.
+#' @export
+#' @examples
+#' \dontrun{
+#' models <- model_sprint_results_before_quali()
+#' }
+model_sprint_results_before_quali <- function(
+  sprint_data = NULL,
+  engine = "ranger",
+  save_model = TRUE
+) {
+  if (is.null(sprint_data)) {
+    sprint_data <- prepare_sprint_training_data()
+  }
+  models <- train_sprint_results_models(
+    sprint_data, scenario = "before_quali", engine = engine
+  )
+  if (save_model) {
+    tryCatch(
+      save_models(
+        model_list = models,
+        model_timing = "before_quali",
+        model_type = "sprint_results"
+      ),
+      error = function(e) paste0("Error saving models: ", e)
+    )
+  }
+  invisible(models)
+}
+
+
+#' Train Sprint Race Models (After Main Qualifying)
+#'
+#' @description
+#' Trains race-result prediction models for sprint weekends using data available
+#' *after* the main qualifying session. In addition to the sprint race features
+#' used in `model_sprint_results_before_quali()`, these models also include the
+#' actual qualifying grid position (`grid`), and qualifying lap-time percentages
+#' (`q_min_perc`, `q_avg_perc`).
+#'
+#' @param sprint_data A data frame of sprint-weekend training rows from
+#'   `prepare_sprint_training_data()`. When `NULL` (default), data is assembled
+#'   automatically.
+#' @param engine A character string specifying the model engine. One of
+#'   `"ranger"` (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or
+#'   `"ensemble"`.
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically saved to the path specified in
+#'   `options("f1predicter.models")`.
+#' @return A named list with elements `"win"`, `"podium"`, `"t10"`,
+#'   `"position"`, and `"position_class"`.
+#' @export
+#' @examples
+#' \dontrun{
+#' models <- model_sprint_results_after_quali()
+#' }
+model_sprint_results_after_quali <- function(
+  sprint_data = NULL,
+  engine = "ranger",
+  save_model = TRUE
+) {
+  if (is.null(sprint_data)) {
+    sprint_data <- prepare_sprint_training_data()
+  }
+  models <- train_sprint_results_models(
+    sprint_data, scenario = "after_quali", engine = engine
+  )
+  if (save_model) {
+    tryCatch(
+      save_models(
+        model_list = models,
+        model_timing = "after_quali",
+        model_type = "sprint_results"
+      ),
+      error = function(e) paste0("Error saving models: ", e)
+    )
+  }
+  invisible(models)
+}
+
+
+#' Train Sprint Qualifying Models (After Sprint Race)
+#'
+#' @description
+#' Trains qualifying prediction models for sprint weekends using data available
+#' after the sprint race has been completed. The models combine base qualifying
+#' predictions with sprint race features to predict the outcome of the main
+#' qualifying session.
+#'
+#' @param sprint_data A data frame of sprint-weekend training rows from
+#'   `prepare_sprint_training_data()`. When `NULL` (default), data is assembled
+#'   automatically.
+#' @param engine A character string specifying the model engine. One of
+#'   `"ranger"` (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or
+#'   `"ensemble"`.
+#' @param save_model A logical value. If `TRUE` (default), the trained models
+#'   are automatically saved to the path specified in
+#'   `options("f1predicter.models")`.
+#' @return A named list with elements `"quali_pole"`, `"quali_pos"`, and
+#'   `"quali_pos_class"`.
+#' @export
+#' @examples
+#' \dontrun{
+#' models <- model_sprint_quali()
+#' }
+model_sprint_quali <- function(
+  sprint_data = NULL,
+  engine = "ranger",
+  save_model = TRUE
+) {
+  if (is.null(sprint_data)) {
+    sprint_data <- prepare_sprint_training_data()
+  }
+  models <- train_sprint_quali_models(sprint_data, engine = engine)
+  if (save_model) {
+    tryCatch(
+      save_models(
+        model_list = models,
+        model_timing = "after_sprint",
+        model_type = "sprint_quali"
+      ),
+      error = function(e) paste0("Error saving models: ", e)
+    )
+  }
+  invisible(models)
+}
 #'
 #' Internal helper to construct a standardized file path for saving/loading models.
 #' It validates the model type and timing, and checks for the required option.
 #'
-#' @param model_type The type of model, either "quali" or "results".
-#' @param model_timing The timing of the model, one of "early", "late", or "after_quali".
+#' @param model_type The type of model: `"quali"`, `"results"`, `"sprint_quali"`,
+#'   or `"sprint_results"`.
+#' @param model_timing The timing of the model. For `"quali"`: `"early"` or `"late"`.
+#'   For `"results"`: `"early"`, `"late"`, or `"after_quali"`. For `"sprint_quali"`:
+#'   `"after_sprint"`. For `"sprint_results"`: `"before_quali"` or `"after_quali"`.
 #' @param engine The engine used for the model, e.g., "ranger", "glmnet", "nnet", "kernlab", or "kknn".
 #' @return A full file path string.
 #' @noRd
@@ -1473,19 +2454,21 @@ construct_model_path <- function(model_type, model_timing, engine) {
   }
 
   # 2. Validate model_type
-  if (!model_type %in% c("quali", "results")) {
+  valid_types <- c("quali", "results", "sprint_quali", "sprint_results")
+  if (!model_type %in% valid_types) {
     cli::cli_abort(
-      "{.arg model_type} must be one of 'quali' or 'results', not {.val {model_type}}."
+      "{.arg model_type} must be one of {.val {valid_types}}, not {.val {model_type}}."
     )
   }
 
   # 3. Validate model_timing based on model_type
-  valid_timings <- if (model_type == "quali") {
-    c("early", "late")
-  } else {
-    # "results"
-    c("early", "late", "after_quali")
-  }
+  valid_timings <- switch(
+    model_type,
+    "quali"           = c("early", "late"),
+    "results"         = c("early", "late", "after_quali"),
+    "sprint_quali"    = c("after_sprint"),
+    "sprint_results"  = c("before_quali", "after_quali")
+  )
 
   if (!model_timing %in% valid_timings) {
     cli::cli_abort(
@@ -1507,8 +2490,9 @@ construct_model_path <- function(model_type, model_timing, engine) {
 #'
 #' This function takes a list of trained `last_fit` model object
 #' and saves the resulting list to a standardized file
-#' path. The `model_type` ("quali" or "results") is automatically inferred from
-#' the names of the models in the list (e.g., "quali_pole", "win").
+#' path. The `model_type` (`"quali"`, `"results"`, `"sprint_quali"`, or
+#' `"sprint_results"`) is automatically inferred from the names of the models
+#' in the list (e.g., `"quali_pole"`, `"win"`) unless explicitly supplied.
 #'
 #' The path is constructed from the base directory set in
 #' `getOption("f1predicter.models")` and the specified model timing.
@@ -1516,7 +2500,12 @@ construct_model_path <- function(model_type, model_timing, engine) {
 #' @param model_list A named list of `last_fit` objects from `tune`. The names
 #'   (e.g., "quali_pole", "win") are used to infer the model type.
 #' @param model_timing The timing context for the models, one of `"early"`,
-#'   `"late"`, or (for "results" models only) `"after_quali"`.
+#'   `"late"`, or (for "results" models only) `"after_quali"`. Sprint models
+#'   accept `"after_sprint"` (for `"sprint_quali"`) or `"before_quali"` /
+#'   `"after_quali"` (for `"sprint_results"`).
+#' @param model_type Optional character string to explicitly set the model type
+#'   (`"quali"`, `"results"`, `"sprint_quali"`, or `"sprint_results"`). When
+#'   `NULL` (default) the type is inferred from `model_list` names.
 #' @return Invisibly returns the full `file_path` where models were saved.
 #' @export
 #' @examples
@@ -1524,27 +2513,38 @@ construct_model_path <- function(model_type, model_timing, engine) {
 #' models <- model_quali_early()
 #' save_models(models, model_timing = "early")
 #' }
-save_models <- function(model_list, model_timing) {
-  # Infer model_type from the names in model_list
+save_models <- function(model_list, model_timing, model_type = NULL) {
   model_names <- names(model_list)
-  is_quali <- any(grepl("quali", model_names, fixed = TRUE))
-  is_results <- any(model_names %in% c("win", "podium", "t10"))
 
-  if (is_quali && is_results) {
-    cli::cli_abort(c(
-      "Ambiguous model list provided. Contains names for both 'quali' and 'results' models.",
-      "i" = "Please provide a list containing only one type of model."
-    ))
-  } else if (is_quali) {
-    model_type <- "quali"
-  } else if (is_results) {
-    model_type <- "results"
+  if (!is.null(model_type)) {
+    valid_types <- c("quali", "results", "sprint_quali", "sprint_results")
+    if (!model_type %in% valid_types) {
+      cli::cli_abort(
+        "{.arg model_type} must be one of {.val {valid_types}}, not {.val {model_type}}."
+      )
+    }
   } else {
-    cli::cli_abort(c(
-      "Could not automatically determine {.arg model_type} from the names in {.arg model_list}.",
-      "i" = "Expected names to contain 'quali' for qualifying models, or be among {.val {c('win', 'podium', 't10', 'position')}} for results models.",
-      "x" = "Found names: {.val {model_names}}"
-    ))
+    # Infer model_type from the names in model_list
+    is_quali <- any(grepl("quali", model_names, fixed = TRUE))
+    is_results <- any(model_names %in% c("win", "podium", "t10"))
+
+    if (is_quali && is_results) {
+      cli::cli_abort(c(
+        "Ambiguous model list provided. Contains names for both 'quali' and 'results' models.",
+        "i" = "Please provide a list containing only one type of model."
+      ))
+    } else if (is_quali) {
+      model_type <- "quali"
+    } else if (is_results) {
+      model_type <- "results"
+    } else {
+      cli::cli_abort(c(
+        "Could not automatically determine {.arg model_type} from the names in {.arg model_list}.",
+        "i" = "Expected names to contain 'quali' for qualifying models, or be among {.val {c('win', 'podium', 't10', 'position')}} for results models.",
+        "i" = "For sprint models, pass {.arg model_type} explicitly as {.val sprint_quali} or {.val sprint_results}.",
+        "x" = "Found names: {.val {model_names}}"
+      ))
+    }
   }
 
   # Infer engine from model_list
