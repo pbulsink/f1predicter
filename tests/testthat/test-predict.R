@@ -1289,19 +1289,7 @@ test_that("predict_race_after_sprint() errors when sprint models are missing req
   )
 })
 
-test_that("predict_race_after_sprint() auto-detects timing from new_data columns", {
-  base_results <- list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
-
-  new_data <- tibble::tibble(
-    driver_id = factor(c("driver_a", "driver_b")),
-    round = 5L,
-    season = 2025L,
-    sprint_grid = c(1L, 2L),
-    sprint_finish_pos = c(2L, 1L),
-    sprint_points = c(7, 8),
-    q_best_perc = c(1.01, 1.02)  # 'q_.*_perc' pattern triggers after_quali
-  )
-
+test_that("predict_race_after_sprint() auto-detects 'before_quali' when no q_*_perc columns present", {
   mock_preds <- tibble::tibble(
     driver_id = factor(c("driver_a", "driver_b")),
     round = 5L,
@@ -1312,41 +1300,62 @@ test_that("predict_race_after_sprint() auto-detects timing from new_data columns
     likely_position = c(3L, 1L),
     likely_position_class = ordered(c("P3-P5", "P1"), levels = c("P1", "P2", "P3-P5"))
   )
+  fake_prob <- tibble::tibble(.pred_1 = c(0.5, 0.5))
+  fake_num  <- tibble::tibble(.pred = c(5.0, 6.0))
+
+  # new_data has NO q_min_perc / q_avg_perc -> should auto-detect "before_quali"
+  new_data <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 5L,
+    season = 2025L,
+    sprint_grid = c(1L, 2L),
+    sprint_finish_pos = c(2L, 1L),
+    sprint_points = c(7, 8)
+  )
+
+  sprint_models <- list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
+  base_models   <- list(win = structure(list(), class = "last_fit"),
+                        podium = structure(list(), class = "last_fit"),
+                        t10 = structure(list(), class = "last_fit"),
+                        position = structure(list(), class = "last_fit"),
+                        position_class = structure(list(), class = "last_fit"))
 
   local_mocked_bindings(
-    predict_round = function(...) mock_preds,
-    load_models   = function(model_type, model_timing, engine) {
-      if (model_type == "sprint_results") {
-        return(list(win = 1, podium = 1, t10 = 1,
-                    position = 1, position_class = 1))
-      }
-      list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
+    predict_round = function(new_data, results_models) {
+      # Confirm meta-features were added
+      expect_true("base_win_pred"    %in% names(new_data))
+      expect_true("base_podium_pred" %in% names(new_data))
+      expect_true("base_t10_pred"    %in% names(new_data))
+      expect_true("base_pos_pred"    %in% names(new_data))
+      mock_preds
     },
     .package = "f1predicter"
   )
 
-  fake_prob  <- tibble::tibble(.pred_1 = c(0.5, 0.5))
-  fake_num   <- tibble::tibble(.pred = c(5, 6))
-
-  with_mocked_bindings(
-    predict.model_stack = function(...) fake_prob,
-    .package = "stacks",
-    code = {
-      local_mocked_bindings(
-        predict_round = function(new_data, results_models) {
-          # Check that base meta-features were added
-          expect_true("base_win_pred"    %in% names(new_data))
-          expect_true("base_podium_pred" %in% names(new_data))
-          expect_true("base_t10_pred"    %in% names(new_data))
-          expect_true("base_pos_pred"    %in% names(new_data))
-          mock_preds
-        },
-        .package = "f1predicter"
-      )
-      # Should not error; auto-detects "after_quali"
-      # (actual model calls are mocked above)
-    }
+  # Stub tune::extract_workflow to return an object we can predict on
+  local_mocked_bindings(
+    extract_workflow = function(x) x,
+    .package = "tune"
   )
+
+  # Stub stats::predict for the base models
+  local_mocked_bindings(
+    predict = function(object, new_data, type = "response") {
+      if (type == "prob")    return(fake_prob)
+      if (type == "numeric") return(fake_num)
+    },
+    .package = "stats"
+  )
+
+  result <- predict_race_after_sprint(
+    new_data              = new_data,
+    sprint_results_models = sprint_models,
+    base_results_models   = base_models
+    # model_timing intentionally omitted to trigger auto-detect
+  )
+
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), nrow(new_data))
 })
 
 test_that("predict_quali_after_sprint() errors when sprint models missing required names", {

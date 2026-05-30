@@ -2327,7 +2327,7 @@ model_sprint_results_before_quali <- function(
         model_timing = "before_quali",
         model_type = "sprint_results"
       ),
-      error = function(e) paste0("Error saving models: ", e)
+      error = function(e) cli::cli_warn("Could not save sprint results (before_quali) models: {e$message}")
     )
   }
   invisible(models)
@@ -2377,7 +2377,7 @@ model_sprint_results_after_quali <- function(
         model_timing = "after_quali",
         model_type = "sprint_results"
       ),
-      error = function(e) paste0("Error saving models: ", e)
+      error = function(e) cli::cli_warn("Could not save sprint results (after_quali) models: {e$message}")
     )
   }
   invisible(models)
@@ -2424,7 +2424,7 @@ model_sprint_quali <- function(
         model_timing = "after_sprint",
         model_type = "sprint_quali"
       ),
-      error = function(e) paste0("Error saving models: ", e)
+      error = function(e) cli::cli_warn("Could not save sprint qualifying models: {e$message}")
     )
   }
   invisible(models)

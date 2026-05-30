@@ -1054,7 +1054,9 @@ predict_race_after_sprint <- function(
 ) {
   # Auto-detect timing from new_data columns when not specified
   if (is.null(model_timing)) {
-    model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
+    model_timing <- if (
+      any(c("q_min_perc", "q_avg_perc") %in% names(new_data))
+    ) {
       "after_quali"
     } else {
       "before_quali"
