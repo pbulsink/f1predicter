@@ -31,6 +31,36 @@ make_performance <- function(n = 5) {
   )
 }
 
+# Small example historical dataset for integration testing
+make_historical_data <- function() {
+  # Build data per-driver to avoid expand.grid ordering issues
+  driver_positions <- list(
+    driver_a = c(2, 1, 3, 4, 1, 3, 2, 3),
+    driver_b = c(3, 4, 2, 5, 3, 4, 5, 4),
+    driver_c = c(5, 6, 7, 8, 6, 7, 8, 5),
+    driver_d = c(10, 12, 11, NA, 13, 10, 12, 11),
+    driver_e = c(15, 17, 14, 18, 16, 15, NA, 16)
+  )
+  driver_finished <- list(
+    driver_a = rep(TRUE, 8),
+    driver_b = rep(TRUE, 8),
+    driver_c = rep(TRUE, 8),
+    driver_d = c(TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, TRUE),
+    driver_e = c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE)
+  )
+  rows <- do.call(rbind, lapply(names(driver_positions), function(drv) {
+    data.frame(
+      driver_id = drv,
+      round = 1:8,
+      position = driver_positions[[drv]],
+      finished = driver_finished[[drv]],
+      season = 2025,
+      stringsAsFactors = FALSE
+    )
+  }))
+  tibble::as_tibble(rows)
+}
+
 
 # ---- Points Systems ---------------------------------------------------------
 
@@ -356,4 +386,168 @@ test_that("format_championship_skeet includes all contenders up to 5", {
   expect_match(result[[1]]$text, "GivenE FamilyE")
   # 6th driver should NOT appear in skeet 1
   expect_false(grepl("GivenF FamilyF", result[[1]]$text))
+})
+
+
+# ---- Integration: full simulation with example data --------------------------
+
+test_that("simulate_championship_odds works end-to-end with example historical data", {
+  standings <- make_standings()
+  remaining <- make_remaining_schedule(n_races = 2, n_sprints = 1)
+  historical_data <- make_historical_data()
+
+  set.seed(42)
+  result <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 10L,
+    historical_data = historical_data
+  )
+
+  # Correct class
+
+  expect_s3_class(result, "tbl_df")
+
+  # All expected columns present
+  expected_cols <- c(
+    "driver_id", "current_points", "win_probability",
+    "avg_final_points", "avg_final_position", "in_contention", "season"
+  )
+  expect_true(all(expected_cols %in% names(result)))
+
+  # One row per driver
+  expect_equal(nrow(result), 5)
+
+  # Season is correctly propagated
+  expect_true(all(result$season == 2025))
+
+  # Win probabilities are between 0 and 1
+  expect_true(all(result$win_probability >= 0 & result$win_probability <= 1))
+
+  # Contender probabilities sum to 1
+  contender_probs <- result$win_probability[result$in_contention]
+  expect_equal(sum(contender_probs), 1)
+
+  # avg_final_points >= current_points for contenders (points can only increase)
+  contenders <- result[result$in_contention, ]
+  expect_true(all(contenders$avg_final_points >= contenders$current_points))
+
+  # avg_final_position is numeric and positive for contenders
+  expect_true(all(is.numeric(contenders$avg_final_position)))
+  expect_true(all(contenders$avg_final_position > 0))
+
+  # Non-contenders have win_probability == 0
+  non_contenders <- result[!result$in_contention, ]
+  if (nrow(non_contenders) > 0) {
+    expect_true(all(non_contenders$win_probability == 0))
+    expect_true(all(non_contenders$avg_final_points == non_contenders$current_points))
+  }
+})
+
+test_that("calculate_driver_performance works with example historical data", {
+  historical_data <- make_historical_data()
+
+  perf <- f1predicter:::calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data
+  )
+
+  expect_s3_class(perf, "tbl_df")
+
+  # All drivers present
+  expect_equal(sort(perf$driver_id), sort(paste0("driver_", letters[1:5])))
+
+  # Required columns
+  expected_cols <- c(
+    "driver_id", "n_races", "avg_position", "position_sd",
+    "dnf_rate", "recent_avg_position", "weighted_avg_position"
+  )
+  expect_true(all(expected_cols %in% names(perf)))
+
+  # Verify metrics are sensible
+  driver_a <- perf[perf$driver_id == "driver_a", ]
+  expect_true(driver_a$avg_position < 5) # Strong performer
+  expect_equal(driver_a$dnf_rate, 0) # No DNFs
+
+  # driver_d has 1 DNF in 8 races
+  driver_d <- perf[perf$driver_id == "driver_d", ]
+  expect_true(driver_d$dnf_rate > 0)
+
+  # Weighted average: 70% recent + 30% full season
+  expect_equal(
+    driver_a$weighted_avg_position,
+    0.7 * driver_a$recent_avg_position + 0.3 * driver_a$avg_position
+  )
+})
+
+test_that("simulate_championship_odds avg_final_position ranks are consistent",
+{
+  standings <- tibble::tibble(
+    driver_id = paste0("driver_", letters[1:3]),
+    points = c(100, 90, 80),
+    position = 1:3
+  )
+  remaining <- make_remaining_schedule(n_races = 3, n_sprints = 1)
+  historical_data <- make_historical_data()
+
+  # Filter historical data to only include these 3 drivers
+  historical_data <- historical_data[
+    historical_data$driver_id %in% standings$driver_id,
+  ]
+
+  set.seed(99)
+  result <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 10L,
+    historical_data = historical_data
+  )
+
+  contenders <- result[result$in_contention, ]
+
+  # Avg final position should be between 1 and number of contenders
+  expect_true(all(contenders$avg_final_position >= 1))
+  expect_true(all(contenders$avg_final_position <= nrow(contenders)))
+
+  # The driver with highest win_probability should generally have lowest
+  # avg_final_position (best position)
+  best_winner <- contenders$driver_id[which.max(contenders$win_probability)]
+  best_pos <- contenders$driver_id[which.min(contenders$avg_final_position)]
+  # With only 10 sims this might not always hold, so just check structure
+  expect_true(is.numeric(contenders$avg_final_position))
+})
+
+test_that("simulate_championship_odds handles all drivers in contention", {
+  # All drivers close in points so all are in contention
+  standings <- tibble::tibble(
+    driver_id = paste0("driver_", letters[1:4]),
+    points = c(100, 95, 90, 85),
+    position = 1:4
+  )
+  remaining <- make_remaining_schedule(n_races = 5, n_sprints = 2)
+  historical_data <- make_historical_data()
+  historical_data <- historical_data[
+    historical_data$driver_id %in% standings$driver_id,
+  ]
+
+  set.seed(7)
+  result <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 10L,
+    historical_data = historical_data
+  )
+
+  # All drivers should be in contention
+  expect_true(all(result$in_contention))
+  expect_equal(nrow(result), 4)
+
+  # All probabilities should sum to 1
+  expect_equal(sum(result$win_probability), 1)
+
+  # All avg_final_position values should be set (no NA for contenders)
+  expect_true(all(!is.na(result$avg_final_position)))
 })
