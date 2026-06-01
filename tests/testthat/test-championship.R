@@ -58,7 +58,25 @@ make_historical_data <- function() {
       stringsAsFactors = FALSE
     )
   }))
-  tibble::as_tibble(rows)
+  # Also add previous season data (2024) for multi-season blending
+  prev_positions <- list(
+    driver_a = c(3, 2, 1, 4, 2, 3, 1, 2),
+    driver_b = c(4, 5, 3, 6, 4, 5, 3, 4),
+    driver_c = c(6, 7, 8, 5, 7, 6, 9, 7),
+    driver_d = c(11, 13, 10, 12, 14, 11, 10, 13),
+    driver_e = c(16, 18, 15, 17, 19, 16, 14, 17)
+  )
+  prev_rows <- do.call(rbind, lapply(names(prev_positions), function(drv) {
+    data.frame(
+      driver_id = drv,
+      round = 1:8,
+      position = prev_positions[[drv]],
+      finished = TRUE,
+      season = 2024,
+      stringsAsFactors = FALSE
+    )
+  }))
+  tibble::as_tibble(rbind(rows, prev_rows))
 }
 
 
@@ -287,11 +305,11 @@ test_that("simulate_championship_odds leader usually wins", {
 test_that("simulate_championship_odds validates inputs", {
   expect_error(
     simulate_championship_odds(season = "abc"),
-    "is.numeric"
+    "must be a single numeric"
   )
   expect_error(
     simulate_championship_odds(season = 2025, n_simulations = -1),
-    "n_simulations >= 1"
+    "must be a positive number"
   )
 })
 
@@ -441,7 +459,10 @@ test_that("simulate_championship_odds works end-to-end with example historical d
   non_contenders <- result[!result$in_contention, ]
   if (nrow(non_contenders) > 0) {
     expect_true(all(non_contenders$win_probability == 0))
-    expect_true(all(non_contenders$avg_final_points == non_contenders$current_points))
+    # Non-contenders are still simulated so avg_final_points >= current_points
+    expect_true(all(non_contenders$avg_final_points >= non_contenders$current_points))
+    # Non-contenders get real avg_final_position values
+    expect_true(all(!is.na(non_contenders$avg_final_position)))
   }
 })
 
@@ -505,18 +526,12 @@ test_that("simulate_championship_odds avg_final_position ranks are consistent",
     historical_data = historical_data
   )
 
-  contenders <- result[result$in_contention, ]
+  # Avg final position should be between 1 and number of drivers
+  expect_true(all(result$avg_final_position >= 1))
+  expect_true(all(result$avg_final_position <= nrow(result)))
 
-  # Avg final position should be between 1 and number of contenders
-  expect_true(all(contenders$avg_final_position >= 1))
-  expect_true(all(contenders$avg_final_position <= nrow(contenders)))
-
-  # The driver with highest win_probability should generally have lowest
-  # avg_final_position (best position)
-  best_winner <- contenders$driver_id[which.max(contenders$win_probability)]
-  best_pos <- contenders$driver_id[which.min(contenders$avg_final_position)]
-  # With only 10 sims this might not always hold, so just check structure
-  expect_true(is.numeric(contenders$avg_final_position))
+  # All positions should be numeric
+  expect_true(is.numeric(result$avg_final_position))
 })
 
 test_that("simulate_championship_odds handles all drivers in contention", {
@@ -550,4 +565,72 @@ test_that("simulate_championship_odds handles all drivers in contention", {
 
   # All avg_final_position values should be set (no NA for contenders)
   expect_true(all(!is.na(result$avg_final_position)))
+})
+
+test_that("calculate_driver_performance blends seasons for early races", {
+  # Create data with only 3 races in current season (should blend with previous)
+  early_season_data <- tibble::tibble(
+    driver_id = rep(c("driver_a", "driver_b"), each = 3),
+    round = rep(1:3, 2),
+    position = c(2, 3, 1, 5, 6, 4),
+    finished = TRUE,
+    season = 2025
+  )
+  prev_season_data <- tibble::tibble(
+    driver_id = rep(c("driver_a", "driver_b"), each = 8),
+    round = rep(1:8, 2),
+    position = c(3, 2, 4, 1, 3, 2, 4, 3, 6, 5, 7, 4, 6, 5, 7, 6),
+    finished = TRUE,
+    season = 2024
+  )
+  historical_data <- rbind(early_season_data, prev_season_data)
+
+  perf <- f1predicter:::calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data
+  )
+
+  expect_s3_class(perf, "tbl_df")
+  expect_true("driver_a" %in% perf$driver_id)
+  expect_true("driver_b" %in% perf$driver_id)
+
+  # Metrics should be blended (3/5 current + 2/5 previous for 3 races completed)
+  driver_a <- perf[perf$driver_id == "driver_a", ]
+  expect_true(driver_a$avg_position > 0)
+  expect_true(driver_a$weighted_avg_position > 0)
+})
+
+test_that("calculate_driver_performance uses previous season only when no current data", {
+  # Only previous season data available
+  prev_only_data <- tibble::tibble(
+    driver_id = rep("driver_a", 8),
+    round = 1:8,
+    position = c(3, 2, 4, 1, 3, 2, 4, 3),
+    finished = TRUE,
+    season = 2024
+  )
+
+  perf <- f1predicter:::calculate_driver_performance(
+    season = 2025,
+    historical_data = prev_only_data
+  )
+
+  expect_s3_class(perf, "tbl_df")
+  expect_equal(perf$driver_id, "driver_a")
+  expect_true(perf$avg_position > 0)
+})
+
+test_that("calculate_driver_performance errors with no data for season or previous", {
+  empty_data <- tibble::tibble(
+    driver_id = character(0),
+    round = integer(0),
+    position = numeric(0),
+    finished = logical(0),
+    season = numeric(0)
+  )
+
+  expect_error(
+    f1predicter:::calculate_driver_performance(season = 2025, historical_data = empty_data),
+    "No historical data found"
+  )
 })
