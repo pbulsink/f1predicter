@@ -181,11 +181,12 @@ calculate_driver_performance <- function(
     prev_metrics <- calculate_season_metrics(prev_season_data)
 
     # Sliding scale: current season weight increases with races completed
+    # Race 0: 0/5 current, 5/5 previous (handled by is.null check below)
     # Race 1: 1/5 current, 4/5 previous
     # Race 2: 2/5 current, 3/5 previous
     # Race 3: 3/5 current, 2/5 previous
     # Race 4: 4/5 current, 1/5 previous
-    current_weight <- max(n_completed, 1) / 5
+    current_weight <- n_completed / 5
     prev_weight <- 1 - current_weight
 
     if (is.null(current_metrics)) {
@@ -267,6 +268,12 @@ calculate_driver_performance <- function(
 
 
 #' Calculate Metrics for a Single Season of Data
+#'
+#' @description
+#' Computes per-driver performance metrics from a single season's race results,
+#' including average finishing position, consistency (standard deviation), DNF
+#' rate, and recent form (last 5 races). These metrics feed into the weighted
+#' performance model used by the Monte Carlo championship simulation.
 #'
 #' @param data A tibble of race results for a single season with columns
 #'   `driver_id`, `round`, `position`, `finished`.
