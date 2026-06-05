@@ -119,7 +119,8 @@ train_stacked_model <- function(
   }
 
   # Train and tune each candidate model
-  candidate_resamples <- purrr::map(engines, function(engine) {
+  candidate_resamples <- list()
+  for(engine in engines) {
     cli::cli_rule("Training candidate: {.val {engine}}")
 
     # Get the hyperparameters for the current engine
@@ -179,7 +180,7 @@ train_stacked_model <- function(
     tictoc::toc()
 
     return(res)
-  })
+  }
 
   # Name the list of results for easier identification in the stack
   names(candidate_resamples) <- engines

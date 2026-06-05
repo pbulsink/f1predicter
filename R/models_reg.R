@@ -406,6 +406,14 @@ train_quali_models <- function(
     pole_best <- pole_res %>%
       tune::select_best(metric = "mn_log_loss")
 
+    message(
+      "Best hyperparameters for Pole Model: ",
+      tune::finalize_model(
+        pole_model_spec,
+        pole_best
+      )
+    )
+
     pole_final <- pole_wflow %>%
       tune::finalize_workflow(pole_best)
 
@@ -546,6 +554,14 @@ train_quali_models <- function(
 
     position_final_fit <- position_final %>%
       tune::last_fit(data_split_pos, metrics = metrics_reg)
+
+    message(
+      "Best hyperparameters for Position Model: ",
+      tune::finalize_model(
+        position_model_spec,
+        position_best
+      )
+    )
 
     report_model_metrics(
       position_final_fit,
@@ -828,6 +844,16 @@ train_binary_result_model <- function(
 
   final_fit <- final_wflow %>%
     tune::last_fit(data_split, metrics = metrics_binary)
+
+  message(
+    "Best hyperparameters for ",
+    model_name,
+    " Model: ",
+    tune::finalize_model(
+      model_spec,
+      best_params
+    )
+  )
 
   report_model_metrics(
     final_fit,
@@ -1191,6 +1217,14 @@ train_results_models <- function(
         pos_splits$data_split,
         metrics = metrics_reg
       )
+
+    message(
+      "Best hyperparameters for Position Model: ",
+      tune::finalize_model(
+        reg_mod_spec,
+        position_best
+      )
+    )
 
     report_model_metrics(
       position_final_fit,
@@ -1624,8 +1658,10 @@ load_models <- function(model_type, model_timing, engine = "ranger") {
 #'   where butchering failed).
 #' @noRd
 butcher_model_list <- function(model_list) {
-  if(!requireNamespace('butcher')) {
-    cli::cli_abort("Error in f1predicter::butcher_model_list. Package {.pkg butcher} is required to butcher models.")
+  if (!requireNamespace('butcher')) {
+    cli::cli_abort(
+      "Error in f1predicter::butcher_model_list. Package {.pkg butcher} is required to butcher models."
+    )
   }
   final_list <- list()
   for (model_name in names(model_list)) {
