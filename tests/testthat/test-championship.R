@@ -26,8 +26,9 @@ make_performance <- function(n = 5) {
     dnf_rate = c(0.05, 0.08, 0.10, 0.12, 0.15),
     recent_avg_position = c(2.5, 3.5, 5.5, 9, 13),
     recent_sd = c(1.5, 2.5, 3, 4, 5),
-    weighted_avg_position = 0.7 * c(2.5, 3.5, 5.5, 9, 13) +
-      0.3 * c(3, 4, 5, 8, 12)
+    weighted_avg_position = 0.65 * c(2.5, 3.5, 5.5, 9, 13) +
+      0.30 * c(3, 4, 5, 8, 12) +
+      0.05 * c(3, 4, 5, 8, 12)
   )
 }
 
@@ -495,10 +496,17 @@ test_that("calculate_driver_performance works with example historical data", {
   driver_d <- perf[perf$driver_id == "driver_d", ]
   expect_true(driver_d$dnf_rate > 0)
 
-  # Weighted average: 70% recent + 30% full season
+  # Weighted average: 65% recent + 30% full season + 5% prev season
+  # Previous season data exists for driver_a, so full 3-way blend applies
+  # Get previous season avg for driver_a from the historical data
+  prev_a_positions <- c(3, 2, 1, 4, 2, 3, 1, 2) # from make_historical_data
+  prev_a_avg <- mean(prev_a_positions)
+  expected_weighted <- 0.65 * driver_a$recent_avg_position +
+    0.30 * driver_a$avg_position +
+    0.05 * prev_a_avg
   expect_equal(
     driver_a$weighted_avg_position,
-    0.7 * driver_a$recent_avg_position + 0.3 * driver_a$avg_position
+    expected_weighted
   )
 })
 

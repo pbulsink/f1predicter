@@ -128,24 +128,39 @@ get_remaining_schedule <- function(
 #' @description
 #' Calculates performance metrics for each driver based on recent race history,
 #' including average finishing position, standard deviation (consistency), and
-#' DNF rate. Uses a weighted approach: 70% weight on last 5 races, 30% on full
-#' season, inspired by the Jeppe Olesen approach.
+#' DNF rate. Uses a weighted approach combining recent form, full season
+#' average, and previous season performance, inspired by the Jeppe Olesen
+#' approach.
 #'
-#' For early-season calculations (fewer than 5 races completed), data from the
-#' previous season is included with a sliding scale: race 1 uses 4/5 previous
-#' season + 1/5 current, race 2 uses 3/5 + 2/5, etc. Once 5+ races are
-#' completed, only current season data is used.
+#' For early-season calculations (fewer than `n_recent_races` races completed),
+#' data from the previous season is included with a sliding scale: race 1 uses
+#' 4/5 previous season + 1/5 current, race 2 uses 3/5 + 2/5, etc. Once 5+
+#' races are completed, only current season data is used for the recent and
+#' season components, but `weight_prev_season` still anchors to the previous
+#' season's average.
 #'
 #' @param season Numeric season year.
 #' @param historical_data Historical race data from `clean_data()`. If `NULL`,
 #'   uses the package's internal data loading.
+#' @param weight_recent Numeric weight for last `n_recent_races` performance
+#'   (default 0.65).
+#' @param weight_season Numeric weight for full current season average
+#'   (default 0.30).
+#' @param weight_prev_season Numeric weight for previous season performance
+#'   (default 0.05).
+#' @param n_recent_races Integer number of recent races to use for the
+#'   recent-form component (default 5).
 #'
 #' @return A tibble with columns `driver_id`, `avg_position`, `position_sd`,
 #'   `dnf_rate`, `recent_avg_position`, `weighted_avg_position`.
 #' @noRd
 calculate_driver_performance <- function(
     season,
-    historical_data = NULL
+    historical_data = NULL,
+    weight_recent = 0.65,
+    weight_season = 0.30,
+    weight_prev_season = 0.05,
+    n_recent_races = 5L
 ) {
   if (is.null(historical_data)) {
     historical_data <- clean_data()
@@ -173,20 +188,24 @@ calculate_driver_performance <- function(
   # Calculate current season metrics (may be empty)
   current_metrics <- NULL
   if (nrow(season_data) > 0) {
-    current_metrics <- calculate_season_metrics(season_data)
+    current_metrics <- calculate_season_metrics(season_data, n_recent = n_recent_races)
   }
 
-  # For early season (< 5 races), blend with previous season
-  if (n_completed < 5 && nrow(prev_season_data) > 0) {
-    prev_metrics <- calculate_season_metrics(prev_season_data)
+  # Calculate previous season metrics (for blending and prev-season weight)
+  prev_metrics <- NULL
+  if (nrow(prev_season_data) > 0) {
+    prev_metrics <- calculate_season_metrics(prev_season_data, n_recent = n_recent_races)
+  }
 
+  # For early season (< n_recent_races races), blend with previous season
+  if (n_completed < n_recent_races && !is.null(prev_metrics)) {
     # Sliding scale: current season weight increases with races completed
     # Race 0: 0/5 current, 5/5 previous (handled by is.null check below)
     # Race 1: 1/5 current, 4/5 previous
     # Race 2: 2/5 current, 3/5 previous
     # Race 3: 3/5 current, 2/5 previous
     # Race 4: 4/5 current, 1/5 previous
-    current_weight <- n_completed / 5
+    current_weight <- n_completed / n_recent_races
     prev_weight <- 1 - current_weight
 
     if (is.null(current_metrics)) {
@@ -249,18 +268,54 @@ calculate_driver_performance <- function(
           )
         ) %>%
         dplyr::mutate(
-          position_sd = tidyr::replace_na(.data$position_sd, 5),
-          weighted_avg_position = 0.7 * .data$recent_avg_position +
-            0.3 * .data$avg_position
+          position_sd = tidyr::replace_na(.data$position_sd, 5)
         ) %>%
         dplyr::select(
           "driver_id", "n_races", "avg_position", "position_sd",
-          "dnf_rate", "recent_avg_position", "weighted_avg_position"
+          "dnf_rate", "recent_avg_position"
         )
     }
   } else {
-    # 5+ races completed: use current season only
+    # n_recent_races+ races completed: use current season only
     driver_metrics <- current_metrics
+  }
+
+  # --- Compute weighted_avg_position with 3-way blend ---
+  # Determine previous season avg for the prev-season anchor component
+  prev_season_avg <- if (!is.null(prev_metrics)) {
+    prev_metrics %>%
+      dplyr::select("driver_id", prev_season_avg = "avg_position")
+  } else {
+    NULL
+  }
+
+  if (!is.null(prev_season_avg)) {
+    driver_metrics <- driver_metrics %>%
+      dplyr::left_join(prev_season_avg, by = "driver_id") %>%
+      dplyr::mutate(
+        weighted_avg_position = dplyr::case_when(
+          !is.na(.data$prev_season_avg) ~
+            weight_recent * .data$recent_avg_position +
+              weight_season * .data$avg_position +
+              weight_prev_season * .data$prev_season_avg,
+          TRUE ~ {
+            # No prev season data for this driver: renormalize recent + season
+            w_total <- weight_recent + weight_season
+            (weight_recent / w_total) * .data$recent_avg_position +
+              (weight_season / w_total) * .data$avg_position
+          }
+        )
+      ) %>%
+      dplyr::select(-"prev_season_avg")
+  } else {
+    # No previous season at all: renormalize recent + season weights
+    w_total <- weight_recent + weight_season
+    driver_metrics <- driver_metrics %>%
+      dplyr::mutate(
+        weighted_avg_position =
+          (weight_recent / w_total) * .data$recent_avg_position +
+            (weight_season / w_total) * .data$avg_position
+      )
   }
 
   driver_metrics
@@ -272,14 +327,16 @@ calculate_driver_performance <- function(
 #' @description
 #' Computes per-driver performance metrics from a single season's race results,
 #' including average finishing position, consistency (standard deviation), DNF
-#' rate, and recent form (last 5 races). These metrics feed into the weighted
+#' rate, and recent form (last N races). These metrics feed into the weighted
 #' performance model used by the Monte Carlo championship simulation.
 #'
 #' @param data A tibble of race results for a single season with columns
 #'   `driver_id`, `round`, `position`, `finished`.
+#' @param n_recent Integer number of recent races for the recent-form average
+#'   (default 5).
 #' @return A tibble with per-driver performance metrics.
 #' @noRd
-calculate_season_metrics <- function(data) {
+calculate_season_metrics <- function(data, n_recent = 5L) {
   data %>%
     dplyr::group_by(.data$driver_id) %>%
     dplyr::arrange(.data$round) %>%
@@ -292,15 +349,13 @@ calculate_season_metrics <- function(data) {
       position_sd = stats::sd(.data$position, na.rm = TRUE),
       dnf_rate = mean(.data$dnf, na.rm = TRUE),
       recent_avg_position = mean(
-        utils::tail(.data$position[!is.na(.data$position)], 5),
+        utils::tail(.data$position[!is.na(.data$position)], !!n_recent),
         na.rm = TRUE
       ),
       .groups = "drop"
     ) %>%
     dplyr::mutate(
-      position_sd = tidyr::replace_na(.data$position_sd, 5),
-      weighted_avg_position = 0.7 * .data$recent_avg_position +
-        0.3 * .data$avg_position
+      position_sd = tidyr::replace_na(.data$position_sd, 5)
     )
 }
 
