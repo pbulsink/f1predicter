@@ -200,11 +200,6 @@ calculate_driver_performance <- function(
   # For early season (< n_recent_races races), blend with previous season
   if (n_completed < n_recent_races && !is.null(prev_metrics)) {
     # Sliding scale: current season weight increases with races completed
-    # Race 0: 0/5 current, 5/5 previous (handled by is.null check below)
-    # Race 1: 1/5 current, 4/5 previous
-    # Race 2: 2/5 current, 3/5 previous
-    # Race 3: 3/5 current, 2/5 previous
-    # Race 4: 4/5 current, 1/5 previous
     current_weight <- n_completed / n_recent_races
     prev_weight <- 1 - current_weight
 
