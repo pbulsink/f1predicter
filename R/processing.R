@@ -55,203 +55,252 @@ get_processing_params <- function() {
 #' @return A processed data frame of race results.
 #' @noRd
 process_results_data <- function(input) {
-  # ---- 1. Process Data for Joining ----
-  # Prepare qualifying results to be joined with race results later.
-  rg2 <- input$rgrid
-  rg2$quali_position <- rg2$position
-  rg2$driver_id <- rg2$quali_results
+  process_single_event <- function(event_results, event_grid, is_sprint) {
+    if (is.null(event_results) || nrow(event_results) == 0) {
+      return(NULL)
+    }
 
-  # ---- 2. Process Race Results ----
-  processed_results <- input$results %>% # Start with the main race results data
-    dplyr::arrange(.data$season, .data$round, .data$position) %>% # Ensure chronological order
-    dplyr::filter(
-      !(.data$status == "Did not qualify" |
-        .data$status == "Did not prequalify")
-    ) %>%
-    # Update Team Names:
-    dplyr::mutate(
-      constructor_id = dplyr::recode_values(
-        .data$constructor_id,
-        c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
-        c("benetton", "renault") ~ "alpine",
-        "lotus_racing" ~ "caterham",
-        "footwork" ~ "arrows",
-        c(
-          "jordan",
-          "midland",
-          "spyker",
-          "spyker_mf1",
-          "force_india",
-          "racing_point"
-        ) ~
-          "aston_martin",
-        c("jaguar", "stewart") ~ "red_bull",
-        c("minardi", "toro_rosso") ~ "alphatauri",
-        c("lotus_f1", "renault") ~ "alpine",
-        "ligier" ~ "prost",
-        c("marussia", "virgin") ~ "manor",
-        "osella" ~ "fondmetal",
-        c("sauber", "kick", "stake", "audi") ~ "alfa",
-        default = .data$constructor_id
+    event_grid_prepped <- NULL
+    if (!is.null(event_grid) && nrow(event_grid) > 0) {
+      event_grid_prepped <- event_grid %>%
+        dplyr::mutate(
+          quali_position = .data$position,
+          driver_id = .data$quali_results
+        ) %>%
+        dplyr::select("quali_position", "driver_id", "season", "round")
+    }
+
+    event_processed <- event_results %>%
+      dplyr::arrange(.data$season, .data$round, .data$position) %>%
+      dplyr::filter(
+        !(.data$status == "Did not qualify" |
+          .data$status == "Did not prequalify")
+      ) %>%
+      dplyr::mutate(
+        constructor_id = dplyr::recode_values(
+          .data$constructor_id,
+          c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
+          c("benetton", "renault") ~ "alpine",
+          "lotus_racing" ~ "caterham",
+          "footwork" ~ "arrows",
+          c(
+            "jordan",
+            "midland",
+            "spyker",
+            "spyker_mf1",
+            "force_india",
+            "racing_point"
+          ) ~
+            "aston_martin",
+          c("jaguar", "stewart") ~ "red_bull",
+          c("minardi", "toro_rosso") ~ "alphatauri",
+          c("lotus_f1", "renault") ~ "alpine",
+          "ligier" ~ "prost",
+          c("marussia", "virgin") ~ "manor",
+          "osella" ~ "fondmetal",
+          c("sauber", "kick", "stake", "audi") ~ "alfa",
+          default = .data$constructor_id
+        ),
+        is_sprint = is_sprint
+      ) %>%
+      dplyr::mutate(pos_change = .data$grid - .data$position) %>%
+      dplyr::group_by(.data$season, .data$round) %>%
+      dplyr::mutate(
+        pos_change_perc = dplyr::if_else(
+          .data$pos_change >= 0,
+          .data$pos_change / .data$grid,
+          .data$pos_change / (dplyr::n() - .data$grid)
+        ),
+        weighted_passes = (.data$grid - .data$position) / .data$grid,
+        grid = dplyr::if_else(.data$grid != 0, .data$grid, dplyr::n()),
+        modern_points = expand_val(
+          c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
+          dplyr::n(),
+          0
+        ),
+        grid_points = expand_val(
+          c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
+          dplyr::n(),
+          0
+        )[.data$grid],
+        pos_change_points = .data$modern_points - .data$grid_points
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(
+        finished = dplyr::if_else(
+          grepl("Finished|\\+(\\d+) Lap|Lapped", .data$status),
+          1,
+          0
+        ),
+        driver_failure = dplyr::if_else(
+          .data$status %in%
+            c(
+              "Damage",
+              "Excluded",
+              "Illness",
+              "Injury",
+              "Collision damage",
+              "Did not qualify",
+              "Disqualified",
+              "Did not start",
+              "Not classified",
+              "Injured",
+              "Spun off",
+              "Accident",
+              "Collision"
+            ),
+          1,
+          0
+        ),
+        constructor_failure = dplyr::if_else(
+          .data$status %in%
+            c(
+              "Gearbox",
+              "Suspension",
+              "Fuel pressure",
+              "Radiator",
+              "Mechanical",
+              "Engine",
+              "Electrical",
+              "Fuel system",
+              "Driveshaft",
+              "Oil line",
+              "Fuel rig",
+              "Withdrew",
+              "Launch control",
+              "Clutch",
+              "Hydraulics",
+              "Brakes",
+              "Electronics",
+              "Fuel",
+              "Out of fuel",
+              "Oil leak",
+              "Tyre",
+              "Transmission",
+              "Pneumatics",
+              "Steering",
+              "Throttle",
+              "Handling",
+              "Puncture",
+              "Rear wing",
+              "Fire",
+              "Wheel",
+              "Overheating",
+              "Wheel rim",
+              "Engine fire",
+              "Retired",
+              "Tyre puncture",
+              "Wheel nut",
+              "Broken wing",
+              "Heat shield fire",
+              "Exhaust",
+              "Technical",
+              "Water leak",
+              "Fuel pump",
+              "Track rod",
+              "Oil pressure",
+              "Front wing",
+              "Water pressure",
+              "Refuelling",
+              "Driver Seat",
+              "Differential",
+              "Engine misfire",
+              "Vibrations",
+              "Alternator",
+              "ERS",
+              "Power Unit",
+              "Turbo",
+              "Drivetrain",
+              "Power loss",
+              "Brake duct",
+              "Battery",
+              "Seat",
+              "Spark plugs",
+              "Debris",
+              "Cooling system",
+              "Water pump",
+              "Fuel leak",
+              "Undertray",
+              "Physical",
+              "Distributor",
+              "Chassis",
+              "Wheel bearing",
+              "Halfshaft",
+              "Ignition",
+              "Injection",
+              "Safety belt",
+              "Oil pump",
+              "Underweight",
+              "Safety concerns",
+              "Not restarted",
+              "Stalled",
+              "Crankshaft",
+              "Safety"
+            ),
+          1,
+          0
+        )
       )
+
+    if (!is.null(event_grid_prepped)) {
+      event_processed <- event_processed %>%
+        dplyr::left_join(
+          event_grid_prepped,
+          by = c("driver_id", "season", "round")
+        )
+    } else {
+      event_processed <- event_processed %>%
+        dplyr::mutate(quali_position = NA_real_)
+    }
+
+    event_processed %>%
+      dplyr::select(
+        "driver_id",
+        "constructor_id",
+        "position",
+        "grid",
+        "quali_position",
+        "pos_change",
+        "pos_change_perc",
+        "weighted_passes",
+        "pos_change_points",
+        "fastest_rank",
+        fastest_time = "time_sec",
+        "points",
+        "status",
+        "season",
+        "round",
+        "driver_failure",
+        "constructor_failure",
+        "finished",
+        "is_sprint"
+      )
+  }
+
+  race_results <- process_single_event(input$results, input$rgrid, FALSE)
+  sprint_results <- process_single_event(input$sprint_results, input$sgrid, TRUE)
+
+  processed_results <- dplyr::bind_rows(sprint_results, race_results)
+  if (nrow(processed_results) == 0) {
+    return(tibble::as_tibble(processed_results))
+  }
+
+  processed_results <- processed_results %>%
+    dplyr::arrange(
+      .data$season,
+      .data$round,
+      dplyr::desc(.data$is_sprint),
+      .data$position
     ) %>%
-    # Calculate positions gained or lost during the race.
-    dplyr::mutate(pos_change = .data$grid - .data$position) %>%
-    # Calculate cumulative points for a driver within a season.
     dplyr::group_by(.data$season, .data$driver_id) %>%
     dplyr::mutate(
       points_after = cumsum(.data$points),
       points_before = .data$points_after - .data$points
     ) %>%
     dplyr::ungroup() %>%
-    # Calculate a driver's career experience in terms of races competed.
     dplyr::group_by(.data$driver_id) %>%
     dplyr::mutate(driver_experience = 0:(dplyr::n() - 1)) %>%
-    dplyr::ungroup() %>% # Calculate race-specific metrics.
-    dplyr::group_by(.data$season, .data$round) %>%
-    dplyr::mutate(
-      pos_change_perc = dplyr::if_else(
-        .data$pos_change >= 0,
-        .data$pos_change / .data$grid,
-        .data$pos_change / (dplyr::n() - .data$grid)
-      ),
-      weighted_passes = (.data$grid - .data$position) / .data$grid,
-      # Handle cases where grid position is 0 (e.g., pit lane start).
-      grid = dplyr::if_else(.data$grid != 0, .data$grid, dplyr::n()),
-      modern_points = expand_val(
-        c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
-        dplyr::n(),
-        0
-      ),
-      grid_points = expand_val(
-        c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
-        dplyr::n(),
-        0
-      )[.data$grid],
-      pos_change_points = .data$modern_points - .data$grid_points
-    ) %>%
     dplyr::ungroup() %>%
-    # Create binary flags based on the 'status' column.
-    dplyr::mutate(
-      finished = dplyr::if_else(
-        grepl("Finished|\\+(\\d+) Lap|Lapped", .data$status),
-        1,
-        0
-      ),
-      driver_failure = dplyr::if_else(
-        .data$status %in%
-          c(
-            "Damage",
-            "Excluded",
-            "Illness",
-            "Injury",
-            "Collision damage",
-            "Did not qualify",
-            "Disqualified",
-            "Did not start",
-            "Not classified",
-            "Injured",
-            "Spun off",
-            "Accident",
-            "Collision"
-          ),
-        1,
-        0
-      ),
-      constructor_failure = dplyr::if_else(
-        .data$status %in%
-          c(
-            "Gearbox",
-            "Suspension",
-            "Fuel pressure",
-            "Radiator",
-            "Mechanical",
-            "Engine",
-            "Electrical",
-            "Fuel system",
-            "Driveshaft",
-            "Oil line",
-            "Fuel rig",
-            "Withdrew",
-            "Launch control",
-            "Clutch",
-            "Hydraulics",
-            "Brakes",
-            "Electronics",
-            "Fuel",
-            "Out of fuel",
-            "Oil leak",
-            "Tyre",
-            "Transmission",
-            "Pneumatics",
-            "Steering",
-            "Throttle",
-            "Handling",
-            "Puncture",
-            "Rear wing",
-            "Fire",
-            "Wheel",
-            "Overheating",
-            "Wheel rim",
-            "Engine fire",
-            "Retired",
-            "Tyre puncture",
-            "Wheel nut",
-            "Broken wing",
-            "Heat shield fire",
-            "Exhaust",
-            "Technical",
-            "Water leak",
-            "Fuel pump",
-            "Track rod",
-            "Oil pressure",
-            "Front wing",
-            "Water pressure",
-            "Refuelling",
-            "Driver Seat",
-            "Differential",
-            "Engine misfire",
-            "Vibrations",
-            "Alternator",
-            "ERS",
-            "Power Unit",
-            "Turbo",
-            "Drivetrain",
-            "Power loss",
-            "Brake duct",
-            "Battery",
-            "Seat",
-            "Spark plugs",
-            "Debris",
-            "Cooling system",
-            "Water pump",
-            "Fuel leak",
-            "Undertray",
-            "Physical",
-            "Distributor",
-            "Chassis",
-            "Wheel bearing",
-            "Halfshaft",
-            "Ignition",
-            "Injection",
-            "Safety belt",
-            "Oil pump",
-            "Underweight",
-            "Safety concerns",
-            "Not restarted",
-            "Stalled",
-            "Crankshaft",
-            "Safety"
-          ),
-        1,
-        0
-      )
-    ) %>% # Join the qualifying position from the prepared `rg2` data.
-    dplyr::left_join(
-      rg2[, c("quali_position", "driver_id", "season", "round")],
-      by = c("driver_id", "season", "round")
-    ) %>%
-    # Select and rename the final columns for this section.
     dplyr::select(
       "driver_id",
       "constructor_id",
@@ -263,7 +312,7 @@ process_results_data <- function(input) {
       "weighted_passes",
       "pos_change_points",
       "fastest_rank",
-      fastest_time = "time_sec",
+      "fastest_time",
       "points",
       "points_before",
       "status",
@@ -273,7 +322,8 @@ process_results_data <- function(input) {
       "round",
       "driver_failure",
       "constructor_failure",
-      "finished"
+      "finished",
+      "is_sprint"
     ) %>%
     janitor::clean_names()
 
@@ -806,8 +856,18 @@ combine_and_finalize_features <- function(
   params = get_processing_params()
 ) {
   # ---- 9. Combine All Data and Create Final Features ----
+  if (!"is_sprint" %in% names(results)) {
+    results <- results %>%
+      dplyr::mutate(is_sprint = FALSE)
+  }
+
   results <- results %>%
-    dplyr::arrange(.data$season, .data$round, .data$position) %>%
+    dplyr::arrange(
+      .data$season,
+      .data$round,
+      dplyr::desc(.data$is_sprint),
+      .data$position
+    ) %>%
     # Join all the previously created data frames.
     dplyr::left_join(qualis, by = c("round", "season", "driver_id")) %>%
     dplyr::left_join(practices, by = c("round", "season", "driver_id")) %>%
@@ -919,9 +979,15 @@ combine_and_finalize_features <- function(
       circuit_features,
       by = c("round", "season", "circuit_id")
     ) %>%
-    dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%
+    dplyr::mutate(
+      round_id = dplyr::if_else(
+        .data$is_sprint,
+        paste0(.data$season, "_", .data$round, "_sprint"),
+        paste0(.data$season, "_", .data$round)
+      )
+    ) %>%
     # Final NA imputation for remaining columns.
-    dplyr::group_by(.data$season, .data$round) %>%
+    dplyr::group_by(.data$season, .data$round, .data$is_sprint) %>%
     dplyr::mutate(
       q_min_perc = tidyr::replace_na(
         .data$q_min_perc,
@@ -976,12 +1042,28 @@ combine_and_finalize_features <- function(
     ) |>
     dplyr::ungroup() |>
     dplyr::mutate(
+      dplyr::across(
+        c(
+          "q_min_perc",
+          "q_avg_perc",
+          "practice_avg_gap",
+          "practice_best_gap",
+          "pit_duration_perc"
+        ),
+        ~ dplyr::if_else(is.nan(.x), NA_real_, .x)
+      )
+    ) |>
+    dplyr::mutate(
       q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.012),
       q_avg_perc = tidyr::replace_na(.data$q_avg_perc, 1.015),
       practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, 1.6),
       practice_best_gap = tidyr::replace_na(.data$practice_best_gap, 1.0),
+      pit_duration_perc = tidyr::replace_na(
+        .data$pit_duration_perc,
+        params$constructor_pit_duration_perc
+      )
     ) %>%
-    dplyr::arrange(.data$season, .data$round) %>%
+    dplyr::arrange(.data$season, .data$round, dplyr::desc(.data$is_sprint)) %>%
     janitor::clean_names()
 
   return(final_data)
@@ -1005,7 +1087,10 @@ combine_and_finalize_features <- function(
 #'   Set to `FALSE` (default) to always reprocess. Existing
 #'   `"processed_data.rds"` files are still read as a fallback for backward
 #'   compatibility.
-#' @return A single, cleaned data frame.
+#' @return A single, cleaned data frame with one row per driver-event. Sprint
+#'   events are included with `is_sprint = TRUE` and use
+#'   `round_id = "{season}_{round}_sprint"`; race events use
+#'   `is_sprint = FALSE` and `round_id = "{season}_{round}"`.
 #' @importFrom rlang .data
 #' @export
 clean_data <- function(

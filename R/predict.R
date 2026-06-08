@@ -77,7 +77,7 @@ generate_new_data <- function(
     dplyr::mutate(
       season = season,
       round = round,
-      round_id = paste0(season, "-", round),
+      round_id = paste0(season, "_", round),
       circuit_id = circuit
     )
 

@@ -396,6 +396,8 @@ get_laps_or_null <- function(season, round, session) {
 #' @return data frame
 #' @noRd
 get_grids <- function(season, round, session) {
+  sprint_quali_results <- NULL
+
   if (session == "R") {
     # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
     results <- NULL
@@ -444,6 +446,14 @@ get_grids <- function(season, round, session) {
       return(NULL)
     }
     quali <- f1dataR::load_quali(season = season, round = round)
+
+    if (season >= 2023) {
+      sprint_quali_results <- results %>%
+        dplyr::arrange(.data$grid) %>%
+        dplyr::pull("driver_id")
+    } else if (!is.null(quali) && nrow(quali) > 0) {
+      sprint_quali_results <- quali$driver_id
+    }
   }
 
   if (is.null(results) & !is.null(quali)) {
@@ -460,10 +470,27 @@ get_grids <- function(season, round, session) {
     startgrid <- results %>%
       dplyr::arrange(.data$grid) %>%
       dplyr::pull("driver_id")
-    ndrivers <- max(nrow(results), nrow(quali))
-    grid <- data.frame(position = 1:max(nrow(results), nrow(quali))) %>%
+    if (session == "S") {
+      quali_results <- if (!is.null(sprint_quali_results)) {
+        sprint_quali_results
+      } else if (!is.null(quali) && nrow(quali) > 0) {
+        quali$driver_id
+      } else {
+        results$driver_id
+      }
+    } else {
+      quali_results <- if (!is.null(quali) && nrow(quali) > 0) {
+        quali$driver_id
+      } else {
+        results$driver_id
+      }
+    }
+
+    n_quali <- length(quali_results)
+    ndrivers <- max(nrow(results), n_quali)
+    grid <- data.frame(position = 1:ndrivers) %>%
       dplyr::mutate(
-        quali_results = expand_val(quali$driver_id, ndrivers, NA),
+        quali_results = expand_val(quali_results, ndrivers, NA),
         start_grid = expand_val(startgrid, ndrivers, NA),
         race_results = expand_val(results$driver_id, ndrivers, NA)
       ) %>%
