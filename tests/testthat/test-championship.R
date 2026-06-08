@@ -49,12 +49,37 @@ make_historical_data <- function() {
     driver_d = c(TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, TRUE),
     driver_e = c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE)
   )
+  driver_failure <- list(
+    driver_a = rep(0, 8),
+    driver_b = rep(0, 8),
+    driver_c = rep(0, 8),
+    driver_d = c(0, 0, 0, 1, 0, 0, 0, 0),
+    driver_e = rep(0, 8)
+  )
+  constructor_failure <- list(
+    driver_a = rep(0, 8),
+    driver_b = rep(0, 8),
+    driver_c = rep(0, 8),
+    driver_d = rep(0, 8),
+    driver_e = c(0,0,0,0,0,0,1,0)
+  )
+  constructor_failure_race <- list(
+    driver_a = rep(0, 8),
+    driver_b = rep(0, 8),
+    driver_c = c(0,0.5,0,0,0,0,0,0),
+    driver_d = rep(0, 8),
+    driver_e = c(0,0,0,0,0,0,0.5,0)
+  )
+
   rows <- do.call(rbind, lapply(names(driver_positions), function(drv) {
     data.frame(
       driver_id = drv,
       round = 1:8,
       position = driver_positions[[drv]],
       finished = driver_finished[[drv]],
+      driver_failure = driver_failure[[drv]],
+      constructor_failure = constructor_failure[[drv]],
+      constructor_failure_race = constructor_failure_race[[drv]],
       season = 2025,
       stringsAsFactors = FALSE
     )
@@ -73,6 +98,9 @@ make_historical_data <- function() {
       round = 1:8,
       position = prev_positions[[drv]],
       finished = TRUE,
+      driver_failure = 0,
+      constructor_failure = 0,
+      constructor_failure_race = 0,
       season = 2024,
       stringsAsFactors = FALSE
     )
@@ -85,7 +113,7 @@ make_historical_data <- function() {
 
 test_that("gp_points_system returns correct F1 GP points", {
 
-  pts <- f1predicter:::gp_points_system()
+  pts <- gp_points_system()
   expect_equal(pts[["1"]], 25)
   expect_equal(pts[["2"]], 18)
   expect_equal(pts[["3"]], 15)
@@ -94,30 +122,30 @@ test_that("gp_points_system returns correct F1 GP points", {
 })
 
 test_that("sprint_points_system returns correct F1 sprint points", {
-  pts <- f1predicter:::sprint_points_system()
+  pts <- sprint_points_system()
   expect_equal(pts[["1"]], 8)
   expect_equal(pts[["8"]], 1)
   expect_length(pts, 8)
 })
 
 test_that("get_points_for_position returns correct points for GP", {
-  expect_equal(f1predicter:::get_points_for_position(1, "race"), 25)
-  expect_equal(f1predicter:::get_points_for_position(3, "race"), 15)
-  expect_equal(f1predicter:::get_points_for_position(10, "race"), 1)
-  expect_equal(f1predicter:::get_points_for_position(11, "race"), 0)
-  expect_equal(f1predicter:::get_points_for_position(20, "race"), 0)
+  expect_equal(get_points_for_position(1, "race"), 25)
+  expect_equal(get_points_for_position(3, "race"), 15)
+  expect_equal(get_points_for_position(10, "race"), 1)
+  expect_equal(get_points_for_position(11, "race"), 0)
+  expect_equal(get_points_for_position(20, "race"), 0)
 })
 
 test_that("get_points_for_position returns correct points for sprint", {
-  expect_equal(f1predicter:::get_points_for_position(1, "sprint"), 8)
-  expect_equal(f1predicter:::get_points_for_position(8, "sprint"), 1)
-  expect_equal(f1predicter:::get_points_for_position(9, "sprint"), 0)
+  expect_equal(get_points_for_position(1, "sprint"), 8)
+  expect_equal(get_points_for_position(8, "sprint"), 1)
+  expect_equal(get_points_for_position(9, "sprint"), 0)
 })
 
 test_that("get_points_for_position handles edge cases", {
-  expect_equal(f1predicter:::get_points_for_position(NA, "race"), 0)
-  expect_equal(f1predicter:::get_points_for_position(0, "race"), 0)
-  expect_equal(f1predicter:::get_points_for_position(-1, "race"), 0)
+  expect_equal(get_points_for_position(NA, "race"), 0)
+  expect_equal(get_points_for_position(0, "race"), 0)
+  expect_equal(get_points_for_position(-1, "race"), 0)
 })
 
 
@@ -125,7 +153,7 @@ test_that("get_points_for_position handles edge cases", {
 
 test_that("simulate_race_positions returns valid positions", {
   set.seed(42)
-  positions <- f1predicter:::simulate_race_positions(
+  positions <- simulate_race_positions(
     avg_positions = c(3, 5, 8, 12, 15),
     position_sds = c(2, 3, 3, 4, 5),
     dnf_rates = c(0, 0, 0, 0, 0),  # No DNFs for deterministic test
@@ -141,7 +169,7 @@ test_that("simulate_race_positions returns valid positions", {
 test_that("simulate_race_positions handles DNFs", {
   set.seed(42)
   # All drivers DNF
-  positions <- f1predicter:::simulate_race_positions(
+  positions <- simulate_race_positions(
     avg_positions = c(3, 5, 8),
     position_sds = c(2, 3, 3),
     dnf_rates = c(1, 1, 1),  # 100% DNF
@@ -153,7 +181,7 @@ test_that("simulate_race_positions handles DNFs", {
 
 test_that("simulate_race_positions produces different results with different seeds", {
   positions1 <- withr::with_seed(1, {
-    f1predicter:::simulate_race_positions(
+    simulate_race_positions(
       avg_positions = c(3, 5, 8),
       position_sds = c(2, 3, 3),
       dnf_rates = c(0.1, 0.1, 0.1),
@@ -161,7 +189,7 @@ test_that("simulate_race_positions produces different results with different see
     )
   })
   positions2 <- withr::with_seed(99, {
-    f1predicter:::simulate_race_positions(
+    simulate_race_positions(
       avg_positions = c(3, 5, 8),
       position_sds = c(2, 3, 3),
       dnf_rates = c(0.1, 0.1, 0.1),
@@ -360,7 +388,7 @@ test_that("format_championship_skeet returns proper skeet structure", {
     .package = "f1dataR"
   )
 
-  result <- f1predicter:::format_championship_skeet(odds)
+  result <- format_championship_skeet(odds)
 
   expect_type(result, "list")
   expect_length(result, 2)
@@ -400,7 +428,7 @@ test_that("format_championship_skeet includes all contenders up to 5", {
     .package = "f1dataR"
   )
 
-  result <- f1predicter:::format_championship_skeet(odds)
+  result <- format_championship_skeet(odds)
   # Should list top 5 contenders
   expect_match(result[[1]]$text, "GivenE FamilyE")
   # 6th driver should NOT appear in skeet 1
@@ -470,7 +498,7 @@ test_that("simulate_championship_odds works end-to-end with example historical d
 test_that("calculate_driver_performance works with example historical data", {
   historical_data <- make_historical_data()
 
-  perf <- f1predicter:::calculate_driver_performance(
+  perf <- calculate_driver_performance(
     season = 2025,
     historical_data = historical_data
   )
@@ -482,8 +510,7 @@ test_that("calculate_driver_performance works with example historical data", {
 
   # Required columns
   expected_cols <- c(
-    "driver_id", "n_races", "avg_position", "position_sd",
-    "dnf_rate", "recent_avg_position", "weighted_avg_position"
+    "driver_id","avg_position", "position_sd", "dnf_rate"
   )
   expect_true(all(expected_cols %in% names(perf)))
 
@@ -495,19 +522,6 @@ test_that("calculate_driver_performance works with example historical data", {
   # driver_d has 1 DNF in 8 races
   driver_d <- perf[perf$driver_id == "driver_d", ]
   expect_true(driver_d$dnf_rate > 0)
-
-  # Weighted average: 65% recent + 30% full season + 5% prev season
-  # Previous season data exists for driver_a, so full 3-way blend applies
-  # Get previous season avg for driver_a from the historical data
-  prev_a_positions <- c(3, 2, 1, 4, 2, 3, 1, 2) # from make_historical_data
-  prev_a_avg <- mean(prev_a_positions)
-  expected_weighted <- 0.65 * driver_a$recent_avg_position +
-    0.30 * driver_a$avg_position +
-    0.05 * prev_a_avg
-  expect_equal(
-    driver_a$weighted_avg_position,
-    expected_weighted
-  )
 })
 
 test_that("simulate_championship_odds avg_final_position ranks are consistent",
@@ -582,6 +596,9 @@ test_that("calculate_driver_performance blends seasons for early races", {
     round = rep(1:3, 2),
     position = c(2, 3, 1, 5, 6, 4),
     finished = TRUE,
+    driver_failure = 0,
+    constructor_failure = 0,
+    constructor_failure_race = 0,
     season = 2025
   )
   prev_season_data <- tibble::tibble(
@@ -589,11 +606,14 @@ test_that("calculate_driver_performance blends seasons for early races", {
     round = rep(1:8, 2),
     position = c(3, 2, 4, 1, 3, 2, 4, 3, 6, 5, 7, 4, 6, 5, 7, 6),
     finished = TRUE,
+    driver_failure = 0,
+    constructor_failure = 0,
+    constructor_failure_race = 0,
     season = 2024
   )
   historical_data <- rbind(early_season_data, prev_season_data)
 
-  perf <- f1predicter:::calculate_driver_performance(
+  perf <- calculate_driver_performance(
     season = 2025,
     historical_data = historical_data
   )
@@ -605,7 +625,6 @@ test_that("calculate_driver_performance blends seasons for early races", {
   # Metrics should be blended (3/5 current + 2/5 previous for 3 races completed)
   driver_a <- perf[perf$driver_id == "driver_a", ]
   expect_true(driver_a$avg_position > 0)
-  expect_true(driver_a$weighted_avg_position > 0)
 })
 
 test_that("calculate_driver_performance uses previous season only when no current data", {
@@ -615,10 +634,13 @@ test_that("calculate_driver_performance uses previous season only when no curren
     round = 1:8,
     position = c(3, 2, 4, 1, 3, 2, 4, 3),
     finished = TRUE,
+    driver_failure = 0,
+    constructor_failure = 0,
+    constructor_failure_race = 0,
     season = 2024
   )
 
-  perf <- f1predicter:::calculate_driver_performance(
+  perf <- calculate_driver_performance(
     season = 2025,
     historical_data = prev_only_data
   )
@@ -638,7 +660,7 @@ test_that("calculate_driver_performance errors with no data for season or previo
   )
 
   expect_error(
-    f1predicter:::calculate_driver_performance(season = 2025, historical_data = empty_data),
+    calculate_driver_performance(season = 2025, historical_data = empty_data),
     "No historical data found"
   )
 })

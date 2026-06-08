@@ -11,8 +11,16 @@
 #' @noRd
 gp_points_system <- function() {
   c(
-    "1" = 25, "2" = 18, "3" = 15, "4" = 12, "5" = 10,
-    "6" = 8, "7" = 6, "8" = 4, "9" = 2, "10" = 1
+    "1" = 25,
+    "2" = 18,
+    "3" = 15,
+    "4" = 12,
+    "5" = 10,
+    "6" = 8,
+    "7" = 6,
+    "8" = 4,
+    "9" = 2,
+    "10" = 1
   )
 }
 
@@ -24,8 +32,14 @@ gp_points_system <- function() {
 #' @noRd
 sprint_points_system <- function() {
   c(
-    "1" = 8, "2" = 7, "3" = 6, "4" = 5,
-    "5" = 4, "6" = 3, "7" = 2, "8" = 1
+    "1" = 8,
+    "2" = 7,
+    "3" = 6,
+    "4" = 5,
+    "5" = 4,
+    "6" = 3,
+    "7" = 2,
+    "8" = 1
   )
 }
 
@@ -36,7 +50,9 @@ sprint_points_system <- function() {
 #' @return Numeric points awarded (0 if outside points-scoring positions or DNF).
 #' @noRd
 get_points_for_position <- function(position, type = "race") {
-  if (is.na(position) || position < 1) return(0)
+  if (is.na(position) || position < 1) {
+    return(0)
+  }
   pts <- if (type == "sprint") sprint_points_system() else gp_points_system()
   pos_char <- as.character(as.integer(position))
   if (pos_char %in% names(pts)) pts[[pos_char]] else 0
@@ -58,7 +74,9 @@ get_points_for_position <- function(position, type = "race") {
 #' \dontrun{
 #' standings <- get_current_standings(2025)
 #' }
-get_current_standings <- function(season = as.numeric(f1dataR::get_current_season())) {
+get_current_standings <- function(
+  season = as.numeric(f1dataR::get_current_season())
+) {
   standings <- tryCatch(
     f1dataR::load_standings(season = season, round = "last", type = "driver"),
     error = function(e) {
@@ -97,8 +115,8 @@ get_current_standings <- function(season = as.numeric(f1dataR::get_current_seaso
 #' remaining <- get_remaining_schedule(2025)
 #' }
 get_remaining_schedule <- function(
-    season = as.numeric(f1dataR::get_current_season()),
-    after_round = NULL
+  season = as.numeric(f1dataR::get_current_season()),
+  after_round = NULL
 ) {
   schedule <- f1predicter::schedule %>%
     dplyr::filter(.data$season == !!season) %>%
@@ -152,15 +170,15 @@ get_remaining_schedule <- function(
 #'   recent-form component (default 5).
 #'
 #' @return A tibble with columns `driver_id`, `avg_position`, `position_sd`,
-#'   `dnf_rate`, `recent_avg_position`, `weighted_avg_position`.
+#'   `dnf_rate`.
 #' @noRd
 calculate_driver_performance <- function(
-    season,
-    historical_data = NULL,
-    weight_recent = 0.65,
-    weight_season = 0.30,
-    weight_prev_season = 0.05,
-    n_recent_races = 5L
+  season,
+  historical_data = NULL,
+  weight_recent = 0.65,
+  weight_season = 0.30,
+  weight_prev_season = 0.05,
+  n_recent_races = 5L
 ) {
   if (is.null(historical_data)) {
     historical_data <- clean_data()
@@ -187,14 +205,29 @@ calculate_driver_performance <- function(
 
   # Calculate current season metrics (may be empty)
   current_metrics <- NULL
+  current_season <- NULL
   if (nrow(season_data) > 0) {
-    current_metrics <- calculate_season_metrics(season_data, n_recent = n_recent_races)
+    current_metrics <- calculate_season_metrics(
+      season_data,
+      n_recent = n_recent_races
+    )
+    current_season <- calculate_season_metrics(
+      season_data,
+      n_recent = length(unique(season_data$round)) # Use full current season for anchor
+    )
   }
 
   # Calculate previous season metrics (for blending and prev-season weight)
   prev_metrics <- NULL
   if (nrow(prev_season_data) > 0) {
-    prev_metrics <- calculate_season_metrics(prev_season_data, n_recent = n_recent_races)
+    prev_metrics <- calculate_season_metrics(
+      prev_season_data,
+      n_recent = n_recent_races
+    )
+    prev_season <- calculate_season_metrics(
+      prev_season_data,
+      n_recent = length(unique(prev_season_data$round)) # Use full previous season for anchor
+    )
   }
 
   # For early season (< n_recent_races races), blend with previous season
@@ -208,7 +241,10 @@ calculate_driver_performance <- function(
       driver_metrics <- prev_metrics
     } else {
       # Blend metrics from both seasons
-      all_drivers <- unique(c(current_metrics$driver_id, prev_metrics$driver_id))
+      all_drivers <- unique(c(
+        current_metrics$driver_id,
+        prev_metrics$driver_id
+      ))
       driver_metrics <- tibble::tibble(driver_id = all_drivers)
 
       driver_metrics <- driver_metrics %>%
@@ -219,7 +255,6 @@ calculate_driver_performance <- function(
               curr_avg = "avg_position",
               curr_sd = "position_sd",
               curr_dnf = "dnf_rate",
-              curr_recent = "recent_avg_position",
               "n_races"
             ),
           by = "driver_id"
@@ -231,7 +266,6 @@ calculate_driver_performance <- function(
               prev_avg = "avg_position",
               prev_sd = "position_sd",
               prev_dnf = "dnf_rate",
-              prev_recent = "recent_avg_position"
             ),
           by = "driver_id"
         ) %>%
@@ -254,22 +288,17 @@ calculate_driver_performance <- function(
               current_weight * .data$curr_dnf + prev_weight * .data$prev_dnf,
             !is.na(.data$curr_dnf) ~ .data$curr_dnf,
             TRUE ~ .data$prev_dnf
-          ),
-          recent_avg_position = dplyr::case_when(
-            !is.na(.data$curr_recent) & !is.na(.data$prev_recent) ~
-              current_weight * .data$curr_recent + prev_weight * .data$prev_recent,
-            !is.na(.data$curr_recent) ~ .data$curr_recent,
-            TRUE ~ .data$prev_recent
           )
         ) %>%
-        dplyr::mutate(
-          position_sd = tidyr::replace_na(.data$position_sd, 5)
-        ) %>%
         dplyr::select(
-          "driver_id", "n_races", "avg_position", "position_sd",
-          "dnf_rate", "recent_avg_position"
+          "driver_id",
+          "n_races",
+          "avg_position",
+          "position_sd",
+          "dnf_rate",
         )
     }
+    current_season <- driver_metrics
   } else {
     # n_recent_races+ races completed: use current season only
     driver_metrics <- current_metrics
@@ -278,8 +307,26 @@ calculate_driver_performance <- function(
   # --- Compute weighted_avg_position with 3-way blend ---
   # Determine previous season avg for the prev-season anchor component
   prev_season_avg <- if (!is.null(prev_metrics)) {
-    prev_metrics %>%
-      dplyr::select("driver_id", prev_season_avg = "avg_position")
+    prev_season %>%
+      dplyr::select(
+        "driver_id",
+        prev_season_avg = "avg_position",
+        prev_season_sd = "position_sd",
+        prev_season_dnf = "dnf_rate"
+      )
+  } else {
+    NULL
+  }
+
+  # Determine previous season avg for the prev-season anchor component
+  curr_season_avg <- if (!is.null(prev_metrics)) {
+    current_season %>%
+      dplyr::select(
+        "driver_id",
+        curr_season_avg = "avg_position",
+        curr_season_sd = "position_sd",
+        curr_season_dnf = "dnf_rate"
+      )
   } else {
     NULL
   }
@@ -287,33 +334,38 @@ calculate_driver_performance <- function(
   if (!is.null(prev_season_avg)) {
     driver_metrics <- driver_metrics %>%
       dplyr::left_join(prev_season_avg, by = "driver_id") %>%
+      dplyr::left_join(curr_season_avg, by = "driver_id") %>%
+      tidyr::replace_na(list(
+        prev_season_avg = 15,
+        prev_season_sd = 5,
+        prev_season_dnf = 0.1,
+        curr_season_avg = 15,
+        curr_season_sd = 5,
+        curr_season_dnf = 0.1
+      )) %>%
       dplyr::mutate(
-        weighted_avg_position = dplyr::case_when(
-          !is.na(.data$prev_season_avg) ~
-            weight_recent * .data$recent_avg_position +
-              weight_season * .data$avg_position +
-              weight_prev_season * .data$prev_season_avg,
-          TRUE ~ {
-            # No prev season data for this driver: renormalize recent + season
-            w_total <- weight_recent + weight_season
-            (weight_recent / w_total) * .data$recent_avg_position +
-              (weight_season / w_total) * .data$avg_position
-          }
-        )
-      ) %>%
-      dplyr::select(-"prev_season_avg")
-  } else {
-    # No previous season at all: renormalize recent + season weights
-    w_total <- weight_recent + weight_season
-    driver_metrics <- driver_metrics %>%
-      dplyr::mutate(
-        weighted_avg_position =
-          (weight_recent / w_total) * .data$recent_avg_position +
-            (weight_season / w_total) * .data$avg_position
+        avg_position = weight_recent *
+          .data$avg_position +
+          weight_season * .data$curr_season_avg +
+          weight_prev_season * .data$prev_season_avg,
+        position_sd = weight_recent *
+          .data$position_sd +
+          weight_season * .data$curr_season_sd +
+          weight_prev_season * .data$prev_season_sd,
+        dnf_rate = weight_recent *
+          .data$dnf_rate +
+          weight_season * .data$curr_season_dnf +
+          weight_prev_season * .data$prev_season_dnf
       )
   }
 
-  driver_metrics
+  driver_metrics |>
+    dplyr::select(
+      "driver_id",
+      "avg_position",
+      "position_sd",
+      "dnf_rate",
+    )
 }
 
 
@@ -332,26 +384,35 @@ calculate_driver_performance <- function(
 #' @return A tibble with per-driver performance metrics.
 #' @noRd
 calculate_season_metrics <- function(data, n_recent = 5L) {
-  data %>%
+  data <- data %>%
     dplyr::group_by(.data$driver_id) %>%
     dplyr::arrange(.data$round) %>%
     dplyr::mutate(
-      dnf = as.numeric(!.data$finished | is.na(.data$position) | .data$position > 20)
+      # consider both driver and constructor failures for DNF rate, since both can cause a DNF
+      # also take a small penalty for teammate car failure
+      # but a driver can't dnf more than once per race
+      dnf = .data$driver_failure +
+        .data$constructor_failure +
+        .data$constructor_failure_race,
+      dnf = ifelse(.data$dnf > 1, 1, .data$dnf)
     ) %>%
     dplyr::summarise(
       n_races = dplyr::n(),
-      avg_position = mean(.data$position, na.rm = TRUE),
-      position_sd = stats::sd(.data$position, na.rm = TRUE),
-      dnf_rate = mean(.data$dnf, na.rm = TRUE),
-      recent_avg_position = mean(
+      avg_position = mean(
         utils::tail(.data$position[!is.na(.data$position)], !!n_recent),
         na.rm = TRUE
       ),
+      position_sd = stats::sd(
+        utils::tail(.data$position[!is.na(.data$position)], !!n_recent),
+        na.rm = TRUE
+      ),
+      dnf_rate = mean(
+        utils::tail(.data$dnf, !!n_recent),
+        na.rm = TRUE
+      ),
       .groups = "drop"
-    ) %>%
-    dplyr::mutate(
-      position_sd = tidyr::replace_na(.data$position_sd, 5)
     )
+  return(data)
 }
 
 
@@ -411,11 +472,11 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
 #' odds <- simulate_championship_odds(season = 2025, n_simulations = 1000)
 #' }
 simulate_championship_odds <- function(
-    season = as.numeric(f1dataR::get_current_season()),
-    standings = NULL,
-    remaining = NULL,
-    n_simulations = 10000L,
-    historical_data = NULL
+  season = as.numeric(f1dataR::get_current_season()),
+  standings = NULL,
+  remaining = NULL,
+  n_simulations = 10000L,
+  historical_data = NULL
 ) {
   # --- Input Validation ---
   if (!is.numeric(season) || length(season) != 1) {
@@ -454,8 +515,13 @@ simulate_championship_odds <- function(
           season = !!season
         ) %>%
         dplyr::select(
-          "driver_id", "current_points", "win_probability",
-          "avg_final_points", "avg_final_position", "in_contention", "season"
+          "driver_id",
+          "current_points",
+          "win_probability",
+          "avg_final_points",
+          "avg_final_position",
+          "in_contention",
+          "season"
         )
     )
   }
@@ -469,7 +535,7 @@ simulate_championship_odds <- function(
     dplyr::left_join(performance, by = "driver_id") %>%
     dplyr::mutate(
       # Defaults for drivers with no performance data
-      weighted_avg_position = tidyr::replace_na(.data$weighted_avg_position, 15),
+      avg_position = tidyr::replace_na(.data$avg_position, 15),
       position_sd = tidyr::replace_na(.data$position_sd, 5),
       dnf_rate = tidyr::replace_na(.data$dnf_rate, 0.1)
     )
@@ -479,7 +545,8 @@ simulate_championship_odds <- function(
   n_remaining_sprints <- sum(remaining$has_sprint)
   max_race_points <- max(gp_points_system())
   max_sprint_points <- max(sprint_points_system())
-  max_possible_remaining <- n_remaining_races * max_race_points +
+  max_possible_remaining <- n_remaining_races *
+    max_race_points +
     n_remaining_sprints * max_sprint_points
 
   leader_points <- max(sim_data$points)
@@ -505,7 +572,9 @@ simulate_championship_odds <- function(
 
   win_counts <- stats::setNames(integer(n_drivers), sim_data$driver_id)
   total_points_matrix <- matrix(
-    0, nrow = n_simulations, ncol = n_drivers,
+    0,
+    nrow = n_simulations,
+    ncol = n_drivers,
     dimnames = list(NULL, sim_data$driver_id)
   )
 
@@ -518,7 +587,7 @@ simulate_championship_odds <- function(
       # --- Sprint Simulation ---
       if (race$has_sprint) {
         sprint_positions <- simulate_race_positions(
-          sim_data$weighted_avg_position,
+          sim_data$avg_position,
           sim_data$position_sd,
           sim_data$dnf_rate * 0.5, # 50% lower DNF rate for sprints
           n_drivers
@@ -531,7 +600,7 @@ simulate_championship_odds <- function(
 
       # --- Race Simulation ---
       race_positions <- simulate_race_positions(
-        sim_data$weighted_avg_position,
+        sim_data$avg_position,
         sim_data$position_sd,
         sim_data$dnf_rate,
         n_drivers
@@ -567,7 +636,10 @@ simulate_championship_odds <- function(
   results$avg_final_position <- results$avg_final_position / n_simulations
 
   results <- results %>%
-    dplyr::arrange(dplyr::desc(.data$win_probability), dplyr::desc(.data$current_points))
+    dplyr::arrange(
+      dplyr::desc(.data$win_probability),
+      dplyr::desc(.data$current_points)
+    )
 
   results
 }
@@ -589,10 +661,10 @@ simulate_championship_odds <- function(
 #' @return An integer vector of finishing positions (NA for DNF).
 #' @noRd
 simulate_race_positions <- function(
-    avg_positions,
-    position_sds,
-    dnf_rates,
-    n_drivers
+  avg_positions,
+  position_sds,
+  dnf_rates,
+  n_drivers
 ) {
   # Simulate raw performance scores (lower is better)
   raw_scores <- stats::rnorm(n_drivers, mean = avg_positions, sd = position_sds)
@@ -712,9 +784,9 @@ format_championship_skeet <- function(odds, n_simulations = 10000L) {
 #' post_championship_predictions(odds)
 #' }
 post_championship_predictions <- function(
-    odds = NULL,
-    season = as.numeric(f1dataR::get_current_season()),
-    n_simulations = 10000L
+  odds = NULL,
+  season = as.numeric(f1dataR::get_current_season()),
+  n_simulations = 10000L
 ) {
   if (is.null(odds)) {
     odds <- simulate_championship_odds(
