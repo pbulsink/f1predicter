@@ -250,7 +250,7 @@ process_results_data <- function(input) {
         )
     } else {
       event_processed <- event_processed %>%
-        dplyr::mutate(quali_position = NA_real_)
+        dplyr::mutate(quali_position = NA_integer_)
     }
 
     event_processed %>%
@@ -280,6 +280,8 @@ process_results_data <- function(input) {
   race_results <- process_single_event(input$results, input$rgrid, FALSE)
   sprint_results <- process_single_event(input$sprint_results, input$sgrid, TRUE)
 
+  # Sprint rows are ordered before race rows in the same weekend so cumulative
+  # season features (e.g., points_before/points_after) reflect sprint outcomes.
   processed_results <- dplyr::bind_rows(sprint_results, race_results)
   if (nrow(processed_results) == 0) {
     return(tibble::as_tibble(processed_results))

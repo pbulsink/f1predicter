@@ -164,7 +164,7 @@ test_that("process_results_data() derives joined and rolling race features", {
   expect_false(any(is.na(result$quali_position)))
 })
 
-test_that("process_results_data() appends sprint rows and marks them (#noissue)", {
+test_that("process_results_data() processes sprint rows and marks them (#noissue)", {
   raw_input <- list(
     results = tibble::tibble(
       driver_id = "driver_a",

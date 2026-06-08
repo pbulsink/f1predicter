@@ -447,6 +447,9 @@ get_grids <- function(season, round, session) {
     }
     quali <- f1dataR::load_quali(season = season, round = round)
 
+    # Sprint weekends started using dedicated sprint qualifying from 2023
+    # (Sprint Shootout introduced by FIA/F1 sporting format updates).
+    # Earlier sprint seasons used main qualifying to set the sprint order.
     if (season >= 2023) {
       sprint_quali_results <- results %>%
         dplyr::arrange(.data$grid) %>%
