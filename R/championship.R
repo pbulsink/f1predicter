@@ -782,6 +782,7 @@ format_championship_skeet <- function(odds, n_simulations = 10000L) {
 #' odds <- simulate_championship_odds(2025)
 #' post_championship_predictions(odds)
 #' }
+# nocov start
 post_championship_predictions <- function(
   odds = NULL,
   season = as.numeric(f1dataR::get_current_season()),
@@ -796,3 +797,4 @@ post_championship_predictions <- function(
   skeet_thread <- format_championship_skeet(odds, n_simulations = n_simulations)
   post_skeet_predictions(skeets = skeet_thread)
 }
+# nocov end

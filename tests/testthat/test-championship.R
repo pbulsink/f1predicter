@@ -796,3 +796,13 @@ test_that("simulate_championship_odds full-grid simulation: non-contenders still
   expect_true(all(result$avg_final_position >= 1))
   expect_true(all(result$avg_final_position <= nrow(result)))
 })
+
+# ----- Current Standings ------
+test_that("get_current_standings returns correct structure", {
+  # Use package standings data
+  standings <- get_current_standings(2025)
+
+  expect_s3_class(standings, "tbl_df")
+  expect_true(all(c("driver_id", "points", "position") %in% colnames(standings)))
+  expect_true(standings$driver_id[[1]] == "norris")
+})
