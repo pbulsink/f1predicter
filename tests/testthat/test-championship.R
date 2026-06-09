@@ -667,7 +667,7 @@ test_that("calculate_driver_performance errors with no data for season or previo
 
 test_that("calculate_driver_performance handles 5+ current-season races with no previous season", {
   # Only current season data, 8 races completed (>= n_recent_races default of 5)
-  # Tests the 'else' branch (line ~302-304) and the NULL prev_season_avg path (line ~334)
+  # Tests the n_completed >= n_recent_races path and the NULL prev_season (no 3-way blend) path
   current_only_data <- tibble::tibble(
     driver_id = rep(c("driver_a", "driver_b"), each = 8),
     round = rep(1:8, 2),
