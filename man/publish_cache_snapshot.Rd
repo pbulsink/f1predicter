@@ -14,19 +14,19 @@ publish_cache_snapshot(
 \arguments{
 \item{tag}{GitHub release tag to publish to.}
 
-\item{repo}{Repository in \code{"owner/repo"} format.}
+\item{repo}{Repository in `"owner/repo"` format.}
 
 \item{cache}{Cache directory path. Defaults to
-\code{getOption("f1predicter.cache", tempdir())}.}
+`getOption("f1predicter.cache", tempdir())`.}
 
-\item{overwrite}{Logical passed to \code{piggyback::pb_upload()}.}
+\item{overwrite}{Logical passed to `piggyback::pb_upload()`.}
 }
 \value{
-Invisibly returns the upload result from \code{piggyback::pb_upload()}.
+Invisibly returns the upload result from `piggyback::pb_upload()`.
 }
 \description{
 Validates the local SQLite cache and uploads it as a release asset using
-\code{{piggyback}}.
+`{piggyback}`.
 }
 \examples{
 \dontrun{

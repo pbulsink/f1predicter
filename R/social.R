@@ -322,6 +322,7 @@ post_skeet_predictions <- function(skeets) {
     cli::cli_abort("{.arg skeets} must be a list of lists.")
   }
 
+  # nocov start
   last_post_response <- NULL
   all_responses <- list()
 
@@ -368,6 +369,7 @@ post_skeet_predictions <- function(skeets) {
 
   invisible(all_responses)
 }
+# nocov end
 
 #' Post Qualifying Predictions to Bluesky
 #'
