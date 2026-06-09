@@ -686,7 +686,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               position = as.numeric(.data$position),
               grid = as.numeric(.data$grid),
               laps = as.numeric(.data$laps),
-              lap = as.numeric(.data$lap)
+              lap = as.numeric(.data$lap),
+              season = season,
+              round = round
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
@@ -694,7 +696,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
               sprint_results,
               "sprint_results",
               con,
-              overwrite = FALSE
+              overwrite = force
             )
           }
         }
@@ -721,7 +723,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
-            write_cache_table(pitstops, "pitstops", con, overwrite = FALSE)
+            write_cache_table(pitstops, "pitstops", con, overwrite = force)
           }
         }
       }
@@ -739,7 +741,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           dplyr::mutate(position = as.integer(.data$position)) %>%
           janitor::clean_names()
         if (cache_writes_allowed) {
-          write_cache_table(rgrid, "rgrid", con, overwrite = FALSE)
+          write_cache_table(rgrid, "rgrid", con, overwrite = force)
         }
       }
     }
@@ -751,7 +753,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           dplyr::mutate(season = season, round = round) %>%
           janitor::clean_names()
         if (cache_writes_allowed) {
-          write_cache_table(sgrid, "sgrid", con, overwrite = FALSE)
+          write_cache_table(sgrid, "sgrid", con, overwrite = force)
         }
       }
     }
@@ -775,7 +777,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
-            write_cache_table(quali, "qualis", con, overwrite = FALSE)
+            write_cache_table(quali, "qualis", con, overwrite = force)
           }
         }
       }
@@ -844,7 +846,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           results <- NULL
         }
         if (cache_writes_allowed) {
-          write_cache_table(laps, "laps", con, overwrite = FALSE)
+          write_cache_table(laps, "laps", con, overwrite = force)
         }
       }
     }

@@ -253,6 +253,13 @@ process_results_data <- function(input) {
         dplyr::mutate(quali_position = NA_integer_)
     }
 
+    if (!("fastest_rank" %in% colnames(event_processed))) {
+      event_processed <- event_processed %>%
+        dplyr::mutate(
+          fastest_rank = NA_integer_
+        )
+    }
+
     event_processed %>%
       dplyr::select(
         "driver_id",
