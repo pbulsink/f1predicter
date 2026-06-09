@@ -50,6 +50,7 @@ The simulation works as follows:
   \item Starts with current championship points.
   \item For each remaining race (and sprint, if applicable):
     \itemize{
+      \item Simulates all drivers in the standings (full grid).
       \item Applies a DNF probability for each driver (50% lower for sprints).
       \item Predicts finishing position based on weighted performance average
         plus random noise from the driver's consistency (standard deviation).
@@ -60,9 +61,9 @@ The simulation works as follows:
   \item Returns win probabilities as the fraction of simulations won.
 }
 
-Only drivers in mathematical contention are simulated. A driver is in
-contention if the maximum possible points they can earn in remaining races
-is enough to catch the current leader.
+All drivers are simulated in each race to produce realistic position
+assignments. Mathematical contention is tracked but does not exclude
+drivers from the simulation.
 }
 \examples{
 \dontrun{
