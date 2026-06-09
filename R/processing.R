@@ -296,7 +296,30 @@ process_results_data <- function(input) {
   # season features (e.g., points_before/points_after) reflect sprint outcomes.
   processed_results <- dplyr::bind_rows(sprint_results, race_results)
   if (nrow(processed_results) == 0) {
-    return(tibble::as_tibble(processed_results))
+    return(tibble::tibble(
+      driver_id = character(),
+      constructor_id = character(),
+      position = numeric(),
+      grid = numeric(),
+      quali_position = integer(),
+      pos_change = numeric(),
+      pos_change_perc = numeric(),
+      weighted_passes = numeric(),
+      pos_change_points = numeric(),
+      fastest_rank = integer(),
+      fastest_time = numeric(),
+      points = numeric(),
+      points_before = numeric(),
+      status = character(),
+      points_after = numeric(),
+      driver_experience = numeric(),
+      season = integer(),
+      round = integer(),
+      driver_failure = numeric(),
+      constructor_failure = numeric(),
+      finished = numeric(),
+      is_sprint = logical()
+    ))
   }
 
   processed_results <- processed_results %>%
