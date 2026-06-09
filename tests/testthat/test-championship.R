@@ -664,3 +664,135 @@ test_that("calculate_driver_performance errors with no data for season or previo
     "No historical data found"
   )
 })
+
+test_that("calculate_driver_performance handles 5+ current-season races with no previous season", {
+  # Only current season data, 8 races completed (>= n_recent_races default of 5)
+  # Tests the 'else' branch (line ~302-304) and the NULL prev_season_avg path (line ~334)
+  current_only_data <- tibble::tibble(
+    driver_id = rep(c("driver_a", "driver_b"), each = 8),
+    round = rep(1:8, 2),
+    position = c(1, 2, 3, 1, 2, 3, 1, 2, 5, 6, 7, 5, 6, 7, 5, 6),
+    finished = TRUE,
+    driver_failure = 0,
+    constructor_failure = 0,
+    constructor_failure_race = 0,
+    season = 2025
+  )
+
+  perf <- calculate_driver_performance(
+    season = 2025,
+    historical_data = current_only_data
+  )
+
+  expect_s3_class(perf, "tbl_df")
+  expect_setequal(perf$driver_id, c("driver_a", "driver_b"))
+  expect_true(all(c("avg_position", "position_sd", "dnf_rate") %in% names(perf)))
+
+  # driver_a has better positions than driver_b
+  driver_a <- perf[perf$driver_id == "driver_a", ]
+  driver_b <- perf[perf$driver_id == "driver_b", ]
+  expect_true(driver_a$avg_position < driver_b$avg_position)
+  expect_equal(driver_a$dnf_rate, 0)
+})
+
+test_that("calculate_driver_performance respects custom weight parameters", {
+  historical_data <- make_historical_data()
+
+  # Default weights
+  perf_default <- calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data
+  )
+
+  # Different weights: 100% recent, 0% season, 0% prev
+  perf_recent_only <- calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data,
+    weight_recent = 1.0,
+    weight_season = 0.0,
+    weight_prev_season = 0.0
+  )
+
+  # Different weights: 0% recent, 100% season, 0% prev
+  perf_season_only <- calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data,
+    weight_recent = 0.0,
+    weight_season = 1.0,
+    weight_prev_season = 0.0
+  )
+
+  # Different weights produce different avg_position values
+  expect_false(all(perf_default$avg_position == perf_recent_only$avg_position))
+  expect_false(all(perf_recent_only$avg_position == perf_season_only$avg_position))
+
+  # All results have the right structure regardless of weights
+  expect_s3_class(perf_recent_only, "tbl_df")
+  expect_s3_class(perf_season_only, "tbl_df")
+  expect_setequal(perf_recent_only$driver_id, perf_default$driver_id)
+})
+
+test_that("calculate_driver_performance custom n_recent_races parameter", {
+  historical_data <- make_historical_data()
+
+  perf_n3 <- calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data,
+    n_recent_races = 3L
+  )
+  perf_n8 <- calculate_driver_performance(
+    season = 2025,
+    historical_data = historical_data,
+    n_recent_races = 8L
+  )
+
+  # Both should return results for the same drivers
+  expect_setequal(perf_n3$driver_id, perf_n8$driver_id)
+
+  # Different n_recent values should produce different performance estimates
+  expect_false(all(perf_n3$avg_position == perf_n8$avg_position))
+})
+
+test_that("simulate_championship_odds full-grid simulation: non-contenders still earn points", {
+  # One driver dominates, others are eliminated; all should still get avg_final_points > starting
+  standings <- tibble::tibble(
+    driver_id = paste0("driver_", letters[1:5]),
+    points = c(300, 10, 8, 6, 5),
+    position = 1:5
+  )
+  # Only 1 race, 0 sprints: max = 25 pts -> drivers 2-5 cannot catch driver 1 (300 pts)
+  remaining <- tibble::tibble(
+    round = 20L,
+    race_name = "Final Race",
+    date = Sys.Date() + 7,
+    has_sprint = FALSE
+  )
+  historical_data <- make_historical_data()
+  historical_data <- historical_data[
+    historical_data$driver_id %in% standings$driver_id,
+  ]
+
+  set.seed(123)
+  result <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 10L,
+    historical_data = historical_data
+  )
+
+  # Only driver_a should be in contention
+  expect_true(result$in_contention[result$driver_id == "driver_a"])
+  expect_true(all(!result$in_contention[result$driver_id != "driver_a"]))
+
+  # Driver_a should win all simulations
+  expect_equal(result$win_probability[result$driver_id == "driver_a"], 1)
+
+  # All drivers (including non-contenders) should have avg_final_points >= current_points
+  expect_true(all(result$avg_final_points >= result$current_points))
+
+  # All drivers have a valid avg_final_position
+  expect_true(all(!is.na(result$avg_final_position)))
+  expect_true(all(result$avg_final_position >= 1))
+  expect_true(all(result$avg_final_position <= nrow(result)))
+})
