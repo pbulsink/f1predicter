@@ -318,8 +318,8 @@ calculate_driver_performance <- function(
     NULL
   }
 
-  # Determine previous season avg for the prev-season anchor component
-  curr_season_avg <- if (!is.null(prev_metrics)) {
+  # Determine current season avg for the season anchor component
+  curr_season_avg <- if (!is.null(current_season)) {
     current_season %>%
       dplyr::select(
         "driver_id",
@@ -701,8 +701,8 @@ simulate_race_positions <- function(
 #' posting on Bluesky, following the existing social post patterns.
 #'
 #' @param odds A tibble from `simulate_championship_odds()`.
-#' @param odds A tibble from `simulate_championship_odds()`.
 #' @param n_simulations Integer number of simulations that were run (for display).
+#'   Defaults to 10000.
 #'   Defaults to 10000.
 #'
 #' @return A list of lists suitable for `post_skeet_predictions()`.
@@ -751,7 +751,7 @@ format_championship_skeet <- function(odds, n_simulations = 10000L) {
   skeet2_body <- glue::glue(
     "\\U0001F4CA Simulation details:",
     "Based on {scales::comma(n_simulations)} Monte Carlo simulations",
-    "Performance: 70% recent (last 5) / 30% season",
+    "Performance: 65% recent (last 5) / 30% season / 5% prev season",
     "Accounts for DNFs and sprint races",
     "",
     "Leader {leader$driver_name} avg projected total: {round(leader$avg_final_points, 1)} pts",
