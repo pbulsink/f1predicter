@@ -703,7 +703,6 @@ simulate_race_positions <- function(
 #' @param odds A tibble from `simulate_championship_odds()`.
 #' @param n_simulations Integer number of simulations that were run (for display).
 #'   Defaults to 10000.
-#'   Defaults to 10000.
 #'
 #' @return A list of lists suitable for `post_skeet_predictions()`.
 #' @noRd
