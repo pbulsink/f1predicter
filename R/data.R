@@ -452,7 +452,7 @@ get_grids <- function(season, round, session) {
     # Earlier sprint seasons used main qualifying to set the sprint order.
     if (season >= 2023) {
       sprint_quali_results <- results %>%
-        dplyr::arrange(.data$grid) %>%
+        dplyr::arrange(as.numeric(.data$grid)) %>%
         dplyr::pull("driver_id")
     } else if (!is.null(quali) && nrow(quali) > 0) {
       sprint_quali_results <- quali$driver_id
@@ -471,7 +471,7 @@ get_grids <- function(season, round, session) {
       janitor::clean_names()
   } else {
     startgrid <- results %>%
-      dplyr::arrange(.data$grid) %>%
+      dplyr::arrange(as.numeric(.data$grid)) %>%
       dplyr::pull("driver_id")
     if (session == "S") {
       quali_results <- if (!is.null(sprint_quali_results)) {
