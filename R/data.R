@@ -396,6 +396,8 @@ get_laps_or_null <- function(season, round, session) {
 #' @return data frame
 #' @noRd
 get_grids <- function(season, round, session) {
+  sprint_quali_results <- NULL
+
   if (session == "R") {
     # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
     results <- NULL
@@ -444,6 +446,17 @@ get_grids <- function(season, round, session) {
       return(NULL)
     }
     quali <- f1dataR::load_quali(season = season, round = round)
+
+    # Sprint weekends started using dedicated sprint qualifying from 2023
+    # (Sprint Shootout introduced by FIA/F1 sporting format updates).
+    # Earlier sprint seasons used main qualifying to set the sprint order.
+    if (season >= 2023) {
+      sprint_quali_results <- results %>%
+        dplyr::arrange(as.numeric(.data$grid)) %>%
+        dplyr::pull("driver_id")
+    } else if (!is.null(quali) && nrow(quali) > 0) {
+      sprint_quali_results <- quali$driver_id
+    }
   }
 
   if (is.null(results) & !is.null(quali)) {
@@ -458,12 +471,29 @@ get_grids <- function(season, round, session) {
       janitor::clean_names()
   } else {
     startgrid <- results %>%
-      dplyr::arrange(.data$grid) %>%
+      dplyr::arrange(as.numeric(.data$grid)) %>%
       dplyr::pull("driver_id")
-    ndrivers <- max(nrow(results), nrow(quali))
-    grid <- data.frame(position = 1:max(nrow(results), nrow(quali))) %>%
+    if (session == "S") {
+      quali_results <- if (!is.null(sprint_quali_results)) {
+        sprint_quali_results
+      } else if (!is.null(quali) && nrow(quali) > 0) {
+        quali$driver_id
+      } else {
+        results$driver_id
+      }
+    } else {
+      quali_results <- if (!is.null(quali) && nrow(quali) > 0) {
+        quali$driver_id
+      } else {
+        results$driver_id
+      }
+    }
+
+    n_quali <- length(quali_results)
+    ndrivers <- max(nrow(results), n_quali)
+    grid <- data.frame(position = 1:ndrivers) %>%
       dplyr::mutate(
-        quali_results = expand_val(quali$driver_id, ndrivers, NA),
+        quali_results = expand_val(quali_results, ndrivers, NA),
         start_grid = expand_val(startgrid, ndrivers, NA),
         race_results = expand_val(results$driver_id, ndrivers, NA)
       ) %>%
@@ -656,7 +686,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
               position = as.numeric(.data$position),
               grid = as.numeric(.data$grid),
               laps = as.numeric(.data$laps),
-              lap = as.numeric(.data$lap)
+              lap = as.numeric(.data$lap),
+              season = season,
+              round = round
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
@@ -664,7 +696,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
               sprint_results,
               "sprint_results",
               con,
-              overwrite = FALSE
+              overwrite = force
             )
           }
         }
@@ -691,7 +723,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
-            write_cache_table(pitstops, "pitstops", con, overwrite = FALSE)
+            write_cache_table(pitstops, "pitstops", con, overwrite = force)
           }
         }
       }
@@ -709,7 +741,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           dplyr::mutate(position = as.integer(.data$position)) %>%
           janitor::clean_names()
         if (cache_writes_allowed) {
-          write_cache_table(rgrid, "rgrid", con, overwrite = FALSE)
+          write_cache_table(rgrid, "rgrid", con, overwrite = force)
         }
       }
     }
@@ -721,7 +753,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           dplyr::mutate(season = season, round = round) %>%
           janitor::clean_names()
         if (cache_writes_allowed) {
-          write_cache_table(sgrid, "sgrid", con, overwrite = FALSE)
+          write_cache_table(sgrid, "sgrid", con, overwrite = force)
         }
       }
     }
@@ -745,7 +777,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
             ) %>%
             janitor::clean_names()
           if (cache_writes_allowed) {
-            write_cache_table(quali, "qualis", con, overwrite = FALSE)
+            write_cache_table(quali, "qualis", con, overwrite = force)
           }
         }
       }
@@ -814,7 +846,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           results <- NULL
         }
         if (cache_writes_allowed) {
-          write_cache_table(laps, "laps", con, overwrite = FALSE)
+          write_cache_table(laps, "laps", con, overwrite = force)
         }
       }
     }

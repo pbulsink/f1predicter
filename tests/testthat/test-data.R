@@ -143,6 +143,48 @@ test_that("get_grids() returns qualifying-only data when race results are unavai
   expect_true(all(is.na(grid$race_results)))
 })
 
+test_that("get_grids() falls back to main qualifying for early sprint seasons (#noissue)", {
+  local_mocked_bindings(
+    load_sprint = function(...) {
+      tibble::tibble(
+        position = 1:2,
+        driver_id = c("driver_b", "driver_a"),
+        grid = c(1, 2)
+      )
+    },
+    load_quali = function(...) {
+      tibble::tibble(position = 1:2, driver_id = c("driver_a", "driver_b"))
+    },
+    .package = "f1dataR"
+  )
+
+  grid <- get_grids(season = 2022, round = 4, session = "S")
+
+  expect_s3_class(grid, "data.frame")
+  expect_identical(grid$quali_results, c("driver_a", "driver_b"))
+})
+
+test_that("get_grids() uses sprint qualifying order for modern sprint seasons (#noissue)", {
+  local_mocked_bindings(
+    load_sprint = function(...) {
+      tibble::tibble(
+        position = 1:2,
+        driver_id = c("driver_b", "driver_a"),
+        grid = c(1, 2)
+      )
+    },
+    load_quali = function(...) {
+      tibble::tibble(position = 1:2, driver_id = c("driver_a", "driver_b"))
+    },
+    .package = "f1dataR"
+  )
+
+  grid <- get_grids(season = 2023, round = 4, session = "S")
+
+  expect_s3_class(grid, "data.frame")
+  expect_identical(grid$quali_results, c("driver_b", "driver_a"))
+})
+
 test_that("get_weekend_data() reads cached weekend results without fetching new data (#noissue)", {
   cache_dir <- withr::local_tempdir()
   withr::local_options(list(f1predicter.cache = cache_dir))
