@@ -886,6 +886,18 @@ combine_and_finalize_features <- function(
     dplyr::left_join(qualis, by = c("round", "season", "driver_id")) %>%
     dplyr::left_join(practices, by = c("round", "season", "driver_id")) %>%
     dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
+    dplyr::mutate(
+      pit_duration_perc = dplyr::if_else(
+        .data$is_sprint,
+        NA_real_,
+        .data$pit_duration_perc
+      ),
+      pit_num_perc = dplyr::if_else(
+        .data$is_sprint,
+        NA_real_,
+        .data$pit_num_perc
+      )
+    ) %>%
     dplyr::left_join(
       constructor_results,
       by = c("round", "season", "constructor_id")
