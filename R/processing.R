@@ -1173,7 +1173,7 @@ clean_data <- function(
 
   nseasons <- length(unique(input$results$season))
   cli::cli_inform(
-    "Loaded {nseasons} seasons of data, now processing"
+    "Loaded {nseasons} seasons of data, now processing..."
   )
   # 1. Process individual data sources
   results_processed <- process_results_data(input)
