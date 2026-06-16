@@ -257,11 +257,11 @@ test_that("predict_position_class() works with a last_fit ordinal model", {
     yardstick::accuracy
   )
 
-  spec <- parsnip::ordinal_reg() %>%
-    parsnip::set_mode("classification") %>%
+  spec <- parsnip::ordinal_reg() |>
+    parsnip::set_mode("classification") |>
     parsnip::set_engine("polr")
 
-  rec <- recipes::recipe(position ~ x1 + x2, data = train_data) %>%
+  rec <- recipes::recipe(position ~ x1 + x2, data = train_data) |>
     recipes::step_normalize(recipes::all_numeric_predictors())
 
   wf <- workflows::workflow(rec, spec)

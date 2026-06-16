@@ -102,9 +102,9 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
-  base_recipe <- recipes::recipe(formula, data = train_data) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  base_recipe <- recipes::recipe(formula, data = train_data) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
   # Define metrics based on model mode
@@ -120,7 +120,7 @@ train_stacked_model <- function(
 
   # Train and tune each candidate model
   candidate_resamples <- list()
-  for(engine in engines) {
+  for (engine in engines) {
     cli::cli_rule("Training candidate: {.val {engine}}")
 
     # Get the hyperparameters for the current engine
@@ -160,8 +160,8 @@ train_stacked_model <- function(
       cli::cli_abort("Unsupported engine: {.val {engine}}")
     )
 
-    model_spec <- model_spec_tuned %>%
-      parsnip::set_mode(model_mode) %>%
+    model_spec <- model_spec_tuned |>
+      parsnip::set_mode(model_mode) |>
       parsnip::set_engine(engine)
 
     wflow <- workflows::workflow(base_recipe, model_spec)
@@ -365,9 +365,9 @@ train_ordinal_ensemble <- function(
   # calling frame, which significantly inflates model size on disk.
   rlang::f_env(formula) <- rlang::base_env()
 
-  base_recipe <- recipes::recipe(formula, data = train_data) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
+  base_recipe <- recipes::recipe(formula, data = train_data) |>
+    recipes::step_dummy(recipes::all_nominal_predictors()) |>
+    recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
   # Train each candidate ordinal model on the resamples
@@ -410,8 +410,8 @@ train_ordinal_ensemble <- function(
       cli::cli_abort("Unsupported ordinal engine: {.val {engine}}")
     )
 
-    model_spec <- model_spec_tuned %>%
-      parsnip::set_mode("classification") %>%
+    model_spec <- model_spec_tuned |>
+      parsnip::set_mode("classification") |>
       parsnip::set_engine(engine)
 
     wflow <- workflows::workflow(base_recipe, model_spec)

@@ -122,8 +122,8 @@ open_cache_db <- function(
     return(data)
   }
 
-  data %>%
-    dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) %>%
+  data |>
+    dplyr::mutate(deleted_reason = as.character(.data$deleted_reason)) |>
     ensure_tidy()
 }
 
@@ -260,8 +260,8 @@ read_cache_table <- function(table, con, season = NULL, round = NULL) {
     return(NULL)
   }
 
-  data %>%
-    tibble::as_tibble() %>%
+  data |>
+    tibble::as_tibble() |>
     ensure_tidy()
 }
 
@@ -282,7 +282,7 @@ read_cache_table <- function(table, con, season = NULL, round = NULL) {
       rds_path = rds_path,
       csv_path = csv_path,
       col_classes = col_classes
-    ) %>%
+    ) |>
       ensure_tidy()
 
     if (isTRUE(cache_write)) {
@@ -366,7 +366,7 @@ get_laps_or_null <- function(season, round, session) {
     } else {
       laps$deleted_reason <- as.character(laps$deleted_reason)
     }
-    laps <- laps %>%
+    laps <- laps |>
       dplyr::mutate(
         is_personal_best = as.logical(unlist(.data$is_personal_best)),
         track_status = as.numeric(unlist(.data$track_status)),
@@ -380,7 +380,7 @@ get_laps_or_null <- function(season, round, session) {
         wind_speed = unlist(.data$wind_speed),
         fresh_tyre = unlist(.data$fresh_tyre),
         is_accurate = unlist(.data$is_accurate)
-      ) %>%
+      ) |>
       janitor::clean_names()
   }
 
@@ -402,7 +402,7 @@ get_grids <- function(season, round, session) {
     # data frame Position (starting from 1), QualiResults (Driver), Start Grid (Driver), Final Position (Driver)
     results <- NULL
     try(
-      results <- f1dataR::load_results(season = season, round = round) %>%
+      results <- f1dataR::load_results(season = season, round = round) |>
         dplyr::mutate(
           'position' = as.numeric(.data$position),
           'grid' = as.numeric(.data$grid)
@@ -419,7 +419,7 @@ get_grids <- function(season, round, session) {
     if (season < 2021) {
       return(NULL)
     }
-    schedule <- f1predicter::schedule %>%
+    schedule <- f1predicter::schedule |>
       dplyr::mutate(
         date = as.Date(.data$date),
         season = as.numeric(.data$season),
@@ -427,7 +427,7 @@ get_grids <- function(season, round, session) {
         lat = as.numeric(.data$round),
         long = as.numeric(.data$long),
         sprint_date = as.Date(.data$sprint_date)
-      ) %>%
+      ) |>
       tibble::as_tibble()
 
     if (
@@ -451,8 +451,8 @@ get_grids <- function(season, round, session) {
     # (Sprint Shootout introduced by FIA/F1 sporting format updates).
     # Earlier sprint seasons used main qualifying to set the sprint order.
     if (season >= 2023) {
-      sprint_quali_results <- results %>%
-        dplyr::arrange(as.numeric(.data$grid)) %>%
+      sprint_quali_results <- results |>
+        dplyr::arrange(as.numeric(.data$grid)) |>
         dplyr::pull("driver_id")
     } else if (!is.null(quali) && nrow(quali) > 0) {
       sprint_quali_results <- quali$driver_id
@@ -461,17 +461,17 @@ get_grids <- function(season, round, session) {
 
   if (is.null(results) & !is.null(quali)) {
     # this is the situation that quali is done but not the race
-    grid <- quali %>%
-      dplyr::select("position", "driver_id") %>%
-      dplyr::rename("quali_results" = "driver_id") %>%
+    grid <- quali |>
+      dplyr::select("position", "driver_id") |>
+      dplyr::rename("quali_results" = "driver_id") |>
       dplyr::mutate(
         'start_grid' = NA_character_,
         'race_results' = NA_character_
-      ) %>%
+      ) |>
       janitor::clean_names()
   } else {
-    startgrid <- results %>%
-      dplyr::arrange(as.numeric(.data$grid)) %>%
+    startgrid <- results |>
+      dplyr::arrange(as.numeric(.data$grid)) |>
       dplyr::pull("driver_id")
     if (session == "S") {
       quali_results <- if (!is.null(sprint_quali_results)) {
@@ -491,12 +491,12 @@ get_grids <- function(season, round, session) {
 
     n_quali <- length(quali_results)
     ndrivers <- max(nrow(results), n_quali)
-    grid <- data.frame(position = 1:ndrivers) %>%
+    grid <- data.frame(position = 1:ndrivers) |>
       dplyr::mutate(
         quali_results = expand_val(quali_results, ndrivers, NA),
         start_grid = expand_val(startgrid, ndrivers, NA),
         race_results = expand_val(results$driver_id, ndrivers, NA)
-      ) %>%
+      ) |>
       janitor::clean_names()
   }
   return(grid)
@@ -523,7 +523,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
   con <- open_cache_db()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  schedule <- f1predicter::schedule %>%
+  schedule <- f1predicter::schedule |>
     dplyr::mutate(
       date = as.Date(.data$date),
       season = as.numeric(.data$season),
@@ -531,7 +531,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       lat = as.numeric(.data$round),
       long = as.numeric(.data$long),
       sprint_date = as.Date(.data$sprint_date)
-    ) %>%
+    ) |>
     tibble::as_tibble()
 
   if (!round %in% schedule[schedule$season == season, ]$round) {
@@ -651,7 +651,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
         results$top_speed_kph <- NA
         results$time_sec <- NA
       }
-      results <- results %>%
+      results <- results |>
         dplyr::mutate(
           points = as.numeric(.data$points),
           position = as.numeric(.data$position),
@@ -661,7 +661,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
           top_speed_kph = as.numeric(.data$top_speed_kph),
           season = season,
           round = round
-        ) %>%
+        ) |>
         janitor::clean_names()
       if (cache_writes_allowed) {
         write_cache_table(results, "results", con, overwrite = FALSE)
@@ -680,7 +680,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
       ) {
         sprint_results <- f1dataR::load_sprint(season = season, round = round)
         if (!is.null(sprint_results)) {
-          sprint_results <- sprint_results %>%
+          sprint_results <- sprint_results |>
             dplyr::mutate(
               points = as.numeric(.data$points),
               position = as.numeric(.data$position),
@@ -689,7 +689,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
               lap = as.numeric(.data$lap),
               season = season,
               round = round
-            ) %>%
+            ) |>
             janitor::clean_names()
           if (cache_writes_allowed) {
             write_cache_table(
@@ -713,14 +713,14 @@ get_weekend_data <- function(season, round, force = FALSE) {
         if (length(pitstops) == 0) {
           pitstops <- NULL
         } else {
-          pitstops <- pitstops %>%
+          pitstops <- pitstops |>
             dplyr::mutate(
               stop = as.numeric(.data$stop),
               lap = as.numeric(.data$lap),
               duration = as.numeric(.data$duration),
               season = season,
               round = round
-            ) %>%
+            ) |>
             janitor::clean_names()
           if (cache_writes_allowed) {
             write_cache_table(pitstops, "pitstops", con, overwrite = force)
@@ -736,9 +736,9 @@ get_weekend_data <- function(season, round, force = FALSE) {
     if (!.has_cache_rows(rgrid)) {
       rgrid <- get_grids(season = season, round = round, session = "R")
       if (!is.null(rgrid)) {
-        rgrid <- rgrid %>%
-          dplyr::mutate(season = season, round = round) %>%
-          dplyr::mutate(position = as.integer(.data$position)) %>%
+        rgrid <- rgrid |>
+          dplyr::mutate(season = season, round = round) |>
+          dplyr::mutate(position = as.integer(.data$position)) |>
           janitor::clean_names()
         if (cache_writes_allowed) {
           write_cache_table(rgrid, "rgrid", con, overwrite = force)
@@ -749,8 +749,8 @@ get_weekend_data <- function(season, round, force = FALSE) {
     if (!.has_cache_rows(sgrid)) {
       sgrid <- get_grids(season = season, round = round, session = "S")
       if (!is.null(sgrid)) {
-        sgrid <- sgrid %>%
-          dplyr::mutate(season = season, round = round) %>%
+        sgrid <- sgrid |>
+          dplyr::mutate(season = season, round = round) |>
           janitor::clean_names()
         if (cache_writes_allowed) {
           write_cache_table(sgrid, "sgrid", con, overwrite = force)
@@ -764,17 +764,17 @@ get_weekend_data <- function(season, round, force = FALSE) {
         if (all(is.na(quali)) | length(quali) == 0) {
           quali <- NULL
         } else {
-          quali <- quali %>%
+          quali <- quali |>
             dplyr::mutate(
               position = as.numeric(.data$position),
               season = season,
               round = round
-            ) %>%
+            ) |>
             dplyr::mutate(
               q1_sec = expand_val(unlist(.data$q1_sec), dplyr::n()),
               q2_sec = expand_val(unlist(.data$q2_sec), dplyr::n()),
               q3_sec = expand_val(unlist(.data$q3_sec), dplyr::n())
-            ) %>%
+            ) |>
             janitor::clean_names()
           if (cache_writes_allowed) {
             write_cache_table(quali, "qualis", con, overwrite = force)
@@ -803,12 +803,12 @@ get_weekend_data <- function(season, round, force = FALSE) {
         }
       }
       if (!is.null(laps) && nrow(laps) > 0) {
-        laps <- laps %>%
+        laps <- laps |>
           dplyr::left_join(
             results[, c("driver_id", "constructor_id")],
             by = c("driver_id")
-          ) %>%
-          dplyr::mutate(season = season, round = round) %>%
+          ) |>
+          dplyr::mutate(season = season, round = round) |>
           dplyr::select(
             "driver_id",
             "constructor_id",
@@ -1122,28 +1122,28 @@ migrate_cache_to_sqlite <- function(
     rg <- load_rds_or_csv(
       file.path(cache, paste0(y, "_season_rgrid.rds")),
       file.path(cache, paste0(y, "_season_rgrid.csv"))
-    ) %>%
+    ) |>
       ensure_tidy()
     rgrid <- dplyr::bind_rows(rgrid, rg)
 
     sg <- load_rds_or_csv(
       file.path(cache, paste0(y, "_season_sgrid.rds")),
       file.path(cache, paste0(y, "_season_sgrid.csv"))
-    ) %>%
+    ) |>
       ensure_tidy()
     sgrid <- dplyr::bind_rows(sgrid, sg)
 
     res <- load_rds_or_csv(
       file.path(cache, paste0(y, "_season_results.rds")),
       file.path(cache, paste0(y, "_season_results.csv"))
-    ) %>%
+    ) |>
       ensure_tidy()
     results <- dplyr::bind_rows(results, res)
 
     q <- load_rds_or_csv(
       file.path(cache, paste0(y, "_season_qualis.rds")),
       file.path(cache, paste0(y, "_season_qualis.csv"))
-    ) %>%
+    ) |>
       ensure_tidy()
     qualis <- dplyr::bind_rows(qualis, q)
 
@@ -1151,7 +1151,7 @@ migrate_cache_to_sqlite <- function(
       pt <- load_rds_or_csv(
         file.path(cache, paste0(y, "_season_pitstops.rds")),
         file.path(cache, paste0(y, "_season_pitstops.csv"))
-      ) %>%
+      ) |>
         ensure_tidy()
       pitstops <- dplyr::bind_rows(pitstops, pt)
     }
@@ -1160,7 +1160,7 @@ migrate_cache_to_sqlite <- function(
       sr <- load_rds_or_csv(
         file.path(cache, paste0(y, "_season_sprint_results.rds")),
         file.path(cache, paste0(y, "_season_sprint_results.csv"))
-      ) %>%
+      ) |>
         ensure_tidy()
       sprint_results <- dplyr::bind_rows(sprint_results, sr)
     }
@@ -1169,7 +1169,7 @@ migrate_cache_to_sqlite <- function(
       lp <- load_rds_or_csv(
         file.path(cache, paste0(y, "_season_laps.rds")),
         file.path(cache, paste0(y, "_season_laps.csv"))
-      ) %>%
+      ) |>
         .coerce_laps_cache()
       laps <- dplyr::bind_rows(laps, lp)
     }
@@ -1214,7 +1214,7 @@ load_all_data <- function() {
     )
 
     if (.has_cache_rows(cached_data$laps)) {
-      cached_data$laps <- cached_data$laps %>%
+      cached_data$laps <- cached_data$laps |>
         .coerce_laps_cache()
     }
 
@@ -1258,7 +1258,7 @@ get_last_drivers <- function() {
     res <- load_rds_or_csv(
       file.path(cache, paste0(season, "_season_results.rds")),
       file.path(cache, paste0(season, "_season_results.csv"))
-    ) %>%
+    ) |>
       ensure_tidy()
   }
 
@@ -1291,15 +1291,15 @@ getWeather <- function(round_url) {
       for (table in round_tables) {
         if (
           "Weather" %in%
-            (table[, 1] %>%
+            (table[, 1] |>
               dplyr::pull(1))
         ) {
           rw <- which(
-            (table[, 1] %>%
+            (table[, 1] |>
               dplyr::pull(1)) ==
               "Weather"
           )
-          round_weather <- table[rw, 2] %>%
+          round_weather <- table[rw, 2] |>
             dplyr::pull(1)
           break
         }
@@ -1314,7 +1314,7 @@ getWeather <- function(round_url) {
     }
   )
 
-  if (is.null(round_weather) & requireNamespace('RCurl', quietly = TRUE)){
+  if (is.null(round_weather) & requireNamespace('RCurl', quietly = TRUE)) {
     # Try the italian site - it's apparently more robust
     message(glue::glue(
       "f1predictor::getWeather: Trying to get weather from Italian Wikipedia instead of {url}",
@@ -1332,15 +1332,15 @@ getWeather <- function(round_url) {
         for (table in round_tables) {
           if (
             "Clima" %in%
-              (table[, 1] %>%
+              (table[, 1] |>
                 dplyr::pull(1))
           ) {
             rw <- which(
-              (table[, 1] %>%
+              (table[, 1] |>
                 dplyr::pull(1)) ==
                 "Clima"
             )
-            round_weather <- table[rw, 2] %>%
+            round_weather <- table[rw, 2] |>
               dplyr::pull(1)
             break
           }
@@ -1440,7 +1440,7 @@ janitor_data <- function() {
         paste0(y, "_season_rgrid.csv")
       )),
       error = function(e) return(NULL)
-    ) %>%
+    ) |>
       ensure_tidy()
     sg <- tryCatch(
       utils::read.csv(file.path(
@@ -1448,7 +1448,7 @@ janitor_data <- function() {
         paste0(y, "_season_sgrid.csv")
       )),
       error = function(e) return(NULL)
-    ) %>%
+    ) |>
       ensure_tidy()
     res <- tryCatch(
       utils::read.csv(file.path(
@@ -1456,7 +1456,7 @@ janitor_data <- function() {
         paste0(y, "_season_results.csv")
       )),
       error = function(e) return(NULL)
-    ) %>%
+    ) |>
       ensure_tidy()
     q <- tryCatch(
       utils::read.csv(file.path(
@@ -1464,7 +1464,7 @@ janitor_data <- function() {
         paste0(y, "_season_qualis.csv")
       )),
       error = function(e) return(NULL)
-    ) %>%
+    ) |>
       ensure_tidy()
     if (y >= 2011) {
       pt <- tryCatch(
@@ -1473,7 +1473,7 @@ janitor_data <- function() {
           paste0(y, "_season_pitstops.csv")
         )),
         error = function(e) return(NULL)
-      ) %>%
+      ) |>
         ensure_tidy()
     }
     if (y >= 2018) {
@@ -1492,7 +1492,7 @@ janitor_data <- function() {
           )
         ),
         error = function(e) return(NULL)
-      ) %>%
+      ) |>
         ensure_tidy()
     }
     if (y >= 2021) {
@@ -1511,13 +1511,13 @@ janitor_data <- function() {
           )
         ),
         error = function(e) return(NULL)
-      ) %>%
+      ) |>
         ensure_tidy()
     }
     closeAllConnections()
     if (!is.null(rg)) {
-      rg %>%
-        janitor::clean_names() %>%
+      rg |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1528,8 +1528,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(sg)) {
-      sg %>%
-        janitor::clean_names() %>%
+      sg |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1540,8 +1540,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(res)) {
-      res %>%
-        janitor::clean_names() %>%
+      res |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1552,8 +1552,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(q)) {
-      q %>%
-        janitor::clean_names() %>%
+      q |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1564,8 +1564,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(pt)) {
-      pt %>%
-        janitor::clean_names() %>%
+      pt |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1576,8 +1576,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(lp)) {
-      lp %>%
-        janitor::clean_names() %>%
+      lp |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1588,8 +1588,8 @@ janitor_data <- function() {
         )
     }
     if (!is.null(sr)) {
-      sr %>%
-        janitor::clean_names() %>%
+      sr |>
+        janitor::clean_names() |>
         utils::write.csv(
           file = file.path(
             getOption("f1predicter.cache"),
@@ -1620,9 +1620,9 @@ janitor_data <- function() {
 #' @return The input `laps` data frame with an added `driver_id` column.
 #' @noRd
 add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
-  drivers <- f1dataR::load_drivers(season = season) %>%
+  drivers <- f1dataR::load_drivers(season = season) |>
     dplyr::select("driver_id", "code")
-  laps %>%
+  laps |>
     dplyr::left_join(drivers, by = c(driver = "code"))
 }
 

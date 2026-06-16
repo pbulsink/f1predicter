@@ -19,7 +19,6 @@ Imports:
     f1dataR,
     glue,
     janitor,
-    magrittr,
     ordered,
     parsnip (>= 1.5.0),
     purrr,

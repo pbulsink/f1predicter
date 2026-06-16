@@ -45,7 +45,7 @@ load_schedule <- function(file_path) {
   schedule_data <- readr::read_csv(file_path, comment = "#")
 
   # Parse base event times and calculate prediction trigger times
-  schedule_processed <- schedule_data %>%
+  schedule_processed <- schedule_data |>
     dplyr::mutate(
       # Ensure base date/time columns are in the correct format and timezone
       quali_time = lubridate::ymd_hm(.data$quali_dt, tz = Sys.timezone()),

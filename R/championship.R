@@ -86,12 +86,12 @@ get_current_standings <- function(
     }
   )
 
-  standings %>%
+  standings |>
     dplyr::transmute(
       driver_id = .data$driver_id,
       points = as.numeric(.data$points),
       position = as.numeric(.data$position)
-    ) %>%
+    ) |>
     dplyr::arrange(.data$position)
 }
 
@@ -118,23 +118,23 @@ get_remaining_schedule <- function(
   season = as.numeric(f1dataR::get_current_season()),
   after_round = NULL
 ) {
-  schedule <- f1predicter::schedule %>%
-    dplyr::filter(.data$season == !!season) %>%
+  schedule <- f1predicter::schedule |>
+    dplyr::filter(.data$season == !!season) |>
     dplyr::mutate(
       date = as.Date(.data$date),
       has_sprint = !is.na(.data$sprint_date)
     )
 
   if (is.null(after_round)) {
-    schedule <- schedule %>%
+    schedule <- schedule |>
       dplyr::filter(.data$date >= Sys.Date())
   } else {
-    schedule <- schedule %>%
+    schedule <- schedule |>
       dplyr::filter(.data$round > after_round)
   }
 
-  schedule %>%
-    dplyr::select("round", "race_name", "date", "has_sprint") %>%
+  schedule |>
+    dplyr::select("round", "race_name", "date", "has_sprint") |>
     dplyr::arrange(.data$round)
 }
 
@@ -184,10 +184,10 @@ calculate_driver_performance <- function(
     historical_data <- clean_data()
   }
 
-  season_data <- historical_data %>%
+  season_data <- historical_data |>
     dplyr::filter(.data$season == !!season)
 
-  prev_season_data <- historical_data %>%
+  prev_season_data <- historical_data |>
     dplyr::filter(.data$season == !!(season - 1))
 
   if (nrow(season_data) == 0 && nrow(prev_season_data) == 0) {
@@ -247,9 +247,9 @@ calculate_driver_performance <- function(
       ))
       driver_metrics <- tibble::tibble(driver_id = all_drivers)
 
-      driver_metrics <- driver_metrics %>%
+      driver_metrics <- driver_metrics |>
         dplyr::left_join(
-          current_metrics %>%
+          current_metrics |>
             dplyr::select(
               "driver_id",
               curr_avg = "avg_position",
@@ -258,9 +258,9 @@ calculate_driver_performance <- function(
               "n_races"
             ),
           by = "driver_id"
-        ) %>%
+        ) |>
         dplyr::left_join(
-          prev_metrics %>%
+          prev_metrics |>
             dplyr::select(
               "driver_id",
               prev_avg = "avg_position",
@@ -268,7 +268,7 @@ calculate_driver_performance <- function(
               prev_dnf = "dnf_rate",
             ),
           by = "driver_id"
-        ) %>%
+        ) |>
         dplyr::mutate(
           n_races = tidyr::replace_na(.data$n_races, 0L),
           avg_position = dplyr::case_when(
@@ -289,7 +289,7 @@ calculate_driver_performance <- function(
             !is.na(.data$curr_dnf) ~ .data$curr_dnf,
             TRUE ~ .data$prev_dnf
           )
-        ) %>%
+        ) |>
         dplyr::select(
           "driver_id",
           "n_races",
@@ -307,7 +307,7 @@ calculate_driver_performance <- function(
   # --- Compute weighted_avg_position with 3-way blend ---
   # Determine previous season avg for the prev-season anchor component
   prev_season_avg <- if (!is.null(prev_metrics)) {
-    prev_season %>%
+    prev_season |>
       dplyr::select(
         "driver_id",
         prev_season_avg = "avg_position",
@@ -320,7 +320,7 @@ calculate_driver_performance <- function(
 
   # Determine current season avg for the season anchor component
   curr_season_avg <- if (!is.null(current_season)) {
-    current_season %>%
+    current_season |>
       dplyr::select(
         "driver_id",
         curr_season_avg = "avg_position",
@@ -332,9 +332,9 @@ calculate_driver_performance <- function(
   }
 
   if (!is.null(prev_season_avg)) {
-    driver_metrics <- driver_metrics %>%
-      dplyr::left_join(prev_season_avg, by = "driver_id") %>%
-      dplyr::left_join(curr_season_avg, by = "driver_id") %>%
+    driver_metrics <- driver_metrics |>
+      dplyr::left_join(prev_season_avg, by = "driver_id") |>
+      dplyr::left_join(curr_season_avg, by = "driver_id") |>
       tidyr::replace_na(list(
         prev_season_avg = 15,
         prev_season_sd = 5,
@@ -342,7 +342,7 @@ calculate_driver_performance <- function(
         curr_season_avg = 15,
         curr_season_sd = 5,
         curr_season_dnf = 0.1
-      )) %>%
+      )) |>
       dplyr::mutate(
         avg_position = weight_recent *
           .data$avg_position +
@@ -389,9 +389,9 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
     grid_size <- 22
   }
 
-  data <- data %>%
-    dplyr::group_by(.data$driver_id) %>%
-    dplyr::arrange(.data$round) %>%
+  data <- data |>
+    dplyr::group_by(.data$driver_id) |>
+    dplyr::arrange(.data$round) |>
     dplyr::mutate(
       # consider both driver and constructor failures for DNF rate, since both can cause a DNF
       # also take a small penalty for teammate car failure
@@ -400,7 +400,7 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         .data$constructor_failure +
         .data$constructor_failure_race,
       dnf = ifelse(.data$dnf > 1, 1, .data$dnf)
-    ) %>%
+    ) |>
     dplyr::summarise(
       n_races = dplyr::n(),
       avg_position = mean(
@@ -416,7 +416,7 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         na.rm = TRUE
       ),
       .groups = "drop"
-    ) %>%
+    ) |>
     # Correct for tail truncation bias. Observed SD is compressed near P1 and
     # the back of the grid because finishing positions are bounded.
     dplyr::mutate(
@@ -430,7 +430,7 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         .data$position_sd * (1 + 0.65 * exp(-pmax(dist_to_tail, 0) / 3)),
         1.5
       )
-    ) %>%
+    ) |>
     dplyr::select(-"dist_to_tail")
   return(data)
 }
@@ -528,7 +528,7 @@ simulate_championship_odds <- function(
   if (nrow(remaining) == 0) {
     cli::cli_inform("No remaining races. Returning current standings as final.")
     return(
-      standings %>%
+      standings |>
         dplyr::mutate(
           current_points = .data$points,
           win_probability = dplyr::if_else(.data$position == 1, 1, 0),
@@ -536,7 +536,7 @@ simulate_championship_odds <- function(
           avg_final_position = as.numeric(.data$position),
           in_contention = .data$position == 1,
           season = season
-        ) %>%
+        ) |>
         dplyr::select(
           "driver_id",
           "current_points",
@@ -558,8 +558,8 @@ simulate_championship_odds <- function(
   )
 
   # Merge standings with performance
-  sim_data <- standings %>%
-    dplyr::left_join(performance, by = "driver_id") %>%
+  sim_data <- standings |>
+    dplyr::left_join(performance, by = "driver_id") |>
     dplyr::mutate(
       # Defaults for drivers with no performance data
       avg_position = tidyr::replace_na(.data$avg_position, 15),
@@ -577,7 +577,7 @@ simulate_championship_odds <- function(
     n_remaining_sprints * max_sprint_points
 
   leader_points <- max(sim_data$points)
-  sim_data <- sim_data %>%
+  sim_data <- sim_data |>
     dplyr::mutate(
       in_contention = (.data$points + max_possible_remaining) >= leader_points
     )
@@ -665,7 +665,7 @@ simulate_championship_odds <- function(
   }
   results$avg_final_position <- results$avg_final_position / n_simulations
 
-  results <- results %>%
+  results <- results |>
     dplyr::arrange(
       dplyr::desc(.data$win_probability),
       dplyr::desc(.data$current_points),
@@ -744,22 +744,22 @@ simulate_race_positions <- function(
 format_championship_skeet <- function(odds, n_simulations = 10000L) {
   current_season <- odds$season[1]
 
-  odds_formatted <- odds %>%
-    dplyr::filter(.data$in_contention) %>%
+  odds_formatted <- odds |>
+    dplyr::filter(.data$in_contention) |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
 
   # Top contenders for championship win
-  top_contenders <- odds_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$win_probability)) %>%
-    dplyr::slice_head(n = 5) %>%
+  top_contenders <- odds_formatted |>
+    dplyr::arrange(dplyr::desc(.data$win_probability)) |>
+    dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
         "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$win_probability, 0.1)} ({round(.data$current_points)} pts)"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   n_remaining <- get_remaining_schedule(current_season)
@@ -778,8 +778,8 @@ format_championship_skeet <- function(odds, n_simulations = 10000L) {
   )
 
   # Additional context skeet
-  leader <- odds_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$win_probability)) %>%
+  leader <- odds_formatted |>
+    dplyr::arrange(dplyr::desc(.data$win_probability)) |>
     dplyr::slice(1)
 
   skeet2_body <- glue::glue(
