@@ -669,7 +669,7 @@ simulate_championship_odds <- function(
     dplyr::arrange(
       dplyr::desc(.data$win_probability),
       dplyr::desc(.data$current_points),
-      dplyr::asc(.data$avg_final_position)
+      .data$avg_final_position
     )
 
   results
