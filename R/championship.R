@@ -109,7 +109,7 @@ get_current_standings <- function(
   labels <- stringr::str_replace_all(ids, "_", " ")
   labels <- stringr::str_to_title(labels)
   fallback_codes <- toupper(stringr::str_sub(gsub("[^A-Za-z]", "", labels), 1, 3))
-  ifelse(fallback_codes == "", labels, fallback_codes)
+  ifelse(nchar(fallback_codes) < 3, labels, fallback_codes)
 }
 
 .completed_rounds <- function(season) {
@@ -118,8 +118,9 @@ get_current_standings <- function(
     dplyr::mutate(date = as.Date(.data$date)) |>
     dplyr::arrange(.data$round)
 
+  completed_before_today <- Sys.Date() - 1
   completed <- season_schedule |>
-    dplyr::filter(.data$date < Sys.Date()) |>
+    dplyr::filter(.data$date <= completed_before_today) |>
     dplyr::pull(.data$round)
 
   unique(completed)
@@ -441,9 +442,12 @@ get_current_standings <- function(
   x_values <- sort(unique(history$round))
   y_values <- history[[value_col]]
   y_max <- max(y_values, na.rm = TRUE)
-  y_limit <- c(0, y_max * 1.05)
+  top_padding_factor <- 1.05
+  minimum_percent_limit <- 0.05
+  label_x_offset <- 0.12
+  y_limit <- c(0, y_max * top_padding_factor)
   if (percent) {
-    y_limit[2] <- max(y_limit[2], 0.05)
+    y_limit[2] <- max(y_limit[2], minimum_percent_limit)
   }
 
   graphics::plot(
@@ -506,7 +510,7 @@ get_current_standings <- function(
     cex = 1.4
   )
   graphics::text(
-    x = final_points$round + 0.12,
+    x = final_points$round + label_x_offset,
     y = final_points[[value_col]],
     labels = labels,
     col = final_points$color,
