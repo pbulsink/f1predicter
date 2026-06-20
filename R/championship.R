@@ -491,14 +491,14 @@ get_current_standings <- function(
   graphics::par(xpd = NA)
 
   for (id in final_points[[id_col]]) {
-    driver_history <- history |>
+    entity_history <- history |>
       dplyr::filter(.data[[id_col]] == !!id) |>
       dplyr::arrange(.data$round)
 
     graphics::lines(
-      driver_history$round,
-      driver_history[[value_col]],
-      col = driver_history$color[1],
+      entity_history$round,
+      entity_history[[value_col]],
+      col = entity_history$color[1],
       lwd = 2
     )
   }

@@ -880,8 +880,8 @@ test_that(".build_driver_championship_odds_history() filters to each completed r
     driver_failure = 0,
     constructor_failure = 0,
     constructor_failure_race = 0,
-    # First three rounds are from the current season; the final pair keeps one
-    # previous-season round available for the simulator's blend.
+    # First three rounds are from the current season; the final pair of entries
+    # keeps one previous-season round available for the simulator's blend.
     season = c(rep(2025, 6), rep(2024, 2))
   )
 
