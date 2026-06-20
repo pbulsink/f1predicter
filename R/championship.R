@@ -120,7 +120,8 @@ get_current_standings <- function(
 
   # Use the local calendar day as a conservative cutoff so only weekends that
   # fully ended before today are included in the history.
-  cutoff_date <- Sys.Date() - 1
+  cutoff_days <- 1
+  cutoff_date <- Sys.Date() - cutoff_days
   completed <- season_schedule |>
     dplyr::filter(.data$date <= cutoff_date) |>
     dplyr::pull(.data$round)
@@ -446,9 +447,9 @@ get_current_standings <- function(
   y_values <- history[[value_col]]
   y_max <- max(y_values, na.rm = TRUE)
   # Layout constants tuned for end labels on dense championship charts.
-  top_padding_factor <- 1.05
-  minimum_percent_limit <- 0.05
-  label_x_offset <- 0.12
+  top_padding_factor <- 1.05 # 5% top margin keeps labels off the border.
+  minimum_percent_limit <- 0.05 # Avoid a flat-looking percent axis near zero.
+  label_x_offset <- 0.12 # Shift end labels right of the last plotted point.
   y_limit <- c(0, y_max * top_padding_factor)
   if (percent) {
     y_limit[2] <- max(y_limit[2], minimum_percent_limit)
