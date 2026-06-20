@@ -118,9 +118,9 @@ get_current_standings <- function(
     dplyr::mutate(date = as.Date(.data$date)) |>
     dplyr::arrange(.data$round)
 
-  completed_before_today <- Sys.Date() - 1
+  cutoff_date <- Sys.Date() - 1
   completed <- season_schedule |>
-    dplyr::filter(.data$date <= completed_before_today) |>
+    dplyr::filter(.data$date <= cutoff_date) |>
     dplyr::pull(.data$round)
 
   unique(completed)
@@ -442,8 +442,11 @@ get_current_standings <- function(
   x_values <- sort(unique(history$round))
   y_values <- history[[value_col]]
   y_max <- max(y_values, na.rm = TRUE)
+  # Add a small top margin so final labels have room above the highest line.
   top_padding_factor <- 1.05
+  # Keep probability charts readable even when the leader's odds are near zero.
   minimum_percent_limit <- 0.05
+  # Push end labels slightly right of the final points to avoid overlap.
   label_x_offset <- 0.12
   y_limit <- c(0, y_max * top_padding_factor)
   if (percent) {
@@ -496,7 +499,7 @@ get_current_standings <- function(
 
   label_prefix <- final_points$label
   label_suffix <- if (percent) {
-    sprintf("%d", round(final_points[[value_col]] * 100))
+    sprintf("%d%%", round(final_points[[value_col]] * 100))
   } else {
     round(final_points[[value_col]])
   }
