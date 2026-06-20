@@ -943,7 +943,7 @@ test_that("chart_driver_championship_points() plots and returns history invisibl
   )
 
   local_mocked_bindings(
-    .build_championship_points_history = function(season, type = "driver") {
+    .build_championship_points_history = function(season, type = "constructor") {
       chart_data
     }
   )

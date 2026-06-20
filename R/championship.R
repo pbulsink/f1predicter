@@ -108,8 +108,8 @@ get_current_standings <- function(
 .fallback_chart_label <- function(ids) {
   labels <- stringr::str_replace_all(ids, "_", " ")
   labels <- stringr::str_to_title(labels)
-  fallback <- toupper(stringr::str_sub(gsub("[^A-Za-z]", "", labels), 1, 3))
-  ifelse(fallback == "", labels, fallback)
+  fallback_codes <- toupper(stringr::str_sub(gsub("[^A-Za-z]", "", labels), 1, 3))
+  ifelse(fallback_codes == "", labels, fallback_codes)
 }
 
 .completed_rounds <- function(season) {
@@ -135,7 +135,7 @@ get_current_standings <- function(
   rounds <- .completed_rounds(season)
   if (length(rounds) == 0) {
     cli::cli_abort(
-      "No completed rounds found for season {season} in {.fn .load_round_standings_history}."
+      "No completed rounds found for season {season}."
     )
   }
 
