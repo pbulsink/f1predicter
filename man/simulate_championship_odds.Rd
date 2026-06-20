@@ -9,7 +9,8 @@ simulate_championship_odds(
   standings = NULL,
   remaining = NULL,
   n_simulations = 10000L,
-  historical_data = NULL
+  historical_data = NULL,
+  ...
 )
 }
 \arguments{
@@ -25,6 +26,9 @@ If `NULL`, loaded automatically.}
 Defaults to 10000.}
 
 \item{historical_data}{Historical race data. If `NULL`, uses `clean_data()`.}
+
+\item{...}{Additional parameters to be passed to calculate_driver_performance(), such as
+weights for the performance metrics. See `calculate_driver_performance()` for details.}
 }
 \value{
 A tibble with columns:

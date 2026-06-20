@@ -806,3 +806,177 @@ test_that("get_current_standings returns correct structure", {
   expect_true(all(c("driver_id", "points", "position") %in% colnames(standings)))
   expect_true(standings$driver_id[[1]] == "norris")
 })
+
+# ---- Championship charts ----------------------------------------------------
+
+test_that(".build_driver_championship_odds_history() filters to each completed round (#23)", {
+  standings_history <- tibble::tribble(
+    ~driver_id, ~constructor_id, ~points, ~position, ~round, ~race_name, ~season,
+    "driver_a", "team_a", 25, 1, 1, "Round 1", 2025,
+    "driver_b", "team_b", 18, 2, 1, "Round 1", 2025,
+    "driver_a", "team_a", 43, 1, 2, "Round 2", 2025,
+    "driver_b", "team_b", 33, 2, 2, "Round 2", 2025
+  )
+  seen_rounds <- integer()
+
+  local_mocked_bindings(
+    .load_round_standings_history = function(season, type = "driver") {
+      standings_history
+    },
+    .get_driver_chart_metadata = function(season, round) {
+      tibble::tibble(
+        driver_id = c("driver_a", "driver_b"),
+        label = c("AAA", "BBB"),
+        color = c("#111111", "#222222")
+      )
+    },
+    get_remaining_schedule = function(season, after_round = NULL) {
+      if (after_round == 1) {
+        return(tibble::tibble(
+          round = 2L,
+          race_name = "Round 2",
+          date = Sys.Date() + 7,
+          has_sprint = FALSE
+        ))
+      }
+
+      tibble::tibble(
+        round = integer(0),
+        race_name = character(0),
+        date = as.Date(character(0)),
+        has_sprint = logical(0)
+      )
+    },
+    simulate_championship_odds = function(
+      season,
+      standings,
+      remaining,
+      n_simulations,
+      historical_data,
+      ...
+    ) {
+      seen_rounds <<- c(
+        seen_rounds,
+        max(historical_data$round[historical_data$season == season])
+      )
+
+      tibble::tibble(
+        driver_id = standings$driver_id,
+        current_points = standings$points,
+        win_probability = c(0.7, 0.3),
+        avg_final_points = standings$points + 5,
+        avg_final_position = c(1, 2),
+        in_contention = c(TRUE, TRUE),
+        season = season
+      )
+    }
+  )
+
+  historical_data <- tibble::tibble(
+    driver_id = rep(c("driver_a", "driver_b"), 4),
+    round = rep(c(1, 2, 3, 8), each = 2),
+    position = rep(c(1, 2), 4),
+    finished = TRUE,
+    driver_failure = 0,
+    constructor_failure = 0,
+    constructor_failure_race = 0,
+    season = c(rep(2025, 6), rep(2024, 2))
+  )
+
+  result <- .build_driver_championship_odds_history(
+    season = 2025,
+    n_simulations = 10L,
+    historical_data = historical_data
+  )
+
+  expect_equal(seen_rounds, c(1, 2))
+  expect_equal(sort(unique(result$round)), c(1, 2))
+  expect_equal(result$label[result$driver_id == "driver_a"][1], "AAA")
+  expect_equal(result$color[result$driver_id == "driver_b"][1], "#222222")
+})
+
+test_that(".build_championship_points_history() adds constructor labels and colours (#23)", {
+  standings_history <- tibble::tribble(
+    ~constructor_id, ~points, ~position, ~round, ~race_name, ~season,
+    "team_a", 27, 1, 1, "Round 1", 2025,
+    "team_b", 18, 2, 1, "Round 1", 2025,
+    "team_a", 44, 1, 2, "Round 2", 2025,
+    "team_b", 33, 2, 2, "Round 2", 2025
+  )
+
+  local_mocked_bindings(
+    .load_round_standings_history = function(season, type = "constructor") {
+      standings_history
+    },
+    .get_constructor_chart_metadata = function(season, round) {
+      tibble::tibble(
+        constructor_id = c("team_a", "team_b"),
+        label = c("Team A", "Team B"),
+        color = c("#aa0000", "#00aa00")
+      )
+    }
+  )
+
+  result <- .build_championship_points_history(
+    season = 2025,
+    type = "constructor"
+  )
+
+  expect_named(
+    result,
+    c(
+      "constructor_id", "points", "position", "round", "race_name",
+      "season", "label", "color"
+    )
+  )
+  expect_equal(result$label[result$constructor_id == "team_a"][1], "Team A")
+  expect_equal(result$color[result$constructor_id == "team_b"][1], "#00aa00")
+})
+
+test_that("chart_driver_championship_points() plots and returns history invisibly (#23)", {
+  chart_data <- tibble::tribble(
+    ~driver_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
+    "driver_a", 25, 1, 1, "Round 1", 2025, "AAA", "#111111",
+    "driver_b", 18, 2, 1, "Round 1", 2025, "BBB", "#222222",
+    "driver_a", 43, 1, 2, "Round 2", 2025, "AAA", "#111111",
+    "driver_b", 33, 2, 2, "Round 2", 2025, "BBB", "#222222"
+  )
+
+  local_mocked_bindings(
+    .build_championship_points_history = function(season, type = "driver") {
+      chart_data
+    }
+  )
+
+  filename <- tempfile(fileext = ".pdf")
+  grDevices::pdf(filename)
+  on.exit(grDevices::dev.off(), add = TRUE)
+
+  result <- chart_driver_championship_points(season = 2025)
+
+  expect_identical(result, chart_data)
+})
+
+test_that("chart_constructor_championship_points() plots and returns history invisibly (#23)", {
+  chart_data <- tibble::tribble(
+    ~constructor_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
+    "team_a", 27, 1, 1, "Round 1", 2025, "Team A", "#aa0000",
+    "team_b", 18, 2, 1, "Round 1", 2025, "Team B", "#00aa00",
+    "team_a", 44, 1, 2, "Round 2", 2025, "Team A", "#aa0000",
+    "team_b", 33, 2, 2, "Round 2", 2025, "Team B", "#00aa00"
+  )
+
+  local_mocked_bindings(
+    .build_championship_points_history = function(season, type = "driver") {
+      chart_data
+    }
+  )
+
+  filename <- tempfile(fileext = ".pdf")
+  grDevices::pdf(filename)
+  on.exit(grDevices::dev.off(), add = TRUE)
+
+  result <- chart_constructor_championship_points(season = 2025)
+
+  expect_identical(result, chart_data)
+})
