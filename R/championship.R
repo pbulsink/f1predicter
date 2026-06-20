@@ -118,6 +118,8 @@ get_current_standings <- function(
     dplyr::mutate(date = as.Date(.data$date)) |>
     dplyr::arrange(.data$round)
 
+  # Use the local calendar day as a conservative cutoff so only weekends that
+  # fully ended before today are included in the history.
   cutoff_date <- Sys.Date() - 1
   completed <- season_schedule |>
     dplyr::filter(.data$date <= cutoff_date) |>
@@ -221,7 +223,8 @@ get_current_standings <- function(
   missing_ids <- unique(data[[id_col]][missing])
   fallback <- grDevices::hcl.colors(length(missing_ids), palette = "Dark 3")
   names(fallback) <- missing_ids
-  data$color[missing] <- fallback[data[[id_col]][missing]]
+  missing_index <- match(data[[id_col]][missing], names(fallback))
+  data$color[missing] <- fallback[missing_index]
   data
 }
 
@@ -331,8 +334,8 @@ get_current_standings <- function(
       driver_id = .data$driver_id,
       round = as.integer(round),
       position = as.numeric(.data$position),
-      finished = .data$status == "Finished",
-      driver_failure = as.numeric(.data$status != "Finished"),
+      finished = tolower(.data$status) == "finished",
+      driver_failure = as.numeric(tolower(.data$status) != "finished"),
       constructor_failure = 0,
       constructor_failure_race = 0,
       season = as.numeric(season)
@@ -442,11 +445,9 @@ get_current_standings <- function(
   x_values <- sort(unique(history$round))
   y_values <- history[[value_col]]
   y_max <- max(y_values, na.rm = TRUE)
-  # Add a small top margin so final labels have room above the highest line.
+  # Layout constants tuned for end labels on dense championship charts.
   top_padding_factor <- 1.05
-  # Keep probability charts readable even when the leader's odds are near zero.
   minimum_percent_limit <- 0.05
-  # Push end labels slightly right of the final points to avoid overlap.
   label_x_offset <- 0.12
   y_limit <- c(0, y_max * top_padding_factor)
   if (percent) {

@@ -817,7 +817,7 @@ test_that(".build_driver_championship_odds_history() filters to each completed r
     "driver_a", "team_a", 43, 1, 2, "Round 2", 2025,
     "driver_b", "team_b", 33, 2, 2, "Round 2", 2025
   )
-  seen_rounds <- integer()
+  tracker <- rlang::env(seen_rounds = integer())
 
   local_mocked_bindings(
     .load_round_standings_history = function(season, type = "driver") {
@@ -855,8 +855,8 @@ test_that(".build_driver_championship_odds_history() filters to each completed r
       historical_data,
       ...
     ) {
-      seen_rounds <<- c(
-        seen_rounds,
+      tracker$seen_rounds <- c(
+        tracker$seen_rounds,
         max(historical_data$round[historical_data$season == season])
       )
 
@@ -889,7 +889,7 @@ test_that(".build_driver_championship_odds_history() filters to each completed r
     historical_data = historical_data
   )
 
-  expect_equal(seen_rounds, c(1, 2))
+  expect_equal(tracker$seen_rounds, c(1, 2))
   expect_equal(sort(unique(result$round)), c(1, 2))
   expect_equal(result$label[result$driver_id == "driver_a"][1], "AAA")
   expect_equal(result$color[result$driver_id == "driver_b"][1], "#222222")
