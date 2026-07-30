@@ -11,7 +11,8 @@ generate_new_data(
   penalties = NULL,
   historical_data = clean_data(),
   params = get_processing_params(),
-  use_live_data = TRUE
+  use_live_data = TRUE,
+  sprint_results = NULL
 )
 }
 \arguments{
@@ -36,10 +37,18 @@ defaults. Defaults to `get_processing_params()`.}
 
 \item{use_live_data}{Whether or not to check for weekend data (e.g. recent qualis).
 Default TRUE}
+
+\item{sprint_results}{Optional data frame of sprint results for the round
+(e.g., from `f1dataR::load_sprint()`). When provided, the sprint starting
+grid position (`sprint_grid`), finishing position (`sprint_finish_pos`),
+and points (`sprint_points`) are appended as features. Leave `NULL`
+(default) if sprint results are not yet available or the round is not a
+sprint weekend.}
 }
 \value{
 A tibble where each row corresponds to a driver for the specified
   race, and columns are the features required for the modeling functions.
+  Sprint feature columns are only present when `sprint_results` is provided.
 }
 \description{
 Creates a feature set for a specific upcoming race for a given set of drivers.
@@ -61,6 +70,12 @@ grid position.
 The features generated include driver experience, failure rates, average
 finishing positions, constructor averages, and circuit-specific performance
 metrics.
+
+On sprint weekends, if sprint results have been recorded, they can be passed
+via `sprint_results` to include sprint finish position, starting grid, and
+points as additional features. These are used by models trained with sprint
+data (i.e., an "after_sprint" timing variant) to improve main race and
+qualifying predictions.
 }
 \examples{
 \dontrun{

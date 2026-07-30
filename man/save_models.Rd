@@ -4,14 +4,20 @@
 \alias{save_models}
 \title{Save Models}
 \usage{
-save_models(model_list, model_timing)
+save_models(model_list, model_timing, model_type = NULL)
 }
 \arguments{
 \item{model_list}{A named list of `last_fit` objects from `tune`. The names
 (e.g., "quali_pole", "win") are used to infer the model type.}
 
 \item{model_timing}{The timing context for the models, one of `"early"`,
-`"late"`, or (for "results" models only) `"after_quali"`.}
+`"late"`, or (for "results" models only) `"after_quali"`. Sprint models
+accept `"after_sprint"` (for `"sprint_quali"`) or `"before_quali"` /
+`"after_quali"` (for `"sprint_results"`).}
+
+\item{model_type}{Optional character string to explicitly set the model type
+(`"quali"`, `"results"`, `"sprint_quali"`, or `"sprint_results"`). When
+`NULL` (default) the type is inferred from `model_list` names.}
 }
 \value{
 Invisibly returns the full `file_path` where models were saved.
@@ -19,8 +25,9 @@ Invisibly returns the full `file_path` where models were saved.
 \description{
 This function takes a list of trained `last_fit` model object
 and saves the resulting list to a standardized file
-path. The `model_type` ("quali" or "results") is automatically inferred from
-the names of the models in the list (e.g., "quali_pole", "win").
+path. The `model_type` (`"quali"`, `"results"`, `"sprint_quali"`, or
+`"sprint_results"`) is automatically inferred from the names of the models
+in the list (e.g., `"quali_pole"`, `"win"`) unless explicitly supplied.
 }
 \details{
 The path is constructed from the base directory set in

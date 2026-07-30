@@ -475,3 +475,139 @@ test_that("butcher_model_list() keeps original objects when butchering fails", {
   )
   expect_identical(result$test_model, original)
 })
+
+# ===================== Sprint-specific model tests ============================
+
+test_that("construct_model_path() accepts sprint model types and timings", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  expect_equal(
+    construct_model_path("sprint_results", "before_quali", "ranger"),
+    file.path(model_dir, "sprint_results_before_quali_ranger_models.rds")
+  )
+  expect_equal(
+    construct_model_path("sprint_results", "after_quali", "ensemble"),
+    file.path(model_dir, "sprint_results_after_quali_ensemble_models.rds")
+  )
+  expect_equal(
+    construct_model_path("sprint_quali", "after_sprint", "ensemble"),
+    file.path(model_dir, "sprint_quali_after_sprint_ensemble_models.rds")
+  )
+
+  # Invalid timing for sprint_quali
+  expect_error(
+    construct_model_path("sprint_quali", "early", "ranger"),
+    "invalid"
+  )
+  # Invalid timing for sprint_results
+  expect_error(
+    construct_model_path("sprint_results", "after_sprint", "ranger"),
+    "invalid"
+  )
+})
+
+test_that("save_models() accepts explicit model_type for sprint models", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  fake_model <- structure(list(payload = "sprint"), class = "model_stack")
+
+  local_mocked_bindings(
+    butcher_model_list = function(model_list) model_list,
+    .package = "f1predicter"
+  )
+
+  # Sprint results: names are same as regular results ("win", etc.) so need
+  # explicit model_type
+  saved <- save_models(
+    list(win = fake_model),
+    model_timing = "before_quali",
+    model_type = "sprint_results"
+  )
+  expect_named(saved, "win")
+  expect_true(file.exists(file.path(
+    model_dir, "sprint_results_before_quali_ensemble_models.rds"
+  )))
+
+  # Sprint quali
+  saved_sq <- save_models(
+    list(quali_pole = fake_model),
+    model_timing = "after_sprint",
+    model_type = "sprint_quali"
+  )
+  expect_named(saved_sq, "quali_pole")
+  expect_true(file.exists(file.path(
+    model_dir, "sprint_quali_after_sprint_ensemble_models.rds"
+  )))
+})
+
+test_that("save_models() rejects invalid explicit model_type", {
+  model_dir <- withr::local_tempdir()
+  withr::local_options(list(f1predicter.models = model_dir))
+
+  fake_model <- structure(list(), class = "model_stack")
+
+  expect_error(
+    save_models(list(win = fake_model), model_timing = "early", model_type = "bad_type"),
+    "model_type"
+  )
+})
+
+test_that("get_hyperparameters() returns sprint model hyperparameters", {
+  hp_before <- get_hyperparameters("sprint_results", "before_quali")
+  expect_true(is.list(hp_before))
+  expect_named(
+    hp_before,
+    c(
+      "win_hyperparameters", "podium_hyperparameters", "t10_hyperparameters",
+      "position_hyperparameters", "ordinal_class_hyperparameters"
+    ),
+    ignore.order = TRUE
+  )
+
+  hp_after <- get_hyperparameters("sprint_results", "after_quali")
+  expect_true(is.list(hp_after))
+
+  hp_sq <- get_hyperparameters("sprint_quali", "after_sprint")
+  expect_true(is.list(hp_sq))
+  expect_named(
+    hp_sq,
+    c("pole_hyperparameters", "position_hyperparameters", "ordinal_class_hyperparameters"),
+    ignore.order = TRUE
+  )
+})
+
+test_that("get_hyperparameters() errors on unknown model or timing", {
+  expect_error(get_hyperparameters("bad_model", "early"), "quali.*results")
+  expect_error(get_hyperparameters("sprint_quali", "bad_timing"), NA)
+  # sprint_results / sprint_quali always return the same params regardless of timing
+  # so check the documented timing value just passes without error:
+  expect_no_error(get_hyperparameters("sprint_results", "before_quali"))
+  expect_no_error(get_hyperparameters("sprint_results", "after_quali"))
+})
+
+test_that("prepare_sprint_training_data() returns NULL when no sprint rounds found", {
+  # Provide empty historical_data so no sprint rounds match
+  empty_hist <- tibble::tibble(
+    round_id = character(0),
+    season = numeric(0),
+    round = numeric(0),
+    driver_id = character(0),
+    constructor_id = character(0),
+    position = numeric(0),
+    quali_position = numeric(0),
+    grid = numeric(0),
+    q_min_perc = numeric(0),
+    q_avg_perc = numeric(0)
+  )
+  expect_warning(
+    result <- prepare_sprint_training_data(
+      historical_data = empty_hist,
+      results_models  = list(),
+      quali_models    = list()
+    ),
+    "No sprint weekends"
+  )
+  expect_null(result)
+})

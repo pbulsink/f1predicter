@@ -778,9 +778,65 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
         "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after-quali}."
       )
     }
+  } else if (model == "sprint_results") {
+    # Sprint-specific results models (before_quali / after_quali).
+    # Small dataset (~30 rounds) so we use mild regularisation and shallow
+    # trees to avoid overfitting.
+    sprint_results_hyperparams <- list(
+      win_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.75),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      podium_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.75),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      t10_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.5),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      position_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.5),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      ordinal_class_hyperparameters = ordinal_defaults
+    )
+    return(sprint_results_hyperparams)
+  } else if (model == "sprint_quali") {
+    # Sprint-specific qualifying models (after_sprint only).
+    sprint_quali_hyperparams <- list(
+      pole_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.75),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      position_hyperparameters = list(
+        "glmnet" = list(penalty = 0.01, mixture = 0.5),
+        "kknn"   = list(neighbors = 5),
+        "nnet"   = list(hidden_units = 4, penalty = 0.1, epochs = 500),
+        "ranger" = list(mtry = 2L, min_n = 5L),
+        "kernlab" = list(cost = 1, rbf_sigma = 0.01)
+      ),
+      ordinal_class_hyperparameters = ordinal_defaults
+    )
+    return(sprint_quali_hyperparams)
   } else {
     cli::cli_abort(
-      "Error in f1predicter:::get_hyperparameters: {.param model} must be {.val quali} or {.val results}."
+      "Error in f1predicter:::get_hyperparameters: {.param model} must be {.val quali}, {.val results}, {.val sprint_quali}, or {.val sprint_results}."
     )
   }
 }

@@ -24,6 +24,11 @@ test_that("generate_new_data() returns a tibble", {
   expect_true("season" %in% names(result))
   expect_true("round" %in% names(result))
 
+  # Sprint columns are NOT present by default (only added when sprint_results is provided)
+  expect_false("sprint_grid" %in% names(result))
+  expect_false("sprint_finish_pos" %in% names(result))
+  expect_false("sprint_points" %in% names(result))
+
   # Use invalid season/round
   expect_error(
     generate_new_data(season = 9999, round = 1)
@@ -260,6 +265,70 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
   )
 })
 
+test_that("predict_sprint_round() renames race columns to sprint_* columns (#noissue)", {
+  # Build a minimal mock result matching predict_round() output
+  race_preds <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 10L,
+    season = 2025L,
+    win_odd = c(0.25, 0.75),
+    podium_odd = c(0.60, 0.90),
+    t10_odd = c(0.80, 0.95),
+    likely_position = c(3L, 1L),
+    likely_position_class = ordered(c("P3-P5", "P1"), levels = c("P1", "P2", "P3-P5"))
+  )
+
+  # Stub predict_round to avoid model loading
+  local_mocked_bindings(
+    predict_round = function(...) race_preds,
+    .package = "f1predicter"
+  )
+
+  result <- predict_sprint_round(new_data = tibble::tibble(driver_id = factor("driver_a")))
+
+  expected_names <- c(
+    "driver_id", "round", "season",
+    "sprint_win_odd", "sprint_podium_odd", "sprint_t10_odd",
+    "sprint_likely_position", "sprint_likely_position_class"
+  )
+  expect_named(result, expected_names)
+  expect_equal(result$sprint_win_odd, race_preds$win_odd)
+  expect_equal(result$sprint_podium_odd, race_preds$podium_odd)
+})
+
+test_that("generate_new_data() adds sprint columns only when sprint_results is provided (#noissue)", {
+  skip_if_not_installed("f1dataR")
+  withr::local_options(f1predicter.cache = "~/Documents/f1predicter/cache")
+
+  historical_data <- cleaned_data
+
+  # Without sprint_results: no sprint columns
+  result_no_sprint <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE
+  )
+  expect_false("sprint_grid" %in% names(result_no_sprint))
+
+  # With sprint_results: sprint columns are added
+  sprint_df <- tibble::tibble(
+    driver_id = result_no_sprint$driver_id,
+    grid = seq_len(nrow(result_no_sprint)),
+    position = seq_len(nrow(result_no_sprint)),
+    points = rep(0, nrow(result_no_sprint))
+  )
+  result_with_sprint <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE,
+    sprint_results = sprint_df
+  )
+  expect_true("sprint_grid" %in% names(result_with_sprint))
+  expect_true("sprint_finish_pos" %in% names(result_with_sprint))
+  expect_true("sprint_points" %in% names(result_with_sprint))
+})
 # ---- load_models() validation -----------------------------------------------
 
 test_that("load_models() errors when f1predicter.models option is unset (#noissue)", {
@@ -1189,4 +1258,115 @@ test_that("predict_round() leaves new_data unchanged for non-ensemble class mode
 
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), nrow(new_data))
+})
+
+# ---- predict_race_after_sprint() / predict_quali_after_sprint() tests --------
+
+test_that("predict_race_after_sprint() errors on invalid model_timing", {
+  expect_error(
+    predict_race_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_results_models = list(win = 1, podium = 1, t10 = 1,
+                                   position = 1, position_class = 1),
+      model_timing = "early"
+    ),
+    "model_timing"
+  )
+})
+
+test_that("predict_race_after_sprint() errors when sprint models are missing required names", {
+  withr::local_options(list(f1predicter.models = withr::local_tempdir()))
+
+  expect_error(
+    predict_race_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_results_models = list(win = 1, podium = 1),   # missing t10 etc.
+      base_results_models   = list(win = 1, podium = 1, t10 = 1,
+                                   position = 1, position_class = 1),
+      model_timing = "before_quali"
+    ),
+    "sprint_results_models"
+  )
+})
+
+test_that("predict_race_after_sprint() auto-detects 'before_quali' when no q_*_perc columns present", {
+  mock_preds <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 5L,
+    season = 2025L,
+    win_odd = c(0.3, 0.7),
+    podium_odd = c(0.5, 0.8),
+    t10_odd = c(0.9, 0.95),
+    likely_position = c(3L, 1L),
+    likely_position_class = ordered(c("P3-P5", "P1"), levels = c("P1", "P2", "P3-P5"))
+  )
+  fake_prob <- tibble::tibble(.pred_1 = c(0.5, 0.5))
+  fake_num  <- tibble::tibble(.pred = c(5.0, 6.0))
+
+  # new_data has NO q_min_perc / q_avg_perc -> should auto-detect "before_quali"
+  new_data <- tibble::tibble(
+    driver_id = factor(c("driver_a", "driver_b")),
+    round = 5L,
+    season = 2025L,
+    sprint_grid = c(1L, 2L),
+    sprint_finish_pos = c(2L, 1L),
+    sprint_points = c(7, 8)
+  )
+
+  sprint_models <- list(win = 1, podium = 1, t10 = 1, position = 1, position_class = 1)
+  base_models   <- list(win = structure(list(), class = "last_fit"),
+                        podium = structure(list(), class = "last_fit"),
+                        t10 = structure(list(), class = "last_fit"),
+                        position = structure(list(), class = "last_fit"),
+                        position_class = structure(list(), class = "last_fit"))
+
+  local_mocked_bindings(
+    predict_round = function(new_data, results_models) {
+      # Confirm meta-features were added
+      expect_true("base_win_pred"    %in% names(new_data))
+      expect_true("base_podium_pred" %in% names(new_data))
+      expect_true("base_t10_pred"    %in% names(new_data))
+      expect_true("base_pos_pred"    %in% names(new_data))
+      mock_preds
+    },
+    .package = "f1predicter"
+  )
+
+  # Stub tune::extract_workflow to return an object we can predict on
+  local_mocked_bindings(
+    extract_workflow = function(x) x,
+    .package = "tune"
+  )
+
+  # Stub stats::predict for the base models
+  local_mocked_bindings(
+    predict = function(object, new_data, type = "response") {
+      if (type == "prob")    return(fake_prob)
+      if (type == "numeric") return(fake_num)
+    },
+    .package = "stats"
+  )
+
+  result <- predict_race_after_sprint(
+    new_data              = new_data,
+    sprint_results_models = sprint_models,
+    base_results_models   = base_models
+    # model_timing intentionally omitted to trigger auto-detect
+  )
+
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), nrow(new_data))
+})
+
+test_that("predict_quali_after_sprint() errors when sprint models missing required names", {
+  withr::local_options(list(f1predicter.models = withr::local_tempdir()))
+
+  expect_error(
+    predict_quali_after_sprint(
+      new_data = tibble::tibble(),
+      sprint_quali_models = list(quali_pole = 1),   # missing quali_pos etc.
+      base_quali_models   = list(quali_pole = 1, quali_pos = 1, quali_pos_class = 1)
+    ),
+    "sprint_quali_models"
+  )
 })
