@@ -87,32 +87,32 @@ generate_new_data <- function(
   circuit <- schedule[
     schedule$season == season & schedule$round == round,
   ]$circuit_id
-  new_data <- tibble::as_tibble(drivers) %>%
+  new_data <- tibble::as_tibble(drivers) |>
     dplyr::mutate(
       season = season,
       round = round,
-      round_id = paste0(season, "-", round),
+      round_id = paste0(season, "_", round),
       circuit_id = circuit
     )
 
-  hd_driver <- historical_data %>%
-    dplyr::filter(.data$driver_id %in% new_data$driver_id) %>%
-    dplyr::group_by(.data$driver_id) %>%
-    dplyr::filter(.data$season == max(.data$season)) %>%
-    dplyr::filter(.data$round == max(.data$round)) %>%
-    dplyr::ungroup() %>%
+  hd_driver <- historical_data |>
+    dplyr::filter(.data$driver_id %in% new_data$driver_id) |>
+    dplyr::group_by(.data$driver_id) |>
+    dplyr::filter(.data$season == max(.data$season)) |>
+    dplyr::filter(.data$round == max(.data$round)) |>
+    dplyr::ungroup() |>
     unique()
 
-  hd_constructor <- historical_data %>%
-    dplyr::filter(.data$constructor_id %in% new_data$constructor_id) %>%
-    dplyr::group_by(.data$constructor_id) %>%
-    dplyr::filter(.data$season == max(.data$season)) %>%
-    dplyr::filter(.data$round == max(.data$round)) %>%
+  hd_constructor <- historical_data |>
+    dplyr::filter(.data$constructor_id %in% new_data$constructor_id) |>
+    dplyr::group_by(.data$constructor_id) |>
+    dplyr::filter(.data$season == max(.data$season)) |>
+    dplyr::filter(.data$round == max(.data$round)) |>
     dplyr::summarise(dplyr::across(
       dplyr::where(is.numeric),
       ~ mean(.x, na.rm = TRUE)
-    )) %>%
-    dplyr::ungroup() %>%
+    )) |>
+    dplyr::ungroup() |>
     dplyr::mutate(
       constructor_grid_avg = tidyr::replace_na(
         .data$constructor_grid_avg,
@@ -150,21 +150,21 @@ generate_new_data <- function(
         .data$constructor_finish_avg,
         20
       )
-    ) %>%
+    ) |>
     unique()
 
-  hd_circuit <- historical_data %>%
+  hd_circuit <- historical_data |>
     dplyr::filter(.data$circuit_id %in% new_data$circuit_id)
   if (nrow(hd_circuit) > 0) {
-    hd_circuit <- hd_circuit %>%
-      dplyr::group_by(.data$circuit_id) %>%
-      dplyr::filter(.data$season == max(.data$season)) %>%
-      dplyr::filter(.data$round == max(.data$round)) %>%
+    hd_circuit <- hd_circuit |>
+      dplyr::group_by(.data$circuit_id) |>
+      dplyr::filter(.data$season == max(.data$season)) |>
+      dplyr::filter(.data$round == max(.data$round)) |>
       dplyr::summarise(dplyr::across(
         dplyr::where(is.numeric),
         ~ mean(.x, na.rm = TRUE)
-      )) %>%
-      dplyr::ungroup() %>%
+      )) |>
+      dplyr::ungroup() |>
       dplyr::mutate(
         grid_pos_corr_avg = tidyr::replace_na(
           .data$grid_pos_corr_avg,
@@ -205,7 +205,7 @@ generate_new_data <- function(
           .data$constructor_failure_circuit_avg,
           5
         )
-      ) %>%
+      ) |>
       unique()
   } else {
     #Need to make a new version - use defaults
@@ -218,7 +218,7 @@ generate_new_data <- function(
   }
 
   #Load driver/constructor/circuit info
-  new_data <- new_data %>%
+  new_data <- new_data |>
     dplyr::left_join(
       hd_driver[, c(
         'driver_id',
@@ -236,7 +236,7 @@ generate_new_data <- function(
         'driver_practice_optimal_rank_avg'
       )],
       by = 'driver_id'
-    ) %>%
+    ) |>
     dplyr::mutate(
       driver_experience = tidyr::replace_na(.data$driver_experience, -1),
       driver_experience = .data$driver_experience + 1,
@@ -272,13 +272,13 @@ generate_new_data <- function(
         params$driver_finish_avg
       ),
       driver_finish_avg = wmean_two(.data$finished, .data$driver_finish_avg, 10)
-    ) %>%
+    ) |>
     dplyr::mutate(
       driver_avg_qgap = tidyr::replace_na(
         .data$driver_avg_qgap,
         params$qgap
       )
-    ) %>%
+    ) |>
     dplyr::left_join(
       hd_constructor[, c(
         'constructor_id',
@@ -287,7 +287,7 @@ generate_new_data <- function(
         'constructor_failure_avg'
       )],
       by = 'constructor_id'
-    ) %>%
+    ) |>
     dplyr::left_join(
       hd_circuit[, c(
         'circuit_id',
@@ -296,7 +296,7 @@ generate_new_data <- function(
         'constructor_failure_circuit_avg'
       )],
       by = 'circuit_id'
-    ) %>%
+    ) |>
     dplyr::mutate(
       constructor_grid_avg = tidyr::replace_na(
         .data$constructor_grid_avg,
@@ -335,42 +335,42 @@ generate_new_data <- function(
     cli::cli_inform(
       "Found lap data for {season} round {round}. Calculating practice stats."
     )
-    practice_results <- laps %>%
-      dplyr::mutate(season = season, round = round) %>%
-      add_drivers_to_laps(season = season) %>%
-      process_lap_times() %>%
-      summarize_practice_laps() %>%
+    practice_results <- laps |>
+      dplyr::mutate(season = season, round = round) |>
+      add_drivers_to_laps(season = season) |>
+      process_lap_times() |>
+      summarize_practice_laps() |>
       dplyr::select(-c('season', 'round'))
-    # d_ids <- f1dataR::load_drivers(season = season) %>%
+    # d_ids <- f1dataR::load_drivers(season = season) |>
     #   dplyr::select("driver_id", "code")
-    # practice_laps <- laps %>%
+    # practice_laps <- laps |>
     #   dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3"))
 
-    # practice_results <- practice_laps %>%
-    #   dplyr::left_join(d_ids, by = c(driver = "code")) %>%
-    # dplyr::group_by(.data$driver_id, .data$session_type) %>%
+    # practice_results <- practice_laps |>
+    #   dplyr::left_join(d_ids, by = c(driver = "code")) |>
+    # dplyr::group_by(.data$driver_id, .data$session_type) |>
     # dplyr::summarise(
     #   best_lap_time = min(.data$lap_time, na.rm = TRUE),
     #   optimal_lap_time = min(.data$sector1time, na.rm = TRUE) +
     #     min(.data$sector2time, na.rm = TRUE) +
     #     min(.data$sector3time, na.rm = TRUE),
     #   .groups = "drop_last"
-    # ) %>%
-    # dplyr::ungroup() %>%
-    # dplyr::group_by(.data$session_type) %>%
+    # ) |>
+    # dplyr::ungroup() |>
+    # dplyr::group_by(.data$session_type) |>
     # dplyr::mutate(
     #   best_rank = rank(.data$best_lap_time, ties.method = "min"),
     #   optimal_rank = rank(.data$optimal_lap_time, ties.method = "min")
-    # ) %>%
-    # dplyr::ungroup() %>%
-    # dplyr::group_by(.data$driver_id) %>%
+    # ) |>
+    # dplyr::ungroup() |>
+    # dplyr::group_by(.data$driver_id) |>
     # dplyr::summarise(
     #   practice_best_rank = min(.data$best_rank, na.rm = TRUE),
     #   practice_avg_rank = mean(.data$best_rank, na.rm = TRUE),
     #   practice_optimal_rank = min(.data$optimal_rank, na.rm = TRUE)
     # )
 
-    new_data <- new_data %>%
+    new_data <- new_data |>
       dplyr::left_join(practice_results, by = "driver_id")
   } else {
     new_data$driver_practice_optimal_rank_avg <- nrow(new_data) * 3 / 4
@@ -386,10 +386,10 @@ generate_new_data <- function(
     quali$round <- round
     quali$season <- season
     quali_results <- process_quali_times(quali)
-    quali_results <- quali_results %>%
+    quali_results <- quali_results |>
       dplyr::mutate(
         'quali_position' = dplyr::row_number()
-      ) %>%
+      ) |>
       dplyr::select(-"driver_avg_qgap")
 
     # If quali_position already exists, remove it before joining
@@ -399,16 +399,16 @@ generate_new_data <- function(
     if ("grid" %in% names(new_data)) {
       new_data$grid <- NULL
     }
-    new_data <- new_data %>%
-      dplyr::left_join(quali_results) %>%
+    new_data <- new_data |>
+      dplyr::left_join(quali_results) |>
       dplyr::mutate(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
       )
   } else {
     # sort drivers by their average grid for an estimate
-    new_data <- new_data %>%
-      dplyr::rename('last_grid' = 'grid') %>%
+    new_data <- new_data |>
+      dplyr::rename('last_grid' = 'grid') |>
       dplyr::mutate(
         driver_grid_avg = tidyr::replace_na(
           .data$driver_grid_avg,
@@ -429,8 +429,8 @@ generate_new_data <- function(
   # finish position, grid, and points as predictors for the main race/quali.
   if (!is.null(sprint_results) && nrow(sprint_results) > 0) {
     cli::cli_inform("Merging provided sprint results as prediction features.")
-    sprint_features <- sprint_results %>%
-      janitor::clean_names() %>%
+    sprint_features <- sprint_results |>
+      janitor::clean_names() |>
       dplyr::transmute(
         driver_id = .data$driver_id,
         sprint_grid = as.numeric(.data$grid),
@@ -438,7 +438,7 @@ generate_new_data <- function(
         sprint_points = as.numeric(.data$points)
       )
 
-    new_data <- new_data %>%
+    new_data <- new_data |>
       dplyr::left_join(sprint_features, by = "driver_id")
   }
 
@@ -474,9 +474,9 @@ generate_new_data <- function(
   sprint_cols <- c("sprint_grid", "sprint_finish_pos", "sprint_points")
   sprint_cols_present <- sprint_cols[sprint_cols %in% names(new_data)]
 
-  new_data <- new_data %>%
-    dplyr::select(dplyr::all_of(c(base_cols, sprint_cols_present))) %>%
-    unique() %>%
+  new_data <- new_data |>
+    dplyr::select(dplyr::all_of(c(base_cols, sprint_cols_present))) |>
+    unique() |>
     dplyr::mutate(
       round_id = as.factor(.data$round_id),
       driver_id = as.factor(.data$driver_id),
@@ -540,12 +540,12 @@ generate_new_data <- function(
 # round round_id
 #    21  2025-21
 generate_next_race_data <- function(...) {
-  schedule <- f1predicter::schedule %>%
+  schedule <- f1predicter::schedule |>
     dplyr::mutate(date = as.Date(.data$date))
 
-  next_race <- schedule %>%
-    dplyr::filter(.data$date >= Sys.Date()) %>%
-    dplyr::arrange(.data$date) %>%
+  next_race <- schedule |>
+    dplyr::filter(.data$date >= Sys.Date()) |>
+    dplyr::arrange(.data$date) |>
     dplyr::slice(1)
 
   if (nrow(next_race) == 0) {
@@ -618,8 +618,8 @@ apply_grid_penalty <- function(
 
   # --- Apply Penalty ---
   # Establish the pre-penalty grid order based on qualifying
-  sorted_drivers <- race_data %>%
-    dplyr::arrange(.data$grid) %>%
+  sorted_drivers <- race_data |>
+    dplyr::arrange(.data$grid) |>
     dplyr::mutate(driver_id = as.character(.data$driver_id))
   driver_order <- as.character(sorted_drivers$driver_id)
 
@@ -639,8 +639,8 @@ apply_grid_penalty <- function(
     grid = seq_along(driver_order)
   )
 
-  race_data <- race_data %>%
-    dplyr::select(-dplyr::any_of("grid")) %>%
+  race_data <- race_data |>
+    dplyr::select(-dplyr::any_of("grid")) |>
     dplyr::left_join(new_grid_df, by = "driver_id")
 
   return(race_data)
@@ -690,12 +690,12 @@ predict_quali_pole <- function(
     )
   }
 
-  preds <- new_data %>%
-    dplyr::mutate(pole_odd = pred_call$.pred_1) %>%
+  preds <- new_data |>
+    dplyr::mutate(pole_odd = pred_call$.pred_1) |>
     dplyr::mutate(
       pole_odd = normalize_vector(.data$pole_odd)
-    ) %>%
-    dplyr::select("driver_id", "round", "season", "pole_odd") %>%
+    ) |>
+    dplyr::select("driver_id", "round", "season", "pole_odd") |>
     dplyr::arrange(-.data$pole_odd)
   return(preds)
 }
@@ -746,9 +746,9 @@ predict_quali_pos <- function(
     )
   }
 
-  preds <- new_data %>%
-    dplyr::mutate(likely_quali_position = pred_call$.pred) %>%
-    dplyr::select("driver_id", "round", "season", "likely_quali_position") %>%
+  preds <- new_data |>
+    dplyr::mutate(likely_quali_position = pred_call$.pred) |>
+    dplyr::select("driver_id", "round", "season", "likely_quali_position") |>
     dplyr::arrange(.data$likely_quali_position)
   return(preds)
 }
@@ -814,21 +814,21 @@ predict_quali_pos_class <- function(
   pred_probs <- stats::predict(model_obj, new_data, type = "prob")
   probs_matrix <- as.matrix(pred_probs)
 
-  preds <- new_data %>%
+  preds <- new_data |>
     dplyr::mutate(
       # Convert the ordered factor level to a numeric position directly
       likely_quali_position_class = as.numeric(
         as.character(pred_class$.pred_class)
       ),
       .probs = I(probs_matrix)
-    ) %>%
+    ) |>
     dplyr::select(
       "driver_id",
       "round",
       "season",
       "likely_quali_position_class",
       ".probs"
-    ) %>%
+    ) |>
     dplyr::arrange(.data$likely_quali_position_class)
   return(preds)
 }
@@ -927,7 +927,7 @@ predict_quali_round <- function(
     )
 
     # Add them as new columns with the names expected by the ordinal model's recipe
-    new_data %>%
+    new_data |>
       dplyr::mutate(
         ensemble_pole_pred = pole_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
@@ -942,12 +942,12 @@ predict_quali_round <- function(
     quali_models$quali_pos_class
   )
 
-  all_preds <- pole_preds %>%
-    dplyr::left_join(pos_preds, by = c("driver_id", "round", "season")) %>%
+  all_preds <- pole_preds |>
+    dplyr::left_join(pos_preds, by = c("driver_id", "round", "season")) |>
     dplyr::left_join(
       pos_class_preds,
       by = c("driver_id", "round", "season")
-    ) %>%
+    ) |>
     dplyr::arrange(-.data$pole_odd)
   return(all_preds)
 }
@@ -1245,10 +1245,10 @@ predict_winner <- function(
     stats::predict(tune::extract_workflow(win_model), new_data, type = "prob")
   }
 
-  preds <- new_data %>%
+  preds <- new_data |>
     dplyr::mutate(
       win_odd = pred_call$.pred_1
-    ) %>%
+    ) |>
     dplyr::select("driver_id", "round", "season", "win_odd")
   return(preds)
 }
@@ -1278,10 +1278,10 @@ predict_podium <- function(
     )
   }
 
-  preds <- new_data %>%
+  preds <- new_data |>
     dplyr::mutate(
       podium_odd = pred_call$.pred_1
-    ) %>%
+    ) |>
     dplyr::select("driver_id", "round", "season", "podium_odd")
   return(preds)
 }
@@ -1307,10 +1307,10 @@ predict_t10 <- function(
     stats::predict(tune::extract_workflow(t10_model), new_data, type = "prob")
   }
 
-  preds <- new_data %>%
+  preds <- new_data |>
     dplyr::mutate(
       t10_odd = pred_call$.pred_1
-    ) %>%
+    ) |>
     dplyr::select("driver_id", "round", "season", "t10_odd")
   return(preds)
 }
@@ -1339,9 +1339,9 @@ predict_position <- function(
       type = "numeric"
     )
   }
-  preds <- new_data %>%
-    dplyr::select("driver_id", "round", "season") %>%
-    dplyr::bind_cols(position_preds) %>%
+  preds <- new_data |>
+    dplyr::select("driver_id", "round", "season") |>
+    dplyr::bind_cols(position_preds) |>
     dplyr::rename("likely_position" = ".pred")
   return(preds)
 }
@@ -1395,19 +1395,19 @@ predict_position_class <- function(
   pred_probs <- stats::predict(model_obj, new_data, type = "prob")
   probs_matrix <- as.matrix(pred_probs)
 
-  preds <- new_data %>%
+  preds <- new_data |>
     dplyr::mutate(
       # Convert the ordered factor level to a numeric position directly
       likely_position_class = as.numeric(as.character(pred_class$.pred_class)),
       .probs = I(probs_matrix)
-    ) %>%
+    ) |>
     dplyr::select(
       "driver_id",
       "round",
       "season",
       "likely_position_class",
       ".probs"
-    ) %>%
+    ) |>
     dplyr::arrange(.data$likely_position_class)
   return(preds)
 }
@@ -1515,7 +1515,7 @@ predict_round <- function(
     )
 
     # Add them as new columns with the names expected by the ordinal model's recipe
-    new_data %>%
+    new_data |>
       dplyr::mutate(
         ensemble_win_pred = win_ensemble_preds$.pred_1,
         ensemble_pos_pred = pos_ensemble_preds$.pred
@@ -1530,10 +1530,10 @@ predict_round <- function(
     results_models$position_class
   )
 
-  all_preds <- win_preds %>%
-    dplyr::left_join(podium_preds, by = c("driver_id", "round", "season")) %>%
-    dplyr::left_join(t10_preds, by = c("driver_id", "round", "season")) %>%
-    dplyr::left_join(position_preds, by = c("driver_id", "round", "season")) %>%
+  all_preds <- win_preds |>
+    dplyr::left_join(podium_preds, by = c("driver_id", "round", "season")) |>
+    dplyr::left_join(t10_preds, by = c("driver_id", "round", "season")) |>
+    dplyr::left_join(position_preds, by = c("driver_id", "round", "season")) |>
     dplyr::left_join(
       position_class_preds,
       by = c("driver_id", "round", "season")

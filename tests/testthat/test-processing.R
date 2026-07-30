@@ -164,6 +164,55 @@ test_that("process_results_data() derives joined and rolling race features", {
   expect_false(any(is.na(result$quali_position)))
 })
 
+test_that("process_results_data() processes sprint rows and marks them (#noissue)", {
+  raw_input <- list(
+    results = tibble::tibble(
+      driver_id = "driver_a",
+      constructor_id = "team_a",
+      position = 1,
+      grid = 2,
+      fastest_rank = 1,
+      time_sec = 90,
+      points = 25,
+      status = "Finished",
+      season = 2023,
+      round = 4
+    ),
+    sprint_results = tibble::tibble(
+      driver_id = "driver_a",
+      constructor_id = "team_a",
+      position = 2,
+      grid = 1,
+      fastest_rank = 2,
+      time_sec = 91,
+      points = 7,
+      status = "Finished",
+      season = 2023,
+      round = 4
+    ),
+    rgrid = tibble::tibble(
+      position = 3,
+      quali_results = "driver_a",
+      season = 2023,
+      round = 4
+    ),
+    sgrid = tibble::tibble(
+      position = 1,
+      quali_results = "driver_a",
+      season = 2023,
+      round = 4
+    )
+  )
+
+  result <- process_results_data(raw_input)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 2)
+  expect_true("is_sprint" %in% names(result))
+  expect_identical(result$is_sprint, c(TRUE, FALSE))
+  expect_identical(result$quali_position, c(1, 3))
+})
+
 test_that("process_lap_times() and summarize_practice_laps() rank practice sessions", {
   base_results <- cleaned_data |>
     dplyr::filter(.data$season == 2024, .data$round == 1) |>
@@ -357,7 +406,8 @@ test_that("constructor, circuit, and final feature builders preserve modeled col
         dplyr::row_number() == 1,
         NA_integer_,
         .data$quali_position
-      )
+      ),
+      is_sprint = dplyr::row_number() == 1
     )
 
   sched <- schedule |>
@@ -378,7 +428,13 @@ test_that("constructor, circuit, and final feature builders preserve modeled col
   expect_false(any(is.na(circuit_features$grid_pos_corr_avg)))
 
   expect_s3_class(final_data, "data.frame")
+  expect_true("is_sprint" %in% names(final_data))
   expect_true("round_id" %in% names(final_data))
+  expect_true(
+    all(grepl("^\\d{4}_\\d+(_sprint)?$", final_data$round_id))
+  )
+  expect_identical(final_data$is_sprint[1:2], c(TRUE, FALSE))
+  expect_identical(final_data$round_id[1:2], c("2024_1_sprint", "2024_1"))
   expect_false(any(is.na(final_data$q_min_perc)))
   expect_false(any(is.na(final_data$practice_best_gap)))
   expect_false(any(is.na(final_data$pit_duration_perc)))

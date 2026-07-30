@@ -147,9 +147,9 @@ ensure_tidy <- function(data) {
   if (is.null(data) | all(is.na(data))) {
     return(data)
   }
-  data <- data %>% janitor::clean_names()
+  data <- data |> janitor::clean_names()
   if ('race' %in% colnames(data)) {
-    data <- data %>%
+    data <- data |>
       dplyr::rename('round' = 'race')
   }
   return(data)

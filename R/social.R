@@ -45,7 +45,7 @@ get_driver_name <- function(season, driver_ids) {
     return(stringr::str_to_title(gsub("_", " ", driver_ids)))
   }
 
-  driver_lookup <- driver_lookup %>%
+  driver_lookup <- driver_lookup |>
     dplyr::mutate(full_name = paste(.data$given_name, .data$family_name))
 
   # Match driver_ids with the lookup table
@@ -75,7 +75,7 @@ get_driver_name <- function(season, driver_ids) {
 #' @noRd
 get_race_name <- function(season, round) {
   # Assumes f1predicter::schedule is available in the package namespace
-  race_info <- f1predicter::schedule %>%
+  race_info <- f1predicter::schedule |>
     dplyr::filter(.data$season == !!season, .data$round == !!round)
 
   if (nrow(race_info) == 0) {
@@ -120,7 +120,7 @@ format_race_skeet_predictions <- function(predictions) {
   current_season <- predictions$season[1]
   current_round <- predictions$round[1]
 
-  predictions_formatted <- predictions %>%
+  predictions_formatted <- predictions |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
@@ -131,39 +131,39 @@ format_race_skeet_predictions <- function(predictions) {
   race_hashtag <- stringr::str_replace_all(race_hashtag, "Prix", "P")
 
   # Top 3 for Win
-  win_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$win_odd)) %>%
-    dplyr::slice_head(n = 3) %>%
+  win_preds <- predictions_formatted |>
+    dplyr::arrange(dplyr::desc(.data$win_odd)) |>
+    dplyr::slice_head(n = 3) |>
     dplyr::mutate(
       text = glue::glue(
         "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$win_odd, 0.1)}"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   # Top 5 for Podium
-  podium_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$podium_odd)) %>%
-    dplyr::slice_head(n = 5) %>%
+  podium_preds <- predictions_formatted |>
+    dplyr::arrange(dplyr::desc(.data$podium_odd)) |>
+    dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
         "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$podium_odd, 0.1)}"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   # Top 5 likely positions (ordered by predicted position)
-  position_preds <- predictions_formatted %>%
-    dplyr::arrange(.data$likely_position) %>%
-    dplyr::slice_head(n = 5) %>%
+  position_preds <- predictions_formatted |>
+    dplyr::arrange(.data$likely_position) |>
+    dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
         "{.data$driver_name}: P{round(.data$likely_position, 1)}"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   # Bluesky tags are handled separately from the text and don't use '#'
@@ -172,8 +172,8 @@ format_race_skeet_predictions <- function(predictions) {
   prob_image <- format_results_prob_table(predictions, save_image = TRUE)
   odds_image <- format_results_odds_table(predictions, save_image = TRUE)
 
-  driver_list <- predictions_formatted %>%
-    dplyr::arrange(.data$likely_position) %>%
+  driver_list <- predictions_formatted |>
+    dplyr::arrange(.data$likely_position) |>
     dplyr::pull(.data$driver_name)
 
   prob_image_alt <- paste0(
@@ -187,8 +187,8 @@ format_race_skeet_predictions <- function(predictions) {
     "."
   )
 
-  driver_list <- predictions_formatted %>%
-    dplyr::arrange(.data$win_odd) %>%
+  driver_list <- predictions_formatted |>
+    dplyr::arrange(.data$win_odd) |>
     dplyr::pull(.data$driver_name)
 
   odds_image_alt <- paste0(
@@ -250,7 +250,7 @@ format_quali_skeet_predictions <- function(predictions) {
   current_round <- predictions$round[1]
   sprint_weekend <- is_sprint_weekend(current_season, current_round)
 
-  predictions_formatted <- predictions %>%
+  predictions_formatted <- predictions |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
@@ -261,32 +261,32 @@ format_quali_skeet_predictions <- function(predictions) {
   race_hashtag <- stringr::str_replace_all(race_hashtag, " ", "")
 
   # Top 5 for Pole
-  pole_preds <- predictions_formatted %>%
-    dplyr::arrange(dplyr::desc(.data$pole_odd)) %>%
-    dplyr::slice_head(n = 5) %>%
+  pole_preds <- predictions_formatted |>
+    dplyr::arrange(dplyr::desc(.data$pole_odd)) |>
+    dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
         "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$pole_odd, 0.1)}"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   # Top 5 likely qualifying positions (ordered by pole probability)
-  position_preds <- predictions_formatted %>%
-    dplyr::arrange(.data$likely_quali_position) %>%
-    dplyr::filter(.data$likely_quali_position <= 5) %>%
+  position_preds <- predictions_formatted |>
+    dplyr::arrange(.data$likely_quali_position) |>
+    dplyr::filter(.data$likely_quali_position <= 5) |>
     dplyr::mutate(
       text = glue::glue(
         "{.data$driver_name}: P{round(.data$likely_quali_position, 0)}"
       )
-    ) %>%
-    dplyr::pull(.data$text) %>%
+    ) |>
+    dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
   image <- format_quali_prob_table(predictions, save_image = TRUE)
-  driver_list <- predictions_formatted %>%
-    dplyr::arrange(.data$likely_quali_position) %>%
+  driver_list <- predictions_formatted |>
+    dplyr::arrange(.data$likely_quali_position) |>
     dplyr::pull(.data$driver_name)
 
   image_alt <- paste0(
@@ -439,6 +439,7 @@ post_skeet_predictions <- function(skeets) {
     cli::cli_abort("{.arg skeets} must be a list of lists.")
   }
 
+  # nocov start
   last_post_response <- NULL
   all_responses <- list()
 
@@ -485,6 +486,7 @@ post_skeet_predictions <- function(skeets) {
 
   invisible(all_responses)
 }
+# nocov end
 
 #' Post Qualifying Predictions to Bluesky
 #'
@@ -591,7 +593,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   current_round <- predictions$round[1]
 
   # Get driver names
-  predictions_formatted <- predictions %>%
+  predictions_formatted <- predictions |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
@@ -608,37 +610,37 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     )
   }
   # Wrangle the probability data into a wide format for the table
-  prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "win_odd", "likely_position_class") %>%
-    dplyr::bind_cols(probs) %>%
+  prob_data <- predictions_formatted |>
+    dplyr::select("driver_name", "win_odd", "likely_position_class") |>
+    dplyr::bind_cols(probs) |>
     dplyr::mutate(
       sort_position = sort_position
-    ) %>%
-    dplyr::arrange(.data$sort_position) %>%
+    ) |>
+    dplyr::arrange(.data$sort_position) |>
     dplyr::select(-"sort_position")
 
   # Create the gt table
-  prob_table <- prob_data %>%
-    dplyr::select(-"likely_position_class") %>%
-    gt::gt() %>%
+  prob_table <- prob_data |>
+    dplyr::select(-"likely_position_class") |>
+    gt::gt() |>
     gt::tab_header(
       title = gt::md("**Race Finishing Position Probabilities**"),
       subtitle = race_name
-    ) %>%
+    ) |>
     gt::tab_spanner(
       label = "Odds of Finishing at Each Position",
       columns = -c("driver_name", "win_odd")
-    ) %>%
-    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
+    ) |>
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
     gt::cols_label(
       driver_name = "Driver",
       win_odd = "Chance of Winning"
-    ) %>%
+    ) |>
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
-    ) %>%
+    ) |>
     gt::tab_style(
       style = gt::cell_borders(
         sides = c("right"),
@@ -647,7 +649,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
         style = "solid"
       ),
       locations = gt::cells_body(columns = 'win_odd')
-    ) %>%
+    ) |>
     gt::tab_source_note(
       source_note = paste0(
         "Each result model trained independently.\n",
@@ -719,7 +721,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   current_round <- predictions$round[1]
 
   # Get driver names
-  predictions_formatted <- predictions %>%
+  predictions_formatted <- predictions |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
@@ -728,30 +730,30 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 
   probs <- as.data.frame(predictions_formatted$.probs)
   # Wrangle the probability data into a wide format for the table
-  prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "pole_odd", "likely_quali_position_class") %>%
-    dplyr::bind_cols(probs) %>%
+  prob_data <- predictions_formatted |>
+    dplyr::select("driver_name", "pole_odd", "likely_quali_position_class") |>
+    dplyr::bind_cols(probs) |>
     dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
 
   # Create the gt table
-  prob_table <- prob_data %>%
-    dplyr::select(-"likely_quali_position_class") %>%
-    gt::gt() %>%
+  prob_table <- prob_data |>
+    dplyr::select(-"likely_quali_position_class") |>
+    gt::gt() |>
     gt::tab_header(
       title = gt::md("**Qualifying Position Probabilities**"),
       subtitle = race_name
-    ) %>%
+    ) |>
     gt::tab_spanner(
       label = "Odds of Qualifying at Each Position",
       columns = -c("driver_name", "pole_odd")
-    ) %>%
-    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
-    gt::cols_label(driver_name = "Driver", pole_odd = "Pole Odds") %>%
+    ) |>
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
+    gt::cols_label(driver_name = "Driver", pole_odd = "Pole Odds") |>
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
-    ) %>%
+    ) |>
     gt::tab_source_note(
       source_note = paste0(
         "Results from two separate models: odds of pole and likely finishing position.\n",
@@ -759,12 +761,12 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
         Sys.Date(),
         " | @bot.bulsink.ca"
       )
-    ) %>%
+    ) |>
     gt::data_color(
       'pole_odd', # Check this works instead of columns = -driver_name
       direction = 'column',
       palette = "viridis"
-    ) %>%
+    ) |>
     gt::tab_style(
       style = gt::cell_borders(
         sides = c("right"),
@@ -837,49 +839,49 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
   current_round <- predictions$round[1]
 
   # Get driver names
-  predictions_formatted <- predictions %>%
+  predictions_formatted <- predictions |>
     dplyr::mutate(
       driver_name = get_driver_name(current_season, .data$driver_id)
     )
 
   race_name <- get_race_name(current_season, current_round)
 
-  prob_data <- predictions_formatted %>%
-    dplyr::select("driver_name", "win_odd", "podium_odd", "t10_odd") %>%
+  prob_data <- predictions_formatted |>
+    dplyr::select("driver_name", "win_odd", "podium_odd", "t10_odd") |>
     dplyr::arrange(-.data$win_odd)
 
   # Create the gt table
-  prob_table <- prob_data %>%
-    gt::gt() %>%
+  prob_table <- prob_data |>
+    gt::gt() |>
     gt::tab_header(
       title = gt::md("**Race Results Odds**"),
       subtitle = race_name
-    ) %>%
-    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) %>%
+    ) |>
+    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
     gt::cols_label(
       driver_name = "Driver",
       win_odd = "Win Odds",
       podium_odd = "Podium Odds",
       t10_odd = "Top 10 Odds"
-    ) %>%
+    ) |>
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
       data_row.padding = gt::px(3)
-    ) %>%
+    ) |>
     gt::tab_source_note(
       source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
-    ) %>%
+    ) |>
     gt::data_color(
       columns = "win_odd",
       direction = 'column',
       palette = "viridis"
-    ) %>%
+    ) |>
     gt::data_color(
       columns = "podium_odd",
       direction = 'column',
       palette = "viridis"
-    ) %>%
+    ) |>
     gt::data_color(
       columns = "t10_odd",
       direction = 'column',

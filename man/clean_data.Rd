@@ -28,7 +28,10 @@ Set to `FALSE` (default) to always reprocess. Existing
 compatibility.}
 }
 \value{
-A single, cleaned data frame.
+A single, cleaned data frame with one row per driver-event. Sprint
+  events are included with `is_sprint = TRUE` and use
+  `round_id = "{season}_{round}_sprint"`; race events use
+  `is_sprint = FALSE` and `round_id = "{season}_{round}"`.
 }
 \description{
 This function serves as a wrapper to load all raw data and process it through

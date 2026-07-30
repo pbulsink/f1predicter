@@ -55,203 +55,289 @@ get_processing_params <- function() {
 #' @return A processed data frame of race results.
 #' @noRd
 process_results_data <- function(input) {
-  # ---- 1. Process Data for Joining ----
-  # Prepare qualifying results to be joined with race results later.
-  rg2 <- input$rgrid
-  rg2$quali_position <- rg2$position
-  rg2$driver_id <- rg2$quali_results
+  process_single_event <- function(event_results, event_grid, is_sprint) {
+    if (is.null(event_results) || nrow(event_results) == 0) {
+      return(NULL)
+    }
 
-  # ---- 2. Process Race Results ----
-  processed_results <- input$results %>% # Start with the main race results data
-    dplyr::arrange(.data$season, .data$round, .data$position) %>% # Ensure chronological order
-    dplyr::filter(
-      !(.data$status == "Did not qualify" |
-        .data$status == "Did not prequalify")
-    ) %>%
-    # Update Team Names:
-    dplyr::mutate(
-      constructor_id = dplyr::recode_values(
-        .data$constructor_id,
-        c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
-        c("benetton", "renault") ~ "alpine",
-        "lotus_racing" ~ "caterham",
-        "footwork" ~ "arrows",
-        c(
-          "jordan",
-          "midland",
-          "spyker",
-          "spyker_mf1",
-          "force_india",
-          "racing_point"
-        ) ~
-          "aston_martin",
-        c("jaguar", "stewart") ~ "red_bull",
-        c("minardi", "toro_rosso") ~ "alphatauri",
-        c("lotus_f1", "renault") ~ "alpine",
-        "ligier" ~ "prost",
-        c("marussia", "virgin") ~ "manor",
-        "osella" ~ "fondmetal",
-        c("sauber", "kick", "stake", "audi") ~ "alfa",
-        default = .data$constructor_id
+    event_grid_prepped <- NULL
+    if (!is.null(event_grid) && nrow(event_grid) > 0) {
+      event_grid_prepped <- event_grid |>
+        dplyr::mutate(
+          quali_position = .data$position,
+          driver_id = .data$quali_results
+        ) |>
+        dplyr::select("quali_position", "driver_id", "season", "round")
+    }
+
+    event_processed <- event_results |>
+      dplyr::arrange(.data$season, .data$round, .data$position) |>
+      dplyr::filter(
+        !(.data$status == "Did not qualify" |
+          .data$status == "Did not prequalify")
+      ) |>
+      dplyr::mutate(
+        constructor_id = dplyr::recode_values(
+          .data$constructor_id,
+          c("tyrrell", "bar", "honda", "brawn") ~ "mercedes",
+          c("benetton", "renault") ~ "alpine",
+          "lotus_racing" ~ "caterham",
+          "footwork" ~ "arrows",
+          c(
+            "jordan",
+            "midland",
+            "spyker",
+            "spyker_mf1",
+            "force_india",
+            "racing_point"
+          ) ~
+            "aston_martin",
+          c("jaguar", "stewart") ~ "red_bull",
+          c("minardi", "toro_rosso") ~ "alphatauri",
+          c("lotus_f1", "renault") ~ "alpine",
+          "ligier" ~ "prost",
+          c("marussia", "virgin") ~ "manor",
+          "osella" ~ "fondmetal",
+          c("sauber", "kick", "stake", "audi") ~ "alfa",
+          default = .data$constructor_id
+        ),
+        is_sprint = is_sprint
+      ) |>
+      dplyr::mutate(pos_change = .data$grid - .data$position) |>
+      dplyr::group_by(.data$season, .data$round) |>
+      dplyr::mutate(
+        pos_change_perc = dplyr::if_else(
+          .data$pos_change >= 0,
+          .data$pos_change / .data$grid,
+          .data$pos_change / (dplyr::n() - .data$grid)
+        ),
+        weighted_passes = (.data$grid - .data$position) / .data$grid,
+        grid = dplyr::if_else(.data$grid != 0, .data$grid, dplyr::n()),
+        modern_points = expand_val(
+          c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
+          dplyr::n(),
+          0
+        ),
+        grid_points = expand_val(
+          c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
+          dplyr::n(),
+          0
+        )[.data$grid],
+        pos_change_points = .data$modern_points - .data$grid_points
+      ) |>
+      dplyr::ungroup() |>
+      dplyr::mutate(
+        finished = dplyr::if_else(
+          grepl("Finished|\\+(\\d+) Lap|Lapped", .data$status),
+          1,
+          0
+        ),
+        driver_failure = dplyr::if_else(
+          .data$status %in%
+            c(
+              "Damage",
+              "Excluded",
+              "Illness",
+              "Injury",
+              "Collision damage",
+              "Did not qualify",
+              "Disqualified",
+              "Did not start",
+              "Not classified",
+              "Injured",
+              "Spun off",
+              "Accident",
+              "Collision"
+            ),
+          1,
+          0
+        ),
+        constructor_failure = dplyr::if_else(
+          .data$status %in%
+            c(
+              "Gearbox",
+              "Suspension",
+              "Fuel pressure",
+              "Radiator",
+              "Mechanical",
+              "Engine",
+              "Electrical",
+              "Fuel system",
+              "Driveshaft",
+              "Oil line",
+              "Fuel rig",
+              "Withdrew",
+              "Launch control",
+              "Clutch",
+              "Hydraulics",
+              "Brakes",
+              "Electronics",
+              "Fuel",
+              "Out of fuel",
+              "Oil leak",
+              "Tyre",
+              "Transmission",
+              "Pneumatics",
+              "Steering",
+              "Throttle",
+              "Handling",
+              "Puncture",
+              "Rear wing",
+              "Fire",
+              "Wheel",
+              "Overheating",
+              "Wheel rim",
+              "Engine fire",
+              "Retired",
+              "Tyre puncture",
+              "Wheel nut",
+              "Broken wing",
+              "Heat shield fire",
+              "Exhaust",
+              "Technical",
+              "Water leak",
+              "Fuel pump",
+              "Track rod",
+              "Oil pressure",
+              "Front wing",
+              "Water pressure",
+              "Refuelling",
+              "Driver Seat",
+              "Differential",
+              "Engine misfire",
+              "Vibrations",
+              "Alternator",
+              "ERS",
+              "Power Unit",
+              "Turbo",
+              "Drivetrain",
+              "Power loss",
+              "Brake duct",
+              "Battery",
+              "Seat",
+              "Spark plugs",
+              "Debris",
+              "Cooling system",
+              "Water pump",
+              "Fuel leak",
+              "Undertray",
+              "Physical",
+              "Distributor",
+              "Chassis",
+              "Wheel bearing",
+              "Halfshaft",
+              "Ignition",
+              "Injection",
+              "Safety belt",
+              "Oil pump",
+              "Underweight",
+              "Safety concerns",
+              "Not restarted",
+              "Stalled",
+              "Crankshaft",
+              "Safety"
+            ),
+          1,
+          0
+        )
       )
-    ) %>%
-    # Calculate positions gained or lost during the race.
-    dplyr::mutate(pos_change = .data$grid - .data$position) %>%
-    # Calculate cumulative points for a driver within a season.
-    dplyr::group_by(.data$season, .data$driver_id) %>%
+
+    if (!is.null(event_grid_prepped)) {
+      event_processed <- event_processed |>
+        dplyr::left_join(
+          event_grid_prepped,
+          by = c("driver_id", "season", "round")
+        )
+    } else {
+      event_processed <- event_processed |>
+        dplyr::mutate(quali_position = NA_integer_)
+    }
+
+    if (!("fastest_rank" %in% colnames(event_processed))) {
+      event_processed <- event_processed |>
+        dplyr::mutate(
+          # Rank drivers by their fastest lap time
+          fastest_rank = dplyr::min_rank(.data$time_sec)
+        )
+    }
+
+    event_processed |>
+      dplyr::select(
+        "driver_id",
+        "constructor_id",
+        "position",
+        "grid",
+        "quali_position",
+        "pos_change",
+        "pos_change_perc",
+        "weighted_passes",
+        "pos_change_points",
+        "fastest_rank",
+        fastest_time = "time_sec",
+        "points",
+        "status",
+        "season",
+        "round",
+        "driver_failure",
+        "constructor_failure",
+        "finished",
+        "is_sprint"
+      )
+  }
+
+  race_results <- process_single_event(input$results, input$rgrid, FALSE)
+  sprint_results <- process_single_event(
+    input$sprint_results,
+    input$sgrid,
+    TRUE
+  )
+
+  # Sprint rows are ordered before race rows in the same weekend so cumulative
+  # season features (e.g., points_before/points_after) reflect sprint outcomes.
+  processed_results <- dplyr::bind_rows(sprint_results, race_results)
+  if (nrow(processed_results) == 0) {
+    return(tibble::tibble(
+      driver_id = character(),
+      constructor_id = character(),
+      position = numeric(),
+      grid = numeric(),
+      quali_position = integer(),
+      pos_change = numeric(),
+      pos_change_perc = numeric(),
+      weighted_passes = numeric(),
+      pos_change_points = numeric(),
+      fastest_rank = integer(),
+      fastest_time = numeric(),
+      points = numeric(),
+      points_before = numeric(),
+      status = character(),
+      points_after = numeric(),
+      driver_experience = numeric(),
+      season = integer(),
+      round = integer(),
+      driver_failure = numeric(),
+      constructor_failure = numeric(),
+      finished = numeric(),
+      is_sprint = logical()
+    ))
+  }
+
+  processed_results <- processed_results |>
+    dplyr::arrange(
+      .data$season,
+      .data$round,
+      dplyr::desc(.data$is_sprint),
+      .data$position
+    ) |>
+    dplyr::group_by(.data$season, .data$driver_id) |>
     dplyr::mutate(
       points_after = cumsum(.data$points),
       points_before = .data$points_after - .data$points
-    ) %>%
-    dplyr::ungroup() %>%
-    # Calculate a driver's career experience in terms of races competed.
-    dplyr::group_by(.data$driver_id) %>%
-    dplyr::mutate(driver_experience = 0:(dplyr::n() - 1)) %>%
-    dplyr::ungroup() %>% # Calculate race-specific metrics.
-    dplyr::group_by(.data$season, .data$round) %>%
-    dplyr::mutate(
-      pos_change_perc = dplyr::if_else(
-        .data$pos_change >= 0,
-        .data$pos_change / .data$grid,
-        .data$pos_change / (dplyr::n() - .data$grid)
-      ),
-      weighted_passes = (.data$grid - .data$position) / .data$grid,
-      # Handle cases where grid position is 0 (e.g., pit lane start).
-      grid = dplyr::if_else(.data$grid != 0, .data$grid, dplyr::n()),
-      modern_points = expand_val(
-        c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
-        dplyr::n(),
-        0
-      ),
-      grid_points = expand_val(
-        c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1),
-        dplyr::n(),
-        0
-      )[.data$grid],
-      pos_change_points = .data$modern_points - .data$grid_points
-    ) %>%
-    dplyr::ungroup() %>%
-    # Create binary flags based on the 'status' column.
-    dplyr::mutate(
-      finished = dplyr::if_else(
-        grepl("Finished|\\+(\\d+) Lap|Lapped", .data$status),
-        1,
-        0
-      ),
-      driver_failure = dplyr::if_else(
-        .data$status %in%
-          c(
-            "Damage",
-            "Excluded",
-            "Illness",
-            "Injury",
-            "Collision damage",
-            "Did not qualify",
-            "Disqualified",
-            "Did not start",
-            "Not classified",
-            "Injured",
-            "Spun off",
-            "Accident",
-            "Collision"
-          ),
-        1,
-        0
-      ),
-      constructor_failure = dplyr::if_else(
-        .data$status %in%
-          c(
-            "Gearbox",
-            "Suspension",
-            "Fuel pressure",
-            "Radiator",
-            "Mechanical",
-            "Engine",
-            "Electrical",
-            "Fuel system",
-            "Driveshaft",
-            "Oil line",
-            "Fuel rig",
-            "Withdrew",
-            "Launch control",
-            "Clutch",
-            "Hydraulics",
-            "Brakes",
-            "Electronics",
-            "Fuel",
-            "Out of fuel",
-            "Oil leak",
-            "Tyre",
-            "Transmission",
-            "Pneumatics",
-            "Steering",
-            "Throttle",
-            "Handling",
-            "Puncture",
-            "Rear wing",
-            "Fire",
-            "Wheel",
-            "Overheating",
-            "Wheel rim",
-            "Engine fire",
-            "Retired",
-            "Tyre puncture",
-            "Wheel nut",
-            "Broken wing",
-            "Heat shield fire",
-            "Exhaust",
-            "Technical",
-            "Water leak",
-            "Fuel pump",
-            "Track rod",
-            "Oil pressure",
-            "Front wing",
-            "Water pressure",
-            "Refuelling",
-            "Driver Seat",
-            "Differential",
-            "Engine misfire",
-            "Vibrations",
-            "Alternator",
-            "ERS",
-            "Power Unit",
-            "Turbo",
-            "Drivetrain",
-            "Power loss",
-            "Brake duct",
-            "Battery",
-            "Seat",
-            "Spark plugs",
-            "Debris",
-            "Cooling system",
-            "Water pump",
-            "Fuel leak",
-            "Undertray",
-            "Physical",
-            "Distributor",
-            "Chassis",
-            "Wheel bearing",
-            "Halfshaft",
-            "Ignition",
-            "Injection",
-            "Safety belt",
-            "Oil pump",
-            "Underweight",
-            "Safety concerns",
-            "Not restarted",
-            "Stalled",
-            "Crankshaft",
-            "Safety"
-          ),
-        1,
-        0
-      )
-    ) %>% # Join the qualifying position from the prepared `rg2` data.
-    dplyr::left_join(
-      rg2[, c("quali_position", "driver_id", "season", "round")],
-      by = c("driver_id", "season", "round")
-    ) %>%
-    # Select and rename the final columns for this section.
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::group_by(.data$driver_id) |>
+    dplyr::mutate(driver_experience = 0:(dplyr::n() - 1)) |>
+    dplyr::ungroup() |>
     dplyr::select(
       "driver_id",
       "constructor_id",
@@ -263,7 +349,7 @@ process_results_data <- function(input) {
       "weighted_passes",
       "pos_change_points",
       "fastest_rank",
-      fastest_time = "time_sec",
+      "fastest_time",
       "points",
       "points_before",
       "status",
@@ -273,8 +359,9 @@ process_results_data <- function(input) {
       "round",
       "driver_failure",
       "constructor_failure",
-      "finished"
-    ) %>%
+      "finished",
+      "is_sprint"
+    ) |>
     janitor::clean_names()
 
   return(processed_results)
@@ -287,16 +374,16 @@ process_results_data <- function(input) {
 #' @noRd
 process_lap_times <- function(laps) {
   # ---- 3. Process Lap Times ----
-  processed_laps <- laps %>%
-    dplyr::arrange(.data$season, .data$round) %>%
-    dplyr::filter(.data$deleted != TRUE) %>%
+  processed_laps <- laps |>
+    dplyr::arrange(.data$season, .data$round) |>
+    dplyr::filter(.data$deleted != TRUE) |>
     # For each driver in each session, find their best lap time and total laps.
     dplyr::group_by(
       .data$season,
       .data$round,
       .data$session_type,
       .data$driver_id
-    ) %>%
+    ) |>
     dplyr::mutate(
       best_time = dplyr::if_else(
         is.infinite(min(.data$lap_time, na.rm = TRUE)),
@@ -304,15 +391,15 @@ process_lap_times <- function(laps) {
         min(.data$lap_time, na.rm = TRUE)
       ),
       num_laps = dplyr::n()
-    ) %>%
-    dplyr::ungroup() %>%
-    suppressWarnings() %>% # For each session, find the overall best time and most laps.
-    dplyr::group_by(.data$season, .data$round, .data$session_type) %>%
+    ) |>
+    dplyr::ungroup() |>
+    suppressWarnings() |> # For each session, find the overall best time and most laps.
+    dplyr::group_by(.data$season, .data$round, .data$session_type) |>
     dplyr::mutate(
       'session_best' = min(.data$best_time, na.rm = TRUE),
       'session_most_laps' = max(.data$num_laps, na.rm = TRUE)
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Calculate metrics relative to the session bests (e.g., gap, percentage).
     # Also calculate an "optimal time" by summing a driver's best sector times.
     dplyr::group_by(
@@ -320,7 +407,7 @@ process_lap_times <- function(laps) {
       .data$round,
       .data$session_type,
       .data$driver_id
-    ) %>%
+    ) |>
     dplyr::mutate(
       gap_to_best = .data$best_time - .data$session_best,
       perc_to_best = .data$best_time / .data$session_best,
@@ -334,8 +421,8 @@ process_lap_times <- function(laps) {
         NA,
         .data$optimal_time
       )
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Select the relevant columns.
     dplyr::select(
       "driver_id",
@@ -348,9 +435,9 @@ process_lap_times <- function(laps) {
       "perc_to_best",
       "perc_num_laps",
       "optimal_time"
-    ) %>%
-    unique() %>%
-    dplyr::group_by(.data$season, .data$round, .data$session_type) %>% # Rank drivers within each session.
+    ) |>
+    unique() |>
+    dplyr::group_by(.data$season, .data$round, .data$session_type) |> # Rank drivers within each session.
     dplyr::mutate(
       optimal_time = tidyr::replace_na(
         .data$optimal_time,
@@ -362,12 +449,12 @@ process_lap_times <- function(laps) {
       ),
       rank = dplyr::dense_rank(.data$best_time),
       optimal_rank = dplyr::dense_rank(.data$optimal_time)
-    ) %>%
+    ) |>
     dplyr::mutate(
       rank = tidyr::replace_na(.data$rank, dplyr::n()),
       optimal_rank = tidyr::replace_na(.data$optimal_rank, dplyr::n())
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     janitor::clean_names()
   return(processed_laps)
 }
@@ -379,11 +466,11 @@ process_lap_times <- function(laps) {
 #' @noRd
 summarize_practice_laps <- function(processed_laps) {
   # ---- 4. Summarize Practice Session Data ----
-  practices <- processed_laps %>%
-    dplyr::arrange(.data$season, .data$round) %>%
+  practices <- processed_laps |>
+    dplyr::arrange(.data$season, .data$round) |>
     # Filter for practice sessions only.
-    dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3")) %>%
-    dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
+    dplyr::filter(.data$session_type %in% c("FP1", "FP2", "FP3")) |>
+    dplyr::group_by(.data$season, .data$round, .data$driver_id) |>
     # Summarize performance across all practice sessions for a race weekend.
     dplyr::mutate(
       practice_avg_rank = suppressWarnings(mean(.data$rank, na.rm = TRUE)),
@@ -401,7 +488,7 @@ summarize_practice_laps <- function(processed_laps) {
         .data$optimal_rank,
         na.rm = TRUE
       ))
-    ) %>%
+    ) |>
     # Handle infinite values that can result from sessions with no times
     dplyr::mutate(
       practice_avg_rank = dplyr::if_else(
@@ -429,9 +516,9 @@ summarize_practice_laps <- function(processed_laps) {
         NA,
         .data$practice_optimal_rank
       )
-    ) %>% # Impute remaining NA values with reasonable defaults (e.g., last rank).
-    dplyr::ungroup() %>%
-    dplyr::group_by(.data$season, .data$round) %>%
+    ) |> # Impute remaining NA values with reasonable defaults (e.g., last rank).
+    dplyr::ungroup() |>
+    dplyr::group_by(.data$season, .data$round) |>
     dplyr::mutate(
       practice_avg_rank = tidyr::replace_na(
         .data$practice_avg_rank,
@@ -454,8 +541,8 @@ summarize_practice_laps <- function(processed_laps) {
         .data$practice_optimal_rank,
         dplyr::n()
       )
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Select final columns.
     dplyr::select(
       "driver_id",
@@ -467,8 +554,8 @@ summarize_practice_laps <- function(processed_laps) {
       "practice_avg_gap",
       "practice_best_gap",
       "practice_optimal_rank"
-    ) %>%
-    unique() %>%
+    ) |>
+    unique() |>
     janitor::clean_names()
   return(practices)
 }
@@ -481,8 +568,8 @@ summarize_practice_laps <- function(processed_laps) {
 #' @noRd
 process_quali_times <- function(qualis, params = get_processing_params()) {
   # ---- 5. Process Qualifying Session Data ----
-  processed_qualis <- qualis %>%
-    dplyr::arrange(.data$season, .data$round) %>%
+  processed_qualis <- qualis |>
+    dplyr::arrange(.data$season, .data$round) |>
     # Select raw qualifying times.
     dplyr::select(
       "driver_id",
@@ -491,9 +578,9 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
       "q3_sec",
       "season",
       "round"
-    ) %>%
+    ) |>
     # Calculate each driver's time as a percentage of the session's fastest time.
-    dplyr::group_by(.data$season, .data$round) %>%
+    dplyr::group_by(.data$season, .data$round) |>
     dplyr::mutate(
       q1_perc = suppressWarnings(
         .data$q1_sec / min(.data$q1_sec, na.rm = TRUE)
@@ -507,7 +594,7 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
       # Find the best percentage gap (q_min_perc) across Q1, Q2, Q3.
       q1_perc = tidyr::replace_na(.data$q1_perc, 1.07),
       q_min_perc = pmin(.data$q1_perc, .data$q2_perc, .data$q3_perc, na.rm = T)
-    ) %>%
+    ) |>
     # Calculate the time gap to the fastest driver in each session.
     dplyr::mutate(
       q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.07),
@@ -525,12 +612,12 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
         #   max(.data$qgap[.data$qgap < 5], na.rm = TRUE) + 0.1,
         #   .data$qgap
       )
-    ) %>%
+    ) |>
     dplyr::mutate(
       qgap = tidyr::replace_na(.data$qgap, max(.data$qgap, na.rm = TRUE) + 0.1)
     ) |>
     # Calculate the average percentage gap across all quali sessions attended.
-    dplyr::rowwise() %>%
+    dplyr::rowwise() |>
     dplyr::mutate(
       q_avg_perc = mean(
         dplyr::c_across(c("q1_perc", "q2_perc", "q3_perc")),
@@ -540,11 +627,11 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
         .data$q_avg_perc,
         params$quali_avg_perc
       )
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Problem is a driver who didn't do qualifying has no data here.
     # Calculate a driver's rolling average qualifying gap over the last 5 races.
-    dplyr::group_by(.data$driver_id) %>%
+    dplyr::group_by(.data$driver_id) |>
     dplyr::mutate(
       driver_avg_qgap = as.numeric(slider::slide(
         .data$qgap,
@@ -553,10 +640,10 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
         val = params$qgap,
         .before = 5
       ))
-    ) %>%
-    dplyr::ungroup() %>%
-    suppressWarnings() %>%
-    unique() %>%
+    ) |>
+    dplyr::ungroup() |>
+    suppressWarnings() |>
+    unique() |>
     janitor::clean_names()
   return(processed_qualis)
 }
@@ -569,13 +656,13 @@ process_quali_times <- function(qualis, params = get_processing_params()) {
 #' @noRd
 process_pit_stops <- function(pitstops, params = get_processing_params()) {
   # ---- 6. Process Pit Stop Data ----
-  processed_pitstops <- pitstops %>%
-    dplyr::arrange(.data$season, .data$round) %>%
-    dplyr::select("driver_id", "stop", "duration", "season", "round") %>%
+  processed_pitstops <- pitstops |>
+    dplyr::arrange(.data$season, .data$round) |>
+    dplyr::select("driver_id", "stop", "duration", "season", "round") |>
     # For each driver in a race, count their total number of stops.
-    dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
-    dplyr::mutate(stops = dplyr::n()) %>%
-    dplyr::ungroup("driver_id") %>%
+    dplyr::group_by(.data$season, .data$round, .data$driver_id) |>
+    dplyr::mutate(stops = dplyr::n()) |>
+    dplyr::ungroup("driver_id") |>
     # Adjust pit stop durations relative to the fastest stop in the race.
     # TODO: Unless a fastest stop time can be found online
     dplyr::mutate(
@@ -594,44 +681,44 @@ process_pit_stops <- function(pitstops, params = get_processing_params()) {
       "pit_duration_perc",
       "season",
       "round"
-    ) %>%
+    ) |>
     # Calculate average pit duration for drivers with multiple stops.
-    dplyr::ungroup() %>%
-    dplyr::group_by(.data$season, .data$round, .data$driver_id) %>%
-    dplyr::mutate(pit_duration_avg = mean(.data$pit_duration, na.rm = TRUE)) %>%
-    dplyr::ungroup("driver_id") %>%
+    dplyr::ungroup() |>
+    dplyr::group_by(.data$season, .data$round, .data$driver_id) |>
+    dplyr::mutate(pit_duration_avg = mean(.data$pit_duration, na.rm = TRUE)) |>
+    dplyr::ungroup("driver_id") |>
     dplyr::mutate(
       pit_duration_perc = .data$pit_duration_avg /
         min(.data$pit_duration, na.rm = TRUE)
-    ) %>%
+    ) |>
     # Select final columns for this section.
-    dplyr::ungroup() %>%
+    dplyr::ungroup() |>
     dplyr::select(
       "driver_id",
       "season",
       "round",
       "pit_duration_perc",
       "pit_stops"
-    ) %>%
-    unique() %>%
+    ) |>
+    unique() |>
     # Calculate the number of stops as a percentage of the race average.
-    dplyr::group_by(.data$season, .data$round) %>%
+    dplyr::group_by(.data$season, .data$round) |>
     dplyr::mutate(
       pit_num_perc = .data$pit_stops / mean(.data$pit_stops, na.rm = TRUE)
     ) |>
     dplyr::mutate(
       pit_num_perc = tidyr::replace_na(.data$pit_num_perc, 0),
       pit_duration_perc = tidyr::replace_na(.data$pit_duration_perc, 2)
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     dplyr::select(
       "driver_id",
       "season",
       "round",
       "pit_duration_perc",
       "pit_num_perc"
-    ) %>%
-    unique() %>%
+    ) |>
+    unique() |>
     janitor::clean_names()
   return(processed_pitstops)
 }
@@ -649,10 +736,10 @@ create_constructor_features <- function(
   params = get_processing_params()
 ) {
   # ---- 7. Create Constructor-Level Features ----
-  constructor_results <- results %>%
-    dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
+  constructor_results <- results |>
+    dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) |>
     # For each constructor in each race, summarize key performance metrics.
-    dplyr::group_by(.data$season, .data$round, .data$constructor_id) %>% # Summarize by constructor for each race
+    dplyr::group_by(.data$season, .data$round, .data$constructor_id) |> # Summarize by constructor for each race
     dplyr::summarise(
       constructor_best_grid = min(.data$grid, na.rm = TRUE),
       constructor_best_finish = min(.data$position, na.rm = TRUE),
@@ -662,13 +749,13 @@ create_constructor_features <- function(
         na.rm = TRUE
       ),
       constructor_pit_num_perc = mean(.data$pit_num_perc)
-    ) %>%
+    ) |>
     dplyr::mutate(
       constructor_best_grid = tidyr::replace_na(.data$constructor_best_grid, 19)
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Calculate rolling historical averages for constructor performance.
-    dplyr::group_by(.data$constructor_id) %>%
+    dplyr::group_by(.data$constructor_id) |>
     dplyr::mutate(
       constructor_grid_avg = as.numeric(slider::slide(
         .data$constructor_best_grid,
@@ -705,8 +792,8 @@ create_constructor_features <- function(
         val = params$constructor_pit_num_perc,
         .before = 20
       ))
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     # Select final constructor feature columns.
     dplyr::select(
       "constructor_id",
@@ -720,8 +807,8 @@ create_constructor_features <- function(
       "constructor_pit_num_perc",
       "constructor_pit_duration_avg",
       "constructor_pit_num_avg"
-    ) %>%
-    unique() %>%
+    ) |>
+    unique() |>
     janitor::clean_names()
   return(constructor_results)
 }
@@ -734,7 +821,7 @@ create_constructor_features <- function(
 #' @noRd
 create_circuit_features <- function(results, params = get_processing_params()) {
   # This function calculates rolling historical averages for each circuit.
-  circuit_summary <- results %>%
+  circuit_summary <- results |>
     dplyr::select(
       "round",
       "season",
@@ -743,8 +830,8 @@ create_circuit_features <- function(results, params = get_processing_params()) {
       "constructor_failure",
       "grid",
       "position"
-    ) %>%
-    dplyr::group_by(.data$round, .data$season, .data$circuit_id) %>%
+    ) |>
+    dplyr::group_by(.data$round, .data$season, .data$circuit_id) |>
     dplyr::summarise(
       driver_failure_circuit = mean(.data$driver_failure, na.rm = TRUE),
       constructor_failure_circuit = mean(
@@ -755,8 +842,8 @@ create_circuit_features <- function(results, params = get_processing_params()) {
       .groups = "drop"
     )
 
-  circuit_features <- circuit_summary %>%
-    dplyr::group_by(.data$circuit_id) %>%
+  circuit_features <- circuit_summary |>
+    dplyr::group_by(.data$circuit_id) |>
     dplyr::mutate(
       driver_failure_circuit_avg = as.numeric(slider::slide(
         .data$driver_failure_circuit,
@@ -779,7 +866,7 @@ create_circuit_features <- function(results, params = get_processing_params()) {
         val = params$grid_pos_corr_avg,
         .before = 5
       ))
-    ) %>%
+    ) |>
     dplyr::ungroup()
 
   return(circuit_features)
@@ -806,28 +893,50 @@ combine_and_finalize_features <- function(
   params = get_processing_params()
 ) {
   # ---- 9. Combine All Data and Create Final Features ----
-  results <- results %>%
-    dplyr::arrange(.data$season, .data$round, .data$position) %>%
+  if (!"is_sprint" %in% names(results)) {
+    results <- results |>
+      dplyr::mutate(is_sprint = FALSE)
+  }
+
+  results <- results |>
+    dplyr::arrange(
+      .data$season,
+      .data$round,
+      dplyr::desc(.data$is_sprint),
+      .data$position
+    ) |>
     # Join all the previously created data frames.
-    dplyr::left_join(qualis, by = c("round", "season", "driver_id")) %>%
-    dplyr::left_join(practices, by = c("round", "season", "driver_id")) %>%
-    dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) %>%
+    dplyr::left_join(qualis, by = c("round", "season", "driver_id")) |>
+    dplyr::left_join(practices, by = c("round", "season", "driver_id")) |>
+    dplyr::left_join(pitstops, by = c("round", "season", "driver_id")) |>
+    dplyr::mutate(
+      pit_duration_perc = dplyr::if_else(
+        .data$is_sprint,
+        NA_real_,
+        .data$pit_duration_perc
+      ),
+      pit_num_perc = dplyr::if_else(
+        .data$is_sprint,
+        NA_real_,
+        .data$pit_num_perc
+      )
+    ) |>
     dplyr::left_join(
       constructor_results,
       by = c("round", "season", "constructor_id")
     )
 
   # Process and join schedule data
-  schedule_clean <- schedule %>%
-    dplyr::select("circuit_id", "season", "round") %>%
+  schedule_clean <- schedule |>
+    dplyr::select("circuit_id", "season", "round") |>
     dplyr::mutate(
       "season" = as.integer(.data$season),
       "round" = as.integer(.data$round)
     )
-  results <- results %>%
-    dplyr::left_join(schedule_clean, by = c("round", "season")) %>%
+  results <- results |>
+    dplyr::left_join(schedule_clean, by = c("round", "season")) |>
     # Create final driver-specific rolling average features.
-    dplyr::group_by(.data$driver_id) %>%
+    dplyr::group_by(.data$driver_id) |>
     dplyr::mutate(
       driver_pos_change_avg = as.numeric(slider::slide(
         .data$pos_change,
@@ -900,28 +1009,34 @@ combine_and_finalize_features <- function(
         .data$driver_avg_qgap,
         params$qgap
       )
-    ) %>%
-    dplyr::ungroup() %>%
+    ) |>
+    dplyr::ungroup() |>
     dplyr::mutate(
       quali_position = dplyr::if_else(
         is.na(.data$quali_position),
         .data$grid,
         .data$quali_position
       )
-    ) %>%
+    ) |>
     janitor::clean_names()
 
   # ---- 10. Join Circuit Features and Final Imputation ----
   circuit_features <- create_circuit_features(results, params = params)
 
-  final_data <- results %>%
+  final_data <- results |>
     dplyr::left_join(
       circuit_features,
       by = c("round", "season", "circuit_id")
-    ) %>%
-    dplyr::mutate(round_id = paste0(.data$season, "-", .data$round)) %>%
+    ) |>
+    dplyr::mutate(
+      round_id = dplyr::if_else(
+        .data$is_sprint,
+        paste0(.data$season, "_", .data$round, "_sprint"),
+        paste0(.data$season, "_", .data$round)
+      )
+    ) |>
     # Final NA imputation for remaining columns.
-    dplyr::group_by(.data$season, .data$round) %>%
+    dplyr::group_by(.data$season, .data$round, .data$is_sprint) |>
     dplyr::mutate(
       q_min_perc = tidyr::replace_na(
         .data$q_min_perc,
@@ -976,12 +1091,28 @@ combine_and_finalize_features <- function(
     ) |>
     dplyr::ungroup() |>
     dplyr::mutate(
+      dplyr::across(
+        c(
+          "q_min_perc",
+          "q_avg_perc",
+          "practice_avg_gap",
+          "practice_best_gap",
+          "pit_duration_perc"
+        ),
+        ~ dplyr::if_else(is.nan(.x), NA_real_, .x)
+      )
+    ) |>
+    dplyr::mutate(
       q_min_perc = tidyr::replace_na(.data$q_min_perc, 1.012),
       q_avg_perc = tidyr::replace_na(.data$q_avg_perc, 1.015),
       practice_avg_gap = tidyr::replace_na(.data$practice_avg_gap, 1.6),
       practice_best_gap = tidyr::replace_na(.data$practice_best_gap, 1.0),
-    ) %>%
-    dplyr::arrange(.data$season, .data$round) %>%
+      pit_duration_perc = tidyr::replace_na(
+        .data$pit_duration_perc,
+        params$constructor_pit_duration_perc
+      )
+    ) |>
+    dplyr::arrange(.data$season, .data$round, dplyr::desc(.data$is_sprint)) |>
     janitor::clean_names()
 
   return(final_data)
@@ -1005,7 +1136,10 @@ combine_and_finalize_features <- function(
 #'   Set to `FALSE` (default) to always reprocess. Existing
 #'   `"processed_data.rds"` files are still read as a fallback for backward
 #'   compatibility.
-#' @return A single, cleaned data frame.
+#' @return A single, cleaned data frame with one row per driver-event. Sprint
+#'   events are included with `is_sprint = TRUE` and use
+#'   `round_id = "{season}_{round}_sprint"`; race events use
+#'   `is_sprint = FALSE` and `round_id = "{season}_{round}"`.
 #' @importFrom rlang .data
 #' @export
 clean_data <- function(
@@ -1039,7 +1173,7 @@ clean_data <- function(
 
   nseasons <- length(unique(input$results$season))
   cli::cli_inform(
-    "Loaded {nseasons} seasons of data, now processing"
+    "Loaded {nseasons} seasons of data, now processing..."
   )
   # 1. Process individual data sources
   results_processed <- process_results_data(input)

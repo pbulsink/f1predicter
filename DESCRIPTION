@@ -19,7 +19,6 @@ Imports:
     f1dataR,
     glue,
     janitor,
-    magrittr,
     ordered,
     parsnip (>= 1.5.0),
     purrr,
@@ -52,6 +51,7 @@ Suggests:
     ragg,
     ranger,
     rmarkdown,
+    piggyback,
     stacks,
     withr,
     usethis,
@@ -62,4 +62,4 @@ VignetteBuilder:
 Encoding: UTF-8
 LazyData: true
 Config/testthat/edition: 3
-Config/roxygen2/version: 8.0.0
+RoxygenNote: 8.0.0
