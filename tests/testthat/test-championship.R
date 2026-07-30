@@ -935,6 +935,30 @@ test_that(".build_championship_points_history() adds constructor labels and colo
   expect_equal(result$color[result$constructor_id == "team_b"][1], "#00aa00")
 })
 
+test_that(".build_championship_history_plot() returns a ggplot with latest labels (#23)", {
+  chart_data <- tibble::tribble(
+    ~driver_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
+    "driver_a", 25, 1, 1, "Round 1", 2025, "AAA", "#111111",
+    "driver_b", 18, 2, 1, "Round 1", 2025, "BBB", "#222222",
+    "driver_a", 43, 1, 2, "Round 2", 2025, "AAA", "#111111",
+    "driver_b", 33, 2, 2, "Round 2", 2025, "BBB", "#222222"
+  )
+
+  plot <- .build_championship_history_plot(
+    history = chart_data,
+    id_col = "driver_id",
+    value_col = "points",
+    title = "F1 Drivers Championship 2025",
+    ylab = "Points"
+  )
+
+  expect_s3_class(plot, "ggplot")
+  expect_length(plot$layers, 3L)
+
+  built <- ggplot2::ggplot_build(plot)
+  expect_setequal(built$data[[3]]$label, c("AAA 43", "BBB 33"))
+})
+
 test_that("chart_driver_championship_points() plots and returns history invisibly (#23)", {
   chart_data <- tibble::tribble(
     ~driver_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,

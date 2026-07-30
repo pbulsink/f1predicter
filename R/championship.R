@@ -444,6 +444,27 @@ get_current_standings <- function(
   ylab,
   percent = FALSE
 ) {
+  plot <- .build_championship_history_plot(
+    history = history,
+    id_col = id_col,
+    value_col = value_col,
+    title = title,
+    ylab = ylab,
+    percent = percent
+  )
+
+  print(plot)
+  invisible(history)
+}
+
+.build_championship_history_plot <- function(
+  history,
+  id_col,
+  value_col,
+  title,
+  ylab,
+  percent = FALSE
+) {
   final_points <- history |>
     dplyr::group_by(.data[[id_col]]) |>
     dplyr::filter(.data$round == max(.data$round)) |>
@@ -458,75 +479,85 @@ get_current_standings <- function(
   if (percent) {
     y_limit[2] <- max(y_limit[2], .championship_chart_min_percent_limit)
   }
+  if (!is.finite(y_limit[2]) || y_limit[2] <= 0) {
+    y_limit[2] <- if (percent) .championship_chart_min_percent_limit else 1
+  }
 
-  graphics::plot(
-    NA,
-    xlim = c(min(x_values), max(x_values) + 0.8),
-    ylim = y_limit,
-    xlab = "Round",
-    ylab = ylab,
-    xaxt = "n",
-    yaxt = "n",
-    xaxs = "i",
-    yaxs = "i",
-    main = title
-  )
-  x_ticks <- x_values
-  y_ticks <- pretty(y_limit)
-  graphics::abline(v = x_ticks, col = "grey85", lwd = 1)
-  graphics::abline(h = y_ticks, col = "grey85", lwd = 1)
-  graphics::axis(1, at = x_ticks, labels = x_ticks)
+  final_points <- final_points |>
+    dplyr::mutate(
+      plot_x = .data$round + .championship_chart_label_x_offset,
+      label_text = if (percent) {
+        sprintf("%s %d%%", .data$label, round(.data[[value_col]] * 100))
+      } else {
+        sprintf("%s %s", .data$label, round(.data[[value_col]]))
+      }
+    )
+
+  plot <- ggplot2::ggplot(
+    history,
+    ggplot2::aes(
+      x = .data$round,
+      y = .data[[value_col]],
+      group = .data[[id_col]],
+      colour = .data$color
+    )
+  ) +
+    ggplot2::geom_line(linewidth = 1, show.legend = FALSE) +
+    ggplot2::geom_point(
+      data = final_points,
+      mapping = ggplot2::aes(
+        x = .data$round,
+        y = .data[[value_col]],
+        colour = .data$color
+      ),
+      inherit.aes = FALSE,
+      size = 2.5,
+      show.legend = FALSE
+    ) +
+    ggplot2::geom_text(
+      data = final_points,
+      mapping = ggplot2::aes(
+        x = .data$plot_x,
+        y = .data[[value_col]],
+        label = .data$label_text,
+        colour = .data$color
+      ),
+      inherit.aes = FALSE,
+      hjust = 0,
+      show.legend = FALSE
+    ) +
+    ggplot2::scale_colour_identity() +
+    ggplot2::scale_x_continuous(
+      breaks = x_values,
+      expand = ggplot2::expansion(mult = c(0, 0))
+    ) +
+    ggplot2::coord_cartesian(
+      xlim = c(min(x_values), max(x_values) + 0.8),
+      ylim = y_limit,
+      clip = "off"
+    ) +
+    ggplot2::labs(title = title, x = "Round", y = ylab) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major = ggplot2::element_line(colour = "grey85"),
+      plot.margin = ggplot2::margin(5.5, 72, 5.5, 5.5)
+    )
+
   if (percent) {
-    graphics::axis(
-      2,
-      at = y_ticks,
-      labels = sprintf("%d%%", round(y_ticks * 100))
-    )
+    plot <- plot +
+      ggplot2::scale_y_continuous(
+        labels = \(x) sprintf("%d%%", round(x * 100)),
+        expand = ggplot2::expansion(mult = c(0, 0))
+      )
   } else {
-    graphics::axis(2, at = y_ticks, labels = y_ticks)
+    plot <- plot +
+      ggplot2::scale_y_continuous(
+        expand = ggplot2::expansion(mult = c(0, 0))
+      )
   }
 
-  old_xpd <- graphics::par("xpd")
-  on.exit(graphics::par(xpd = old_xpd), add = TRUE)
-  graphics::par(xpd = NA)
-
-  for (id in final_points[[id_col]]) {
-    entity_history <- history |>
-      dplyr::filter(.data[[id_col]] == !!id) |>
-      dplyr::arrange(.data$round)
-
-    graphics::lines(
-      entity_history$round,
-      entity_history[[value_col]],
-      col = entity_history$color[1],
-      lwd = 2
-    )
-  }
-
-  label_prefix <- final_points$label
-  label_suffix <- if (percent) {
-    sprintf("%d%%", round(final_points[[value_col]] * 100))
-  } else {
-    round(final_points[[value_col]])
-  }
-  labels <- paste(label_prefix, label_suffix)
-
-  graphics::points(
-    final_points$round,
-    final_points[[value_col]],
-    col = final_points$color,
-    pch = 16,
-    cex = 1.4
-  )
-  graphics::text(
-    x = final_points$round + .championship_chart_label_x_offset,
-    y = final_points[[value_col]],
-    labels = labels,
-    col = final_points$color,
-    pos = 4
-  )
-
-  invisible(history)
+  plot
 }
 
 
