@@ -1,6 +1,15 @@
 # Championship odds simulation using Monte Carlo methods.
 # Inspired by https://github.com/jeppeolesen/f1-championship-odds
 
+# Conservative buffer so only race weekends fully completed before today are
+# included in round-history charts.
+.championship_round_history_buffer_days <- 1L
+
+# Plot layout defaults for championship history charts.
+.championship_chart_top_padding_factor <- 1.05
+.championship_chart_min_percent_limit <- 0.05
+.championship_chart_label_x_offset <- 0.12
+
 # --- Points Systems ---
 
 #' F1 GP Points System
@@ -93,6 +102,462 @@ get_current_standings <- function(
       position = as.numeric(.data$position)
     ) |>
     dplyr::arrange(.data$position)
+}
+
+
+.validate_chart_season <- function(season, call = rlang::caller_env()) {
+  if (!is.numeric(season) || length(season) != 1 || is.na(season)) {
+    cli::cli_abort(
+      "{.arg season} must be a single numeric value.",
+      call = call
+    )
+  }
+}
+
+.fallback_chart_label <- function(ids) {
+  labels <- stringr::str_replace_all(ids, "_", " ")
+  labels <- stringr::str_to_title(labels)
+  fallback_codes <- toupper(stringr::str_sub(gsub("[^A-Za-z]", "", labels), 1, 3))
+  ifelse(nchar(fallback_codes) < 3, labels, fallback_codes)
+}
+
+.completed_rounds <- function(season) {
+  season_schedule <- f1predicter::schedule |>
+    dplyr::filter(.data$season == !!season) |>
+    dplyr::mutate(date = as.Date(.data$date)) |>
+    dplyr::arrange(.data$round)
+
+  # Use the local calendar day as a conservative cutoff so only weekends that
+  # fully ended before today are included in the history.
+  cutoff_date <- Sys.Date() - .championship_round_history_buffer_days
+  completed <- season_schedule |>
+    dplyr::filter(.data$date <= cutoff_date) |>
+    dplyr::pull(.data$round)
+
+  unique(completed)
+}
+
+.load_round_standings_history <- function(
+  season,
+  type = c("driver", "constructor")
+) {
+  .validate_chart_season(season)
+  type <- rlang::arg_match(type)
+
+  rounds <- .completed_rounds(season)
+  if (length(rounds) == 0) {
+    cli::cli_abort(
+      "No completed rounds found for season {season}."
+    )
+  }
+
+  standings_history <- purrr::map_dfr(rounds, function(round) {
+    standings <- tryCatch(
+      f1dataR::load_standings(season = season, round = round, type = type),
+      error = function(e) {
+        cli::cli_abort(
+          "Could not load {type} standings for season {season}, round {round}: {e$message}"
+        )
+      }
+    )
+
+    if (type == "driver") {
+      standings |>
+        dplyr::transmute(
+          driver_id = .data$driver_id,
+          constructor_id = .data$constructor_id,
+          points = as.numeric(.data$points),
+          position = as.numeric(.data$position),
+          round = round,
+          season = season
+        )
+    } else {
+      standings |>
+        dplyr::transmute(
+          constructor_id = .data$constructor_id,
+          points = as.numeric(.data$points),
+          position = as.numeric(.data$position),
+          round = round,
+          season = season
+        )
+    }
+  })
+
+  race_lookup <- f1predicter::schedule |>
+    dplyr::filter(.data$season == !!season) |>
+    dplyr::transmute(
+      season = as.numeric(.data$season),
+      round = as.integer(.data$round),
+      race_name = .data$race_name
+    ) |>
+    dplyr::distinct(.data$season, .data$round, .data$race_name)
+
+  standings_history |>
+    dplyr::left_join(race_lookup, by = c("season", "round")) |>
+    dplyr::relocate(.data$race_name, .after = .data$round)
+}
+
+.safe_driver_colour <- function(driver_id, season, round) {
+  tryCatch(
+    f1dataR::get_driver_colour(
+      driver = driver_id,
+      season = season,
+      round = round
+    ),
+    error = function(e) {
+      NA_character_
+    }
+  )
+}
+
+.safe_constructor_colour <- function(constructor_id, season, round) {
+  tryCatch(
+    f1dataR::get_team_colour(
+      team = constructor_id,
+      season = season,
+      round = round
+    ),
+    error = function(e) {
+      NA_character_
+    }
+  )
+}
+
+.complete_chart_colors <- function(data, id_col) {
+  missing <- is.na(data$color) | data$color == ""
+  if (!any(missing)) {
+    return(data)
+  }
+
+  missing_ids <- unique(data[[id_col]][missing])
+  fallback <- grDevices::hcl.colors(length(missing_ids), palette = "Dark 3")
+  names(fallback) <- missing_ids
+  missing_index <- match(data[[id_col]][missing], names(fallback))
+  data$color[missing] <- fallback[missing_index]
+  data
+}
+
+.get_driver_chart_metadata <- function(season, round) {
+  drivers <- tryCatch(
+    f1dataR::load_drivers(season = season),
+    error = function(e) {
+      NULL
+    }
+  )
+
+  if (is.null(drivers)) {
+    return(tibble::tibble(
+      driver_id = character(0),
+      label = character(0),
+      color = character(0)
+    ))
+  }
+
+  drivers |>
+    dplyr::transmute(
+      driver_id = .data$driver_id,
+      label = dplyr::if_else(
+        is.na(.data$code) | .data$code == "",
+        .fallback_chart_label(.data$driver_id),
+        .data$code
+      ),
+      color = vapply(
+        .data$driver_id,
+        .safe_driver_colour,
+        FUN.VALUE = character(1),
+        season = season,
+        round = round
+      )
+    ) |>
+    .complete_chart_colors(id_col = "driver_id")
+}
+
+.get_constructor_chart_metadata <- function(season, round) {
+  constructors <- tryCatch(
+    f1dataR::load_constructors(),
+    error = function(e) {
+      NULL
+    }
+  )
+
+  if (is.null(constructors)) {
+    return(tibble::tibble(
+      constructor_id = character(0),
+      label = character(0),
+      color = character(0)
+    ))
+  }
+
+  constructors |>
+    dplyr::transmute(
+      constructor_id = .data$constructor_id,
+      label = .data$name,
+      color = vapply(
+        .data$constructor_id,
+        .safe_constructor_colour,
+        FUN.VALUE = character(1),
+        season = season,
+        round = round
+      )
+    ) |>
+    .complete_chart_colors(id_col = "constructor_id")
+}
+
+.build_championship_points_history <- function(
+  season,
+  type = c("driver", "constructor")
+) {
+  type <- rlang::arg_match(type)
+  history <- .load_round_standings_history(season = season, type = type)
+  round <- max(history$round, na.rm = TRUE)
+
+  if (type == "driver") {
+    metadata <- .get_driver_chart_metadata(season = season, round = round)
+    history |>
+      dplyr::left_join(metadata, by = "driver_id") |>
+      dplyr::arrange(.data$round, .data$position)
+  } else {
+    metadata <- .get_constructor_chart_metadata(season = season, round = round)
+    history |>
+      dplyr::left_join(metadata, by = "constructor_id") |>
+      dplyr::arrange(.data$round, .data$position)
+  }
+}
+
+.format_historical_results <- function(results, season, round) {
+  if (is.null(results) || nrow(results) == 0) {
+    return(tibble::tibble(
+      driver_id = character(0),
+      round = integer(0),
+      position = numeric(0),
+      finished = logical(0),
+      driver_failure = numeric(0),
+      constructor_failure = numeric(0),
+      constructor_failure_race = numeric(0),
+      season = numeric(0)
+    ))
+  }
+
+  results |>
+    dplyr::transmute(
+      driver_id = .data$driver_id,
+      round = as.integer(round),
+      position = as.numeric(.data$position),
+      finished = tolower(.data$status) == "finished",
+      driver_failure = as.numeric(tolower(.data$status) != "finished"),
+      constructor_failure = 0,
+      constructor_failure_race = 0,
+      season = as.numeric(season)
+    )
+}
+
+.load_championship_historical_data <- function(season) {
+  purrr::map_dfr(c(season - 1, season), function(history_season) {
+    rounds <- .completed_rounds(history_season)
+    purrr::map_dfr(rounds, function(round) {
+      race_results <- tryCatch(
+        f1dataR::load_results(season = history_season, round = round),
+        error = function(e) NULL
+      )
+      sprint_results <- tryCatch(
+        suppressMessages(f1dataR::load_sprint(
+          season = history_season,
+          round = round
+        )),
+        error = function(e) NULL
+      )
+
+      dplyr::bind_rows(
+        .format_historical_results(race_results, history_season, round),
+        .format_historical_results(sprint_results, history_season, round)
+      )
+    })
+  })
+}
+
+.build_driver_championship_odds_history <- function(
+  season,
+  n_simulations = 10000L,
+  historical_data = NULL,
+  ...
+) {
+  .validate_chart_season(season)
+
+  if (is.null(historical_data)) {
+    historical_data <- tryCatch(
+      clean_data(cache_processed = TRUE),
+      error = function(e) {
+        .load_championship_historical_data(season)
+      }
+    )
+  }
+
+  standings_history <- .load_round_standings_history(
+    season = season,
+    type = "driver"
+  )
+  completed_rounds <- sort(unique(standings_history$round))
+  metadata <- .get_driver_chart_metadata(
+    season = season,
+    round = max(completed_rounds)
+  )
+
+  purrr::map_dfr(completed_rounds, function(round) {
+    round_standings <- standings_history |>
+      dplyr::filter(.data$round == !!round)
+
+    round_history <- historical_data |>
+      dplyr::filter(.data$season < !!season | .data$round <= !!round)
+
+    simulate_championship_odds(
+      season = season,
+      standings = round_standings |>
+        dplyr::select("driver_id", "points", "position"),
+      remaining = get_remaining_schedule(season = season, after_round = round),
+      n_simulations = n_simulations,
+      historical_data = round_history,
+      ...
+    ) |>
+      dplyr::select(
+        "driver_id",
+        "current_points",
+        "win_probability",
+        "avg_final_points",
+        "avg_final_position",
+        "in_contention",
+        "season"
+      ) |>
+      dplyr::mutate(
+        round = round,
+        race_name = round_standings$race_name[1]
+      )
+  }) |>
+    dplyr::left_join(metadata, by = "driver_id") |>
+    dplyr::arrange(.data$round, dplyr::desc(.data$win_probability))
+}
+
+.plot_championship_history <- function(
+  history,
+  id_col,
+  value_col,
+  title,
+  ylab,
+  percent = FALSE
+) {
+  plot <- .build_championship_history_plot(
+    history = history,
+    id_col = id_col,
+    value_col = value_col,
+    title = title,
+    ylab = ylab,
+    percent = percent
+  )
+
+  print(plot)
+  invisible(history)
+}
+
+.build_championship_history_plot <- function(
+  history,
+  id_col,
+  value_col,
+  title,
+  ylab,
+  percent = FALSE
+) {
+  final_points <- history |>
+    dplyr::group_by(.data[[id_col]]) |>
+    dplyr::filter(.data$round == max(.data$round)) |>
+    dplyr::slice_head(n = 1) |>
+    dplyr::ungroup() |>
+    dplyr::arrange(.data[[value_col]])
+
+  x_values <- sort(unique(history$round))
+  y_values <- history[[value_col]]
+  y_max <- max(y_values, na.rm = TRUE)
+  y_limit <- c(0, y_max * .championship_chart_top_padding_factor)
+  if (percent) {
+    y_limit[2] <- max(y_limit[2], .championship_chart_min_percent_limit)
+  }
+  if (!is.finite(y_limit[2]) || y_limit[2] <= 0) {
+    y_limit[2] <- if (percent) .championship_chart_min_percent_limit else 1
+  }
+
+  final_points <- final_points |>
+    dplyr::mutate(
+      plot_x = .data$round + .championship_chart_label_x_offset,
+      label_text = if (percent) {
+        sprintf("%s %d%%", .data$label, round(.data[[value_col]] * 100))
+      } else {
+        sprintf("%s %s", .data$label, round(.data[[value_col]]))
+      }
+    )
+
+  plot <- ggplot2::ggplot(
+    history,
+    ggplot2::aes(
+      x = .data$round,
+      y = .data[[value_col]],
+      group = .data[[id_col]],
+      colour = .data$color
+    )
+  ) +
+    ggplot2::geom_line(linewidth = 1, show.legend = FALSE) +
+    ggplot2::geom_point(
+      data = final_points,
+      mapping = ggplot2::aes(
+        x = .data$round,
+        y = .data[[value_col]],
+        colour = .data$color
+      ),
+      inherit.aes = FALSE,
+      size = 2.5,
+      show.legend = FALSE
+    ) +
+    ggplot2::geom_text(
+      data = final_points,
+      mapping = ggplot2::aes(
+        x = .data$plot_x,
+        y = .data[[value_col]],
+        label = .data$label_text,
+        colour = .data$color
+      ),
+      inherit.aes = FALSE,
+      hjust = 0,
+      show.legend = FALSE
+    ) +
+    ggplot2::scale_colour_identity() +
+    ggplot2::scale_x_continuous(
+      breaks = x_values,
+      expand = ggplot2::expansion(mult = c(0, 0))
+    ) +
+    ggplot2::coord_cartesian(
+      xlim = c(min(x_values), max(x_values) + 0.8),
+      ylim = y_limit,
+      clip = "off"
+    ) +
+    ggplot2::labs(title = title, x = "Round", y = ylab) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major = ggplot2::element_line(colour = "grey85"),
+      plot.margin = ggplot2::margin(5.5, 72, 5.5, 5.5)
+    )
+
+  if (percent) {
+    plot <- plot +
+      ggplot2::scale_y_continuous(
+        labels = \(x) sprintf("%d%%", round(x * 100)),
+        expand = ggplot2::expansion(mult = c(0, 0))
+      )
+  } else {
+    plot <- plot +
+      ggplot2::scale_y_continuous(
+        expand = ggplot2::expansion(mult = c(0, 0))
+      )
+  }
+
+  plot
 }
 
 
@@ -427,7 +892,8 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         grid_size - .data$avg_position
       ),
       position_sd = pmax(
-        .data$position_sd * (1 + 0.65 * exp(-pmax(dist_to_tail, 0) / 3)),
+        .data$position_sd *
+          (1 + 0.65 * exp(-pmax(.data$dist_to_tail, 0) / 3)),
         1.5
       )
     ) |>
@@ -724,6 +1190,113 @@ simulate_race_positions <- function(
   }
 
   positions
+}
+
+
+# --- Championship Charts ---
+
+#' Chart Driver Championship Odds by Round
+#'
+#' @description
+#' Plots simulated driver championship win probabilities after each completed
+#' race weekend in the selected season.
+#'
+#' @param season Numeric season year. Defaults to `f1dataR::get_current_season()`.
+#' @param n_simulations Integer number of Monte Carlo simulations to run for
+#'   each completed round. Defaults to 10000.
+#' @param historical_data Historical race data from `clean_data()`. If `NULL`,
+#'   uses `clean_data()`.
+#' @param ... Additional parameters passed to `simulate_championship_odds()`.
+#'
+#' @return Invisibly returns the plotted odds history tibble.
+#' @export
+#' @examples
+#' \dontrun{
+#' chart_driver_championship_odds(2025, n_simulations = 1000)
+#' }
+chart_driver_championship_odds <- function(
+  season = as.numeric(f1dataR::get_current_season()),
+  n_simulations = 10000L,
+  historical_data = NULL,
+  ...
+) {
+  history <- .build_driver_championship_odds_history(
+    season = season,
+    n_simulations = n_simulations,
+    historical_data = historical_data,
+    ...
+  )
+
+  .plot_championship_history(
+    history = history,
+    id_col = "driver_id",
+    value_col = "win_probability",
+    title = glue::glue("F1 Drivers Championship Odds {season}"),
+    ylab = "Win probability",
+    percent = TRUE
+  )
+}
+
+#' Chart Driver Championship Points by Round
+#'
+#' @description
+#' Plots driver championship points after each completed race weekend in the
+#' selected season.
+#'
+#' @param season Numeric season year. Defaults to `f1dataR::get_current_season()`.
+#'
+#' @return Invisibly returns the plotted points history tibble.
+#' @export
+#' @examples
+#' \dontrun{
+#' chart_driver_championship_points(2025)
+#' }
+chart_driver_championship_points <- function(
+  season = as.numeric(f1dataR::get_current_season())
+) {
+  history <- .build_championship_points_history(
+    season = season,
+    type = "driver"
+  )
+
+  .plot_championship_history(
+    history = history,
+    id_col = "driver_id",
+    value_col = "points",
+    title = glue::glue("F1 Drivers Championship {season}"),
+    ylab = "Points"
+  )
+}
+
+#' Chart Constructor Championship Points by Round
+#'
+#' @description
+#' Plots constructor championship points after each completed race weekend in
+#' the selected season.
+#'
+#' @param season Numeric season year. Defaults to `f1dataR::get_current_season()`.
+#'
+#' @return Invisibly returns the plotted points history tibble.
+#' @export
+#' @examples
+#' \dontrun{
+#' chart_constructor_championship_points(2025)
+#' }
+chart_constructor_championship_points <- function(
+  season = as.numeric(f1dataR::get_current_season())
+) {
+  history <- .build_championship_points_history(
+    season = season,
+    type = "constructor"
+  )
+
+  .plot_championship_history(
+    history = history,
+    id_col = "constructor_id",
+    value_col = "points",
+    title = glue::glue("F1 Constructors Championship {season}"),
+    ylab = "Points"
+  )
 }
 
 

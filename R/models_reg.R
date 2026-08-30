@@ -26,6 +26,8 @@ prepare_and_split_data <- function(
   prop = 4 / 5,
   group = "round_id"
 ) {
+  group_var <- rlang::sym(group)
+
   if (!is.null(columns)) {
     processed_data <- dplyr::select(data, dplyr::all_of(c(columns, group)))
   } else {
@@ -34,10 +36,12 @@ prepare_and_split_data <- function(
   processed_data <- processed_data |>
     dplyr::mutate_if(is.character, as.factor)
 
-  data_split <- rsample::group_initial_split(
-    processed_data,
-    prop = prop,
-    group = group
+  data_split <- rlang::inject(
+    rsample::group_initial_split(
+      processed_data,
+      prop = prop,
+      group = !!group_var
+    )
   )
   train_data <- rsample::training(data_split)
 
@@ -45,7 +49,9 @@ prepare_and_split_data <- function(
     data_split = data_split,
     train_data = train_data,
     test_data = rsample::testing(data_split),
-    data_folds = rsample::group_vfold_cv(data = train_data, group = group)
+    data_folds = rlang::inject(
+      rsample::group_vfold_cv(data = train_data, group = !!group_var)
+    )
   )
 }
 
