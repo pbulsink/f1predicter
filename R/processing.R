@@ -1137,9 +1137,9 @@ combine_and_finalize_features <- function(
 #'   `"processed_data.rds"` files are still read as a fallback for backward
 #'   compatibility.
 #' @return A single, cleaned data frame with one row per driver-event. Sprint
-#'   events are included with `is_sprint = TRUE` and use
-#'   `round_id = "{season}_{round}_sprint"`; race events use
-#'   `is_sprint = FALSE` and `round_id = "{season}_{round}"`.
+#'   events are included with \code{is_sprint = TRUE} and use
+#'   \code{round_id = "<season>_<round>_sprint"}; race events use
+#'   \code{is_sprint = FALSE} and \code{round_id = "<season>_<round>"}.
 #' @importFrom rlang .data
 #' @export
 clean_data <- function(

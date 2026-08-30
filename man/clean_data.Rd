@@ -29,9 +29,9 @@ compatibility.}
 }
 \value{
 A single, cleaned data frame with one row per driver-event. Sprint
-events are included with \code{is_sprint = TRUE} and use
-\code{round_id = "{season}_{round}_sprint"}; race events use
-\code{is_sprint = FALSE} and \code{round_id = "{season}_{round}"}.
+  events are included with \code{is_sprint = TRUE} and use
+  \code{round_id = "<season>_<round>_sprint"}; race events use
+  \code{is_sprint = FALSE} and \code{round_id = "<season>_<round>"}.
 }
 \description{
 This function serves as a wrapper to load all raw data and process it through

@@ -892,7 +892,8 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         grid_size - .data$avg_position
       ),
       position_sd = pmax(
-        .data$position_sd * (1 + 0.65 * exp(-pmax(dist_to_tail, 0) / 3)),
+        .data$position_sd *
+          (1 + 0.65 * exp(-pmax(.data$dist_to_tail, 0) / 3)),
         1.5
       )
     ) |>

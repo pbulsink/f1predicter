@@ -31,8 +31,8 @@ Invisibly returns the local SQLite cache path.
 }
 \description{
 Downloads a prebuilt SQLite cache snapshot from a GitHub release asset using
-`{piggyback}`, validates it, and stores it as `f1predicter.sqlite` in the
-configured cache directory.
+\code{\link[piggyback:pb_download]{piggyback::pb_download()}}, validates it,
+and stores it as `f1predicter.sqlite` in the configured cache directory.
 }
 \examples{
 \dontrun{
