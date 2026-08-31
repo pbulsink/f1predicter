@@ -36,7 +36,11 @@ test_that("simulation_params() returns a list with expected keys (#noissue)", {
       "sprint_dnf_scale",
       "wet_sd_multiplier",
       "default_position_sd",
-      "default_dnf_rate"
+      "default_dnf_rate",
+      "quali_default_position_sd",
+      "quali_qgap_sd_weight",
+      "quali_practice_weight",
+      "quali_wet_sd_multiplier"
     ),
     ignore.order = TRUE
   )

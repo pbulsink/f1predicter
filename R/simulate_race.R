@@ -28,6 +28,15 @@
 #'       available (default 5).}
 #'     \item{default_dnf_rate}{Fallback DNF probability when no historical data
 #'       are available (default 0.1).}
+#'     \item{quali_default_position_sd}{Fallback qualifying position SD when no
+#'       historical data are available (default 3).}
+#'     \item{quali_qgap_sd_weight}{Scaling weight for `driver_avg_qgap` when
+#'       adjusting per-driver qualifying SD. Larger gap → wider SD (default
+#'       0.15).}
+#'     \item{quali_practice_weight}{Weight given to the practice rank when
+#'       blending with the ML qualifying mean. Between 0 and 1 (default 0.10).}
+#'     \item{quali_wet_sd_multiplier}{Factor by which each driver's qualifying
+#'       SD is scaled when weather is `"wet"` (default 1.3).}
 #'   }
 #' @export
 #'
@@ -42,7 +51,20 @@ simulation_params <- function() {
     sprint_dnf_scale = 0.5,
     wet_sd_multiplier = 1.5,
     default_position_sd = 5,
-    default_dnf_rate = 0.1
+    default_dnf_rate = 0.1,
+    # --- Qualifying simulation parameters ---
+    quali_default_position_sd = 3,
+    # Weight of the qgap (average qualifying gap to fastest, in seconds) when
+    # adjusting the per-driver position SD. Larger qgap → worse quali pace →
+    # wider SD. Applied as: sd * (1 + quali_qgap_sd_weight * driver_avg_qgap).
+    quali_qgap_sd_weight = 0.15,
+    # Weight of practice rank (lower rank = faster) when adjusting the ML mean
+    # qualifying position. Applied as: mean * (1 - quali_practice_weight) +
+    # practice_rank * quali_practice_weight. Between 0 and 1 (default 0.10).
+    quali_practice_weight = 0.10,
+    # Wet-weather SD multiplier for qualifying (default 1.3, slightly less than
+    # race because wet quali is shorter and pace gaps compress less than a race).
+    quali_wet_sd_multiplier = 1.3
   )
 }
 
@@ -538,5 +560,344 @@ summarise_simulations <- function(
     expected_points = points_total / n_simulations,
     position_sd = pos_sd,
     .probs = I(probs_matrix)
+  )
+}
+
+
+# ---------------------------------------------------------------------------
+# Qualifying Monte Carlo simulation
+# ---------------------------------------------------------------------------
+
+#' Compute Per-Driver Qualifying Position SD
+#'
+#' Derives the empirical SD of qualifying positions for each driver, modulated
+#' by the driver's average qualifying gap (`driver_avg_qgap`) and practice lap
+#' ranks. Used internally by `simulate_quali()`.
+#'
+#' @param new_data A tibble returned by [generate_new_data()].
+#' @param historical_data A tibble of historical results from [clean_data()],
+#'   used to compute empirical SDs via [calculate_driver_performance()].
+#' @param season (`integer(1)`) Season year.
+#' @param round (`integer(1)`) Round number.
+#' @param weather (`character(1)`) One of `"dry"` or `"wet"`.
+#' @param params A named list from [simulation_params()].
+#' @returns A tibble with columns `driver_id`, `position_sd`.
+#' @keywords internal
+.calculate_quali_sim_metrics <- function(
+  new_data,
+  historical_data,
+  season,
+  round,
+  weather = "dry",
+  params = simulation_params()
+) {
+  driver_ids <- new_data$driver_id
+  n <- length(driver_ids)
+
+  # --- Empirical SD from historical qualifying positions ---
+  perf <- tryCatch(
+    calculate_driver_performance(
+      historical_data,
+      season = season,
+      round = round
+    ),
+    error = \(e) NULL
+  )
+
+  if (!is.null(perf) && "position_sd" %in% names(perf)) {
+    sd_lookup <- stats::setNames(perf$position_sd, perf$driver_id)
+    position_sd <- vapply(
+      driver_ids,
+      \(d) {
+        v <- sd_lookup[d]
+        if (!is.na(v) && is.finite(v) && v > 0) {
+          v
+        } else {
+          params$quali_default_position_sd
+        }
+      },
+      numeric(1)
+    )
+  } else {
+    position_sd <- rep(params$quali_default_position_sd, n)
+  }
+
+  # --- Scale SD by driver's average qualifying gap ---
+  if ("driver_avg_qgap" %in% names(new_data)) {
+    qgap <- pmax(new_data$driver_avg_qgap, 0)
+    position_sd <- position_sd * (1 + params$quali_qgap_sd_weight * qgap)
+  }
+
+  # --- Weather scaling ---
+  if (identical(weather, "wet")) {
+    position_sd <- position_sd * params$quali_wet_sd_multiplier
+  }
+
+  tibble::tibble(
+    driver_id = driver_ids,
+    position_sd = position_sd
+  )
+}
+
+
+#' Summarise Monte Carlo Qualifying Simulation Matrix
+#'
+#' @description
+#' Collapses a raw qualifying simulation matrix (drivers × simulations) into a
+#' per-driver summary tibble suitable for downstream formatting.
+#'
+#' @param sim_matrix Integer matrix of size `n_drivers × n_simulations`. Each
+#'   cell is the qualifying position of driver `i` in simulation `j`.
+#' @param driver_ids Character vector of driver IDs (length `n_drivers`).
+#' @param season Numeric season year.
+#' @param round Numeric round number.
+#' @param n_simulations Integer number of simulations.
+#'
+#' @return A tibble with one row per driver and columns:
+#'   `driver_id`, `season`, `round`, `pole_prob`, `top3_prob`, `top10_prob`,
+#'   `likely_quali_position`, `position_sd`, `.probs`.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mat <- matrix(sample(1:20, 20 * 1000, replace = TRUE), nrow = 20)
+#' ids <- paste0("driver_", seq_len(20))
+#' summarise_quali_simulations(mat, ids, 2025, 1, 1000)
+#' }
+summarise_quali_simulations <- function(
+  sim_matrix,
+  driver_ids,
+  season,
+  round,
+  n_simulations
+) {
+  n_drivers <- length(driver_ids)
+  n_positions <- n_drivers
+
+  probs_matrix <- matrix(0, nrow = n_drivers, ncol = n_positions)
+  rownames(probs_matrix) <- driver_ids
+  colnames(probs_matrix) <- as.character(seq_len(n_positions))
+
+  pole_counts <- integer(n_drivers)
+  top3_counts <- integer(n_drivers)
+  top10_counts <- integer(n_drivers)
+  position_sum <- numeric(n_drivers)
+  position_sq_sum <- numeric(n_drivers)
+  valid_sim_count <- integer(n_drivers)
+
+  for (sim in seq_len(n_simulations)) {
+    for (i in seq_len(n_drivers)) {
+      pos <- sim_matrix[i, sim]
+      if (!is.na(pos) && pos >= 1L && pos <= n_positions) {
+        probs_matrix[i, pos] <- probs_matrix[i, pos] + 1L
+        if (pos == 1L) {
+          pole_counts[i] <- pole_counts[i] + 1L
+        }
+        if (pos <= 3L) {
+          top3_counts[i] <- top3_counts[i] + 1L
+        }
+        if (pos <= 10L) {
+          top10_counts[i] <- top10_counts[i] + 1L
+        }
+        position_sum[i] <- position_sum[i] + pos
+        position_sq_sum[i] <- position_sq_sum[i] + pos^2
+        valid_sim_count[i] <- valid_sim_count[i] + 1L
+      }
+    }
+  }
+
+  probs_matrix <- probs_matrix / n_simulations
+
+  likely_pos <- numeric(n_drivers)
+  for (i in seq_len(n_drivers)) {
+    likely_pos[i] <- stats::weighted.mean(
+      seq_len(n_positions),
+      probs_matrix[i, ]
+    )
+  }
+
+  pos_sd <- numeric(n_drivers)
+  for (i in seq_len(n_drivers)) {
+    n_v <- valid_sim_count[i]
+    if (n_v > 1) {
+      mean_pos <- position_sum[i] / n_v
+      pos_sd[i] <- sqrt(position_sq_sum[i] / n_v - mean_pos^2)
+    } else {
+      pos_sd[i] <- NA_real_
+    }
+  }
+
+  tibble::tibble(
+    driver_id = driver_ids,
+    season = season,
+    round = round,
+    pole_prob = pole_counts / n_simulations,
+    top3_prob = top3_counts / n_simulations,
+    top10_prob = top10_counts / n_simulations,
+    likely_quali_position = likely_pos,
+    position_sd = pos_sd,
+    .probs = I(probs_matrix)
+  )
+}
+
+
+#' Monte Carlo Qualifying Simulation
+#'
+#' @description
+#' Simulates the qualifying session for a single F1 race weekend using a Monte
+#' Carlo approach. Each driver's qualifying position is drawn from a normal
+#' distribution whose mean is provided by the ML regression model
+#' (`quali_pos`) and whose SD is derived from historical qualifying performance
+#' blended with the driver's average qualifying gap (`driver_avg_qgap`) and
+#' practice lap ranks.
+#'
+#' @details
+#' The simulation seed is set to `as.integer(format(Sys.Date(), "%Y%m%d"))` for
+#' reproducibility within a given day.
+#'
+#' Weather is resolved via [.resolve_weather()]. If `weather` is `NULL`
+#' (default) a dry session is assumed; `"wet"` widens each driver's SD by
+#' `params$quali_wet_sd_multiplier`.
+#'
+#' @param new_data A tibble returned by [generate_new_data()] for the round to
+#'   be simulated.
+#' @param historical_data A tibble of processed historical results from
+#'   [clean_data()], used to derive empirical per-driver qualifying SDs.
+#' @param season (`integer(1)`) Season year.
+#' @param round (`integer(1)`) Round number.
+#' @param quali_models A named list of fitted model objects as returned by
+#'   `model_quali_early()` or `model_quali_late()`. Must contain a `quali_pos`
+#'   element. If `NULL` (default), models are loaded from disk using
+#'   [load_models()] with timing auto-detected from `new_data`.
+#' @param engine (`character(1)`) Model engine used when loading models from
+#'   disk. Defaults to `"ensemble"`.
+#' @param weather (`character(1)` or `NULL`) Session weather. One of `"dry"` or
+#'   `"wet"`. `NULL` (default) assumes dry conditions.
+#' @param n_simulations (`integer(1)` or `NULL`) Number of simulations. `NULL`
+#'   uses `params$n_simulations` (default 10 000).
+#' @param params A named list of simulation parameters as returned by
+#'   [simulation_params()].
+#'
+#' @returns A tibble with one row per driver and columns `driver_id`, `season`,
+#'   `round`, `pole_prob`, `top3_prob`, `top10_prob`, `likely_quali_position`,
+#'   `position_sd`, `.probs`.
+#' @seealso [simulate_race()], [simulation_params()],
+#'   [summarise_quali_simulations()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' nd <- generate_new_data(historical_data, season = 2025, round = 1)
+#' result <- simulate_quali(nd, historical_data, season = 2025, round = 1)
+#' }
+simulate_quali <- function(
+  new_data,
+  historical_data,
+  season,
+  round,
+  quali_models = NULL,
+  engine = "ensemble",
+  weather = NULL,
+  n_simulations = NULL,
+  params = simulation_params()
+) {
+  if (is.null(new_data)) {
+    new_data <- generate_next_race_data()
+  }
+
+  n_sim <- as.integer(
+    if (is.null(n_simulations)) params$n_simulations else n_simulations
+  )
+
+  set.seed(as.integer(format(Sys.Date(), "%Y%m%d")))
+
+  weather <- .resolve_weather(new_data, weather)
+
+  # --- Load / validate models ---
+  if (is.null(quali_models) || is.character(quali_models)) {
+    if (is.character(quali_models)) {
+      rlang::arg_match(quali_models, c("early", "late"))
+      model_timing <- quali_models
+    } else {
+      model_timing <- if (any(grepl("practice", names(new_data)))) {
+        "late"
+      } else {
+        "early"
+      }
+    }
+    cli::cli_inform(
+      "Loading '{model_timing}' qualifying models for engine {.val {engine}} from disk."
+    )
+    quali_models <- load_models(
+      model_type = "quali",
+      model_timing = model_timing,
+      engine = engine
+    )
+  }
+
+  if (!"quali_pos" %in% names(quali_models)) {
+    cli::cli_abort(
+      "The {.arg quali_models} list must contain a {.val quali_pos} model."
+    )
+  }
+
+  season <- new_data$season[1]
+  round <- new_data$round[1]
+  n_drivers <- nrow(new_data)
+
+  # --- ML mean qualifying positions ---
+  ml_quali <- .predict_quali_pos(new_data, quali_models$quali_pos)
+  mean_pos <- ml_quali$likely_quali_position
+
+  # --- Blend with practice rank if available ---
+  practice_col <- if ("practice_optimal_rank" %in% names(new_data)) {
+    "practice_optimal_rank"
+  } else if ("practice_best_rank" %in% names(new_data)) {
+    "practice_best_rank"
+  } else {
+    NULL
+  }
+
+  if (!is.null(practice_col)) {
+    w <- params$quali_practice_weight
+    mean_pos <- (1 - w) * mean_pos + w * new_data[[practice_col]]
+  }
+
+  # --- Per-driver qualifying SDs ---
+  sim_metrics <- .calculate_quali_sim_metrics(
+    new_data = new_data,
+    historical_data = historical_data,
+    season = season,
+    round = round,
+    weather = weather,
+    params = params
+  )
+
+  # --- Run simulations (no DNFs in qualifying) ---
+  sim_matrix <- matrix(NA_integer_, nrow = n_drivers, ncol = n_sim)
+  dnf_rates_zero <- rep(0, n_drivers)
+
+  pb <- cli::cli_progress_bar(
+    total = n_sim,
+    format = "Simulating qualifying {cli::pb_bar} {cli::pb_percent} ({cli::pb_current}/{cli::pb_total})"
+  )
+  on.exit(cli::cli_progress_done(id = pb), add = TRUE)
+
+  for (sim in seq_len(n_sim)) {
+    cli::cli_progress_update(id = pb)
+    sim_matrix[, sim] <- simulate_race_positions(
+      mean_pos,
+      sim_metrics$position_sd,
+      dnf_rates_zero,
+      n_drivers
+    )
+  }
+
+  summarise_quali_simulations(
+    sim_matrix = sim_matrix,
+    driver_ids = new_data$driver_id,
+    season = season,
+    round = round,
+    n_simulations = n_sim
   )
 }

@@ -227,15 +227,7 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
   )
 
   expect_error(
-    predict_quali_pole(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
-    predict_quali_pos(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
-    predict_quali_pos_class(new_data, fake_stack),
+    f1predicter:::.predict_quali_pos(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
   expect_error(
@@ -380,7 +372,7 @@ test_that("load_models() returns a named list for results after_quali ensemble (
 
 # ---- Cached model: individual predict_* functions ---------------------------
 
-test_that("predict_quali_pole() returns correct structure with cached ensemble (#noissue)", {
+test_that(".predict_quali_pos() returns correct structure with cached ensemble (#noissue)", {
   skip_if(
     !.has_ensemble_models("quali", "early"),
     "Cached quali early models not found"
@@ -395,31 +387,7 @@ test_that("predict_quali_pole() returns correct structure with cached ensemble (
   )
   models <- load_models("quali", "early", "ensemble")
 
-  result <- predict_quali_pole(new_data, models$quali_pole)
-
-  expect_s3_class(result, "tbl_df")
-  expect_named(result, c("driver_id", "round", "season", "pole_odd"))
-  expect_equal(nrow(result), nrow(new_data))
-  expect_true(all(result$pole_odd >= 0 & result$pole_odd <= 1))
-  expect_equal(sum(result$pole_odd), 1, tolerance = 1e-6)
-})
-
-test_that("predict_quali_pos() returns correct structure with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("quali", "early"),
-    "Cached quali early models not found"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("quali", "early", "ensemble")
-
-  result <- predict_quali_pos(new_data, models$quali_pos)
+  result <- f1predicter:::.predict_quali_pos(new_data, models$quali_pos)
 
   expect_s3_class(result, "tbl_df")
   expect_named(
@@ -428,121 +396,6 @@ test_that("predict_quali_pos() returns correct structure with cached ensemble (#
   )
   expect_equal(nrow(result), nrow(new_data))
   expect_true(all(is.finite(result$likely_quali_position)))
-})
-
-test_that("predict_quali_pos_class() returns probs matrix with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("quali", "early"),
-    "Cached quali early models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("quali", "early"),
-    "quali_pos_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("quali", "early", "ensemble")
-
-  # The ordinal model expects ensemble_pole_pred and ensemble_pos_pred
-  pole_preds <- stats::predict(models$quali_pole, new_data, type = "prob")
-  pos_preds <- stats::predict(models$quali_pos, new_data, type = "numeric")
-  nd_aug <- new_data |>
-    dplyr::mutate(
-      ensemble_pole_pred = pole_preds$.pred_1,
-      ensemble_pos_pred = pos_preds$.pred
-    )
-
-  result <- predict_quali_pos_class(nd_aug, models$quali_pos_class)
-
-  expect_s3_class(result, "tbl_df")
-  expect_in(
-    c("driver_id", "round", "season", "likely_quali_position_class", ".probs"),
-    names(result)
-  )
-  expect_equal(nrow(result), nrow(new_data))
-  expect_true(is.matrix(result$.probs[[1]]))
-})
-
-# ---- Cached model: predict_quali_round() wrapper ----------------------------
-
-test_that("predict_quali_round() returns joined predictions with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("quali", "early"),
-    "Cached quali early models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("quali", "early"),
-    "quali_pos_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("quali", "early", "ensemble")
-
-  result <- predict_quali_round(new_data, models)
-
-  expect_s3_class(result, "tbl_df")
-  expect_in(
-    c(
-      "driver_id",
-      "round",
-      "season",
-      "pole_odd",
-      "likely_quali_position",
-      "likely_quali_position_class"
-    ),
-    names(result)
-  )
-  expect_equal(nrow(result), nrow(new_data))
-  expect_equal(sum(result$pole_odd), 1, tolerance = 1e-6)
-})
-
-test_that("predict_quali_round() auto-loads models when NULL is passed (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("quali", "early"),
-    "Cached quali early models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("quali", "early"),
-    "quali_pos_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-
-  result <- expect_message(
-    predict_quali_round(new_data, quali_models = NULL, engine = "ensemble"),
-    "Loading"
-  )
-
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_quali_round() errors when required models are missing from list (#noissue)", {
-  expect_error(
-    predict_quali_round(
-      tibble::tibble(),
-      quali_models = list(quali_pole = NULL)
-    ),
-    "must contain"
-  )
 })
 
 # ---- Cached model: individual results predict_* functions -------------------
@@ -638,12 +491,18 @@ test_that(".predict_position() returns numeric position with cached ensemble (#n
 })
 
 
-# ---- predict_quali_round() with invalid string timing -----------------------
+# ---- simulate_quali() with invalid string timing ----------------------------
 
-test_that("predict_quali_round() errors on invalid string timing (#noissue)", {
+test_that("simulate_quali() errors on invalid string timing (#noissue)", {
   withr::local_options(list(f1predicter.models = tempdir()))
   expect_error(
-    predict_quali_round(tibble::tibble(), quali_models = "bad_timing"),
+    simulate_quali(
+      tibble::tibble(season = 2025L, round = 1L),
+      historical_data = tibble::tibble(),
+      season = 2025L,
+      round = 1L,
+      quali_models = "bad_timing"
+    ),
     "must be one of"
   )
 })

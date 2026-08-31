@@ -90,9 +90,11 @@ make_quali_preds <- function() {
     driver_id = paste0("driver_", letters[seq_len(n)]),
     round = "1",
     season = "2024",
-    pole_odd = c(0.50, 0.20, 0.10, 0.05, 0.05),
+    pole_prob = c(0.50, 0.20, 0.10, 0.05, 0.05),
+    top3_prob = c(0.80, 0.60, 0.40, 0.20, 0.10),
+    top10_prob = c(1.0, 1.0, 1.0, 1.0, 1.0),
     likely_quali_position = c(1.2, 2.1, 3.5, 4.2, 5.1),
-    likely_quali_position_class = c(1, 2, 3, 4, 5),
+    position_sd = c(0.5, 0.8, 1.0, 1.2, 1.5),
     .probs = probs_mat
   )
 }

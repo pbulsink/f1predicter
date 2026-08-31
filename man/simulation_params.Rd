@@ -25,6 +25,15 @@ A named list of numeric parameters:
       available (default 5).}
     \item{default_dnf_rate}{Fallback DNF probability when no historical data
       are available (default 0.1).}
+    \item{quali_default_position_sd}{Fallback qualifying position SD when no
+      historical data are available (default 3).}
+    \item{quali_qgap_sd_weight}{Scaling weight for `driver_avg_qgap` when
+      adjusting per-driver qualifying SD. Larger gap → wider SD (default
+      0.15).}
+    \item{quali_practice_weight}{Weight given to the practice rank when
+      blending with the ML qualifying mean. Between 0 and 1 (default 0.10).}
+    \item{quali_wet_sd_multiplier}{Factor by which each driver's qualifying
+      SD is scaled when weather is `"wet"` (default 1.3).}
   }
 }
 \description{

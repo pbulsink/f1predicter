@@ -1,5 +1,9 @@
 # f1predicter 0.1.0.9000
 
+* `simulate_quali()` replaces `predict_quali_round()` as the qualifying session prediction controller: it runs 10,000 Monte Carlo simulations, producing `pole_prob`, `top3_prob`, `top10_prob`, `likely_quali_position`, and a full qualifying-position probability matrix. Per-driver SDs are derived empirically from historical qualifying positions, scaled by average qualifying gap (`driver_avg_qgap`) and optionally blended with practice ranks. Weather and seed handling match `simulate_race()` (#noissue).
+* `summarise_quali_simulations()` is exported for users who wish to collapse a custom qualifying simulation matrix into the standard output schema (#noissue).
+* `format_quali_prob_table()`, `format_quali_skeet_predictions()`, and `post_quali_predictions()` now consume `simulate_quali()` output (#noissue).
+* `predict_quali_round()`, `predict_quali_pole()`, and `predict_quali_pos_class()` have been removed; `.predict_quali_pos()` is retained as an internal helper (#noissue).
 * `simulate_race()` replaces `predict_round()` as the main race prediction controller: it runs 10,000 Monte Carlo simulations per event, producing `win_prob`, `podium_prob`, `top10_prob`, `likely_position`, `expected_points`, and a full finishing-position probability matrix. DNF rates, finishing-position SDs (empirically derived using the same blended approach as the championship simulation), circuit overtaking difficulty, optional sprint-result updates, and a weather flag are all incorporated into each simulation. The seed is set from `Sys.Date()` for daily reproducibility (#noissue).
 * `summarise_simulations()` is now exported for users who wish to collapse a custom simulation matrix into the standard output schema (#noissue).
 * `simulation_params()` returns the default hyperparameter list for `simulate_race()`, analogous to `processing_params()` for data cleaning (#noissue).
