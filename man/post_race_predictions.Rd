@@ -4,7 +4,7 @@
 \alias{post_race_predictions}
 \title{Post Race Predictions to Bluesky}
 \usage{
-post_race_predictions(predictions = predict_round())
+post_race_predictions(predictions = simulate_race())
 }
 \arguments{
 \item{predictions}{A data frame of predictions from `predict_round()`.}

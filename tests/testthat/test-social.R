@@ -41,11 +41,12 @@ make_race_preds <- function() {
     driver_id = paste0("driver_", letters[seq_len(n)]),
     round = "1",
     season = "2024",
-    win_odd = c(0.50, 0.20, 0.10, 0.05, 0.05),
-    podium_odd = c(0.80, 0.60, 0.40, 0.20, 0.10),
-    t10_odd = c(0.95, 0.90, 0.85, 0.75, 0.65),
+    win_prob = c(0.50, 0.20, 0.10, 0.05, 0.05),
+    podium_prob = c(0.80, 0.60, 0.40, 0.20, 0.10),
+    top10_prob = c(0.95, 0.90, 0.85, 0.75, 0.65),
     likely_position = c(1.2, 2.1, 3.5, 4.2, 5.1),
-    likely_position_class = c(1, 2, 3, 4, 5),
+    expected_points = c(18.0, 12.0, 8.0, 4.0, 1.5),
+    position_sd = c(1.0, 1.5, 2.0, 2.5, 3.0),
     .probs = probs_mat
   )
 }

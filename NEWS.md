@@ -1,5 +1,11 @@
 # f1predicter 0.1.0.9000
 
+* `simulate_race()` replaces `predict_round()` as the main race prediction controller: it runs 10,000 Monte Carlo simulations per event, producing `win_prob`, `podium_prob`, `top10_prob`, `likely_position`, `expected_points`, and a full finishing-position probability matrix. DNF rates, finishing-position SDs (empirically derived using the same blended approach as the championship simulation), circuit overtaking difficulty, optional sprint-result updates, and a weather flag are all incorporated into each simulation. The seed is set from `Sys.Date()` for daily reproducibility (#noissue).
+* `summarise_simulations()` is now exported for users who wish to collapse a custom simulation matrix into the standard output schema (#noissue).
+* `simulation_params()` returns the default hyperparameter list for `simulate_race()`, analogous to `processing_params()` for data cleaning (#noissue).
+* `format_results_prob_table()`, `format_results_odds_table()`, and `post_race_predictions()` now consume `simulate_race()` output; `format_results_odds_table()` gains an `Expected Pts` column (#noissue).
+* `predict_round()` and `predict_position_class()` have been removed; internal sub-predictors are now dot-prefixed helpers (#noissue).
+
 * `seed_cache_from_release()` now downloads and validates `f1predicter.sqlite` release assets, and `publish_cache_snapshot()` now uploads validated snapshots via `{piggyback}` for annual cache seeding (@pbulsink, #14).
 * `get_weekend_data()`, `get_season_data()`, `load_all_data()`, and `clean_data()` now use a single `f1predicter.sqlite` cache with legacy RDS/CSV migration support, and only persist event data after the day following the scheduled race date (@pbulsink, #9).
 * `clean_data()` gains a `params` argument (a named list of processing priors and defaults) and a `cache_processed` argument that saves/reloads the cleaned data frame to `"processed_data.rds"` in the cache directory to avoid expensive reprocessing (#8).

@@ -239,23 +239,19 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
     "must be installed to predict with an ensemble model"
   )
   expect_error(
-    predict_winner(new_data, fake_stack),
+    f1predicter:::.predict_winner(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
   expect_error(
-    predict_podium(new_data, fake_stack),
+    f1predicter:::.predict_podium(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
   expect_error(
-    predict_t10(new_data, fake_stack),
+    f1predicter:::.predict_t10(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
   expect_error(
-    predict_position(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
-    predict_position_class(new_data, fake_stack),
+    f1predicter:::.predict_position(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
 })
@@ -551,7 +547,7 @@ test_that("predict_quali_round() errors when required models are missing from li
 
 # ---- Cached model: individual results predict_* functions -------------------
 
-test_that("predict_winner() returns win_odd between 0 and 1 with cached ensemble (#noissue)", {
+test_that(".predict_winner() returns win_odd between 0 and 1 with cached ensemble (#noissue)", {
   skip_if(
     !.has_ensemble_models("results", "early"),
     "Cached results early models not found"
@@ -566,7 +562,7 @@ test_that("predict_winner() returns win_odd between 0 and 1 with cached ensemble
   )
   models <- load_models("results", "early", "ensemble")
 
-  result <- predict_winner(new_data, models$win)
+  result <- f1predicter:::.predict_winner(new_data, models$win)
 
   expect_s3_class(result, "tbl_df")
   expect_named(result, c("driver_id", "round", "season", "win_odd"))
@@ -574,7 +570,7 @@ test_that("predict_winner() returns win_odd between 0 and 1 with cached ensemble
   expect_true(all(result$win_odd >= 0 & result$win_odd <= 1))
 })
 
-test_that("predict_podium() returns podium_odd between 0 and 1 with cached ensemble (#noissue)", {
+test_that(".predict_podium() returns podium_odd between 0 and 1 with cached ensemble (#noissue)", {
   skip_if(
     !.has_ensemble_models("results", "early"),
     "Cached results early models not found"
@@ -589,14 +585,14 @@ test_that("predict_podium() returns podium_odd between 0 and 1 with cached ensem
   )
   models <- load_models("results", "early", "ensemble")
 
-  result <- predict_podium(new_data, models$podium)
+  result <- f1predicter:::.predict_podium(new_data, models$podium)
 
   expect_s3_class(result, "tbl_df")
   expect_named(result, c("driver_id", "round", "season", "podium_odd"))
   expect_true(all(result$podium_odd >= 0 & result$podium_odd <= 1))
 })
 
-test_that("predict_t10() returns t10_odd between 0 and 1 with cached ensemble (#noissue)", {
+test_that(".predict_t10() returns t10_odd between 0 and 1 with cached ensemble (#noissue)", {
   skip_if(
     !.has_ensemble_models("results", "early"),
     "Cached results early models not found"
@@ -611,14 +607,14 @@ test_that("predict_t10() returns t10_odd between 0 and 1 with cached ensemble (#
   )
   models <- load_models("results", "early", "ensemble")
 
-  result <- predict_t10(new_data, models$t10)
+  result <- f1predicter:::.predict_t10(new_data, models$t10)
 
   expect_s3_class(result, "tbl_df")
   expect_named(result, c("driver_id", "round", "season", "t10_odd"))
   expect_true(all(result$t10_odd >= 0 & result$t10_odd <= 1))
 })
 
-test_that("predict_position() returns numeric position with cached ensemble (#noissue)", {
+test_that(".predict_position() returns numeric position with cached ensemble (#noissue)", {
   skip_if(
     !.has_ensemble_models("results", "early"),
     "Cached results early models not found"
@@ -633,7 +629,7 @@ test_that("predict_position() returns numeric position with cached ensemble (#no
   )
   models <- load_models("results", "early", "ensemble")
 
-  result <- predict_position(new_data, models$position)
+  result <- f1predicter:::.predict_position(new_data, models$position)
 
   expect_s3_class(result, "tbl_df")
   expect_named(result, c("driver_id", "round", "season", "likely_position"))
@@ -641,148 +637,8 @@ test_that("predict_position() returns numeric position with cached ensemble (#no
   expect_true(all(is.finite(result$likely_position)))
 })
 
-# ---- Cached model: predict_round() wrapper ----------------------------------
 
-test_that("predict_round() returns all outcome columns with cached early ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "early"),
-    "Cached results early models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("results", "early"),
-    "position_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("results", "early", "ensemble")
-
-  result <- predict_round(new_data, models)
-
-  expect_s3_class(result, "tbl_df")
-  expect_in(
-    c(
-      "driver_id",
-      "round",
-      "season",
-      "win_odd",
-      "podium_odd",
-      "t10_odd",
-      "likely_position",
-      "likely_position_class"
-    ),
-    names(result)
-  )
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() auto-loads models when NULL is passed (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "early"),
-    "Cached results early models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("results", "early"),
-    "position_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-
-  result <- expect_message(
-    predict_round(new_data, results_models = NULL, engine = "ensemble"),
-    "Loading"
-  )
-
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() errors when required models are missing from list (#noissue)", {
-  expect_error(
-    predict_round(
-      tibble::tibble(),
-      results_models = list(win = NULL)
-    ),
-    "must contain"
-  )
-})
-
-test_that("predict_round() with after_quali timing uses cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "after_quali"),
-    "Cached after_quali models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("results", "after_quali"),
-    "position_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("results", "after_quali", "ensemble")
-
-  result <- predict_round(new_data, models)
-
-  expect_s3_class(result, "tbl_df")
-  expect_in(
-    c("win_odd", "podium_odd", "t10_odd", "likely_position"),
-    names(result)
-  )
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() with late quali timing loads late models (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "late"),
-    "Cached late results models not found"
-  )
-  skip_if(
-    !.has_usable_class_model("results", "late"),
-    "position_class model is not a usable model object (may be over-butchered)"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-
-  result <- expect_message(
-    predict_round(new_data, results_models = "late", engine = "ensemble"),
-    "Loading 'late'"
-  )
-
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-# ---- predict_round() / predict_quali_round() with invalid string timing -----
-
-test_that("predict_round() errors on invalid string timing (#noissue)", {
-  withr::local_options(list(f1predicter.models = tempdir()))
-  expect_error(
-    predict_round(tibble::tibble(), results_models = "bad_timing"),
-    "must be one of"
-  )
-})
+# ---- predict_quali_round() with invalid string timing -----------------------
 
 test_that("predict_quali_round() errors on invalid string timing (#noissue)", {
   withr::local_options(list(f1predicter.models = tempdir()))
@@ -790,403 +646,4 @@ test_that("predict_quali_round() errors on invalid string timing (#noissue)", {
     predict_quali_round(tibble::tibble(), quali_models = "bad_timing"),
     "must be one of"
   )
-})
-
-test_that("predict_round() auto-detects after_quali timing from q percentage columns (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026),
-    q_min_perc = c(1.01, 1.02)
-  )
-  loaded_timing <- NULL
-  mock_models <- list(
-    win = structure(list(), class = "mock_model"),
-    podium = structure(list(), class = "mock_model"),
-    t10 = structure(list(), class = "mock_model"),
-    position = structure(list(), class = "mock_model"),
-    position_class = structure(list(), class = "mock_model")
-  )
-
-  local_mocked_bindings(
-    load_models = function(model_type, model_timing, engine) {
-      loaded_timing <<- model_timing
-      mock_models
-    },
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(1, 2))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(1, 2),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-
-  expect_message(
-    result <- predict_round(
-      new_data,
-      results_models = NULL,
-      engine = "ensemble"
-    ),
-    "Loading 'after_quali'"
-  )
-
-  expect_identical(loaded_timing, "after_quali")
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() auto-detects late timing from practice columns (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026),
-    practice_best_rank = c(3, 7)
-  )
-  loaded_timing <- NULL
-  mock_models <- list(
-    win = structure(list(), class = "mock_model"),
-    podium = structure(list(), class = "mock_model"),
-    t10 = structure(list(), class = "mock_model"),
-    position = structure(list(), class = "mock_model"),
-    position_class = structure(list(), class = "mock_model")
-  )
-
-  local_mocked_bindings(
-    load_models = function(model_type, model_timing, engine) {
-      loaded_timing <<- model_timing
-      mock_models
-    },
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(1, 2))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(1, 2),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-
-  expect_message(
-    result <- predict_round(
-      new_data,
-      results_models = NULL,
-      engine = "ensemble"
-    ),
-    "Loading 'late'"
-  )
-
-  expect_identical(loaded_timing, "late")
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() auto-detects early timing when no late indicators exist (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026)
-  )
-  loaded_timing <- NULL
-  mock_models <- list(
-    win = structure(list(), class = "mock_model"),
-    podium = structure(list(), class = "mock_model"),
-    t10 = structure(list(), class = "mock_model"),
-    position = structure(list(), class = "mock_model"),
-    position_class = structure(list(), class = "mock_model")
-  )
-
-  local_mocked_bindings(
-    load_models = function(model_type, model_timing, engine) {
-      loaded_timing <<- model_timing
-      mock_models
-    },
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(1, 2))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(1, 2),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-
-  expect_message(
-    result <- predict_round(
-      new_data,
-      results_models = NULL,
-      engine = "ensemble"
-    ),
-    "Loading 'early'"
-  )
-
-  expect_identical(loaded_timing, "early")
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() loads explicit timing strings before prediction (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026)
-  )
-  loaded_timing <- NULL
-  mock_models <- list(
-    win = structure(list(), class = "mock_model"),
-    podium = structure(list(), class = "mock_model"),
-    t10 = structure(list(), class = "mock_model"),
-    position = structure(list(), class = "mock_model"),
-    position_class = structure(list(), class = "mock_model")
-  )
-
-  local_mocked_bindings(
-    load_models = function(model_type, model_timing, engine) {
-      loaded_timing <<- model_timing
-      mock_models
-    },
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(1, 2))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(1, 2),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-
-  expect_message(
-    result <- predict_round(
-      new_data,
-      results_models = "late",
-      engine = "ensemble"
-    ),
-    "Loading 'late'"
-  )
-
-  expect_identical(loaded_timing, "late")
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
-})
-
-test_that("predict_round() adds ensemble features for model_stack position_class (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026)
-  )
-  mock_models <- list(
-    win = structure(list(id = "win"), class = "mock_model"),
-    podium = structure(list(id = "podium"), class = "mock_model"),
-    t10 = structure(list(id = "t10"), class = "mock_model"),
-    position = structure(list(id = "position"), class = "mock_model"),
-    position_class = structure(
-      list(id = "position_class"),
-      class = c("model_stack", "list")
-    )
-  )
-
-  local_mocked_bindings(
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(4, 7))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      expect_true(all(
-        c("ensemble_win_pred", "ensemble_pos_pred") %in% names(new_data)
-      ))
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(4, 7),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-  local_mocked_bindings(
-    predict = function(object, newdata, type, ...) {
-      if (identical(object$id, "win") && identical(type, "prob")) {
-        return(tibble::tibble(.pred_1 = c(0.61, 0.39)))
-      }
-      if (identical(object$id, "position") && identical(type, "numeric")) {
-        return(tibble::tibble(.pred = c(4, 7)))
-      }
-      stop("unexpected stats::predict() call")
-    },
-    .package = "stats"
-  )
-
-  expect_message(
-    result <- predict_round(new_data, results_models = mock_models),
-    "Adding ensemble predictions"
-  )
-
-  expect_s3_class(result, "tbl_df")
-  expect_in(
-    c(
-      "win_odd",
-      "podium_odd",
-      "t10_odd",
-      "likely_position",
-      "likely_position_class"
-    ),
-    names(result)
-  )
-})
-
-test_that("predict_round() leaves new_data unchanged for non-ensemble class models (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026)
-  )
-  mock_models <- list(
-    win = structure(list(), class = "mock_model"),
-    podium = structure(list(), class = "mock_model"),
-    t10 = structure(list(), class = "mock_model"),
-    position = structure(list(), class = "mock_model"),
-    position_class = structure(list(), class = "mock_model")
-  )
-
-  local_mocked_bindings(
-    predict_winner = function(new_data, win_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(win_odd = c(0.6, 0.4))
-    },
-    predict_podium = function(new_data, podium_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(podium_odd = c(0.8, 0.7))
-    },
-    predict_t10 = function(new_data, t10_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(t10_odd = c(0.9, 0.85))
-    },
-    predict_position = function(new_data, position_model) {
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(likely_position = c(4, 7))
-    },
-    predict_position_class = function(new_data, position_class_model) {
-      expect_false(any(
-        c("ensemble_win_pred", "ensemble_pos_pred") %in% names(new_data)
-      ))
-      new_data |>
-        dplyr::select("driver_id", "round", "season") |>
-        dplyr::mutate(
-          likely_position_class = c(4, 7),
-          .probs = I(list(diag(2), diag(2)))
-        )
-    },
-    .package = "f1predicter"
-  )
-
-  result <- predict_round(new_data, results_models = mock_models)
-
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), nrow(new_data))
 })
