@@ -7,7 +7,7 @@
 post_race_predictions(predictions = simulate_race())
 }
 \arguments{
-\item{predictions}{A data frame of predictions from `predict_round()`.}
+\item{predictions}{A data frame of predictions from `simulate_race()`.}
 }
 \value{
 Invisibly returns the response from the Bluesky API, or NULL on failure.
@@ -17,7 +17,7 @@ A wrapper function that formats race predictions and posts them to Bluesky.
 }
 \examples{
 \dontrun{
-preds <- predict_round()
+preds <- simulate_race()
 post_race_predictions(preds)
 }
 }

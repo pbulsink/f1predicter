@@ -394,13 +394,13 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #'
 #' A wrapper function that formats race predictions and posts them to Bluesky.
 #'
-#' @param predictions A data frame of predictions from `predict_round()`.
+#' @param predictions A data frame of predictions from `simulate_race()`.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_round()
+#' preds <- simulate_race()
 #' post_race_predictions(preds)
 #' }
 post_race_predictions <- function(predictions = simulate_race()) {

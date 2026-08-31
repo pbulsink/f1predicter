@@ -10,11 +10,11 @@ simulation_params()
 A named list of numeric parameters:
   \describe{
     \item{n_simulations}{Number of Monte Carlo simulations (default 10000).}
-    \item{circuit_sd_scale}{Multiplier applied to each driver's `position_sd`
-      based on `grid_pos_corr_avg`. SD is multiplied by
-      `(2 - grid_pos_corr_avg)`, so low-overtaking circuits preserve grid
-      order (multiplier near 1) while high-overtaking circuits widen the
-      distribution.}
+    \item{circuit_sd_scale}{Logical flag. When `TRUE` (the default), each
+      driver's `position_sd` is multiplied by `(2 - grid_pos_corr_avg)`,
+      so low-overtaking circuits preserve grid order (multiplier near 1)
+      while high-overtaking circuits widen the distribution (multiplier up
+      to 2). Set to `FALSE` to disable circuit-based SD scaling.}
     \item{sprint_mean_weight}{Weight given to the sprint finishing position
       when updating the ML mean estimate. Between 0 and 1 (default 0.15).}
     \item{sprint_dnf_scale}{Fraction of the full-race DNF rate used for
