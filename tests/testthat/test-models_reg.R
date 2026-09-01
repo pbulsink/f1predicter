@@ -268,12 +268,16 @@ test_that("predict_position_class() works with a last_fit ordinal model", {
   fit <- tune::last_fit(wf, data_split, metrics = metrics_ordinal)
 
   test_data <- rsample::testing(data_split)
-  preds <- predict_position_class(test_data, fit)
+  pred_class <- stats::predict(
+    tune::extract_workflow(fit),
+    test_data,
+    type = "class"
+  )
 
-  expect_s3_class(preds, "data.frame")
-  expect_true("likely_position_class" %in% names(preds))
-  expect_true("driver_id" %in% names(preds))
-  expect_type(preds$likely_position_class, "double")
+  expect_s3_class(pred_class, "data.frame")
+  expect_true(".pred_class" %in% names(pred_class))
+  pos_numeric <- as.numeric(as.character(pred_class$.pred_class))
+  expect_true(all(!is.na(pos_numeric)))
 })
 
 test_that("report_model_metrics() formats only available metrics", {

@@ -26,7 +26,8 @@ make_performance <- function(n = 5) {
     dnf_rate = c(0.05, 0.08, 0.10, 0.12, 0.15),
     recent_avg_position = c(2.5, 3.5, 5.5, 9, 13),
     recent_sd = c(1.5, 2.5, 3, 4, 5),
-    weighted_avg_position = 0.65 * c(2.5, 3.5, 5.5, 9, 13) +
+    weighted_avg_position = 0.65 *
+      c(2.5, 3.5, 5.5, 9, 13) +
       0.30 * c(3, 4, 5, 8, 12) +
       0.05 * c(3, 4, 5, 8, 12)
   )
@@ -61,29 +62,32 @@ make_historical_data <- function() {
     driver_b = rep(0, 8),
     driver_c = rep(0, 8),
     driver_d = rep(0, 8),
-    driver_e = c(0,0,0,0,0,0,1,0)
+    driver_e = c(0, 0, 0, 0, 0, 0, 1, 0)
   )
   constructor_failure_race <- list(
     driver_a = rep(0, 8),
     driver_b = rep(0, 8),
-    driver_c = c(0,0.5,0,0,0,0,0,0),
+    driver_c = c(0, 0.5, 0, 0, 0, 0, 0, 0),
     driver_d = rep(0, 8),
-    driver_e = c(0,0,0,0,0,0,0.5,0)
+    driver_e = c(0, 0, 0, 0, 0, 0, 0.5, 0)
   )
 
-  rows <- do.call(rbind, lapply(names(driver_positions), function(drv) {
-    data.frame(
-      driver_id = drv,
-      round = 1:8,
-      position = driver_positions[[drv]],
-      finished = driver_finished[[drv]],
-      driver_failure = driver_failure[[drv]],
-      constructor_failure = constructor_failure[[drv]],
-      constructor_failure_race = constructor_failure_race[[drv]],
-      season = 2025,
-      stringsAsFactors = FALSE
-    )
-  }))
+  rows <- do.call(
+    rbind,
+    lapply(names(driver_positions), function(drv) {
+      data.frame(
+        driver_id = drv,
+        round = 1:8,
+        position = driver_positions[[drv]],
+        finished = driver_finished[[drv]],
+        driver_failure = driver_failure[[drv]],
+        constructor_failure = constructor_failure[[drv]],
+        constructor_failure_race = constructor_failure_race[[drv]],
+        season = 2025,
+        stringsAsFactors = FALSE
+      )
+    })
+  )
   # Also add previous season data (2024) for multi-season blending
   prev_positions <- list(
     driver_a = c(3, 2, 1, 4, 2, 3, 1, 2),
@@ -92,19 +96,22 @@ make_historical_data <- function() {
     driver_d = c(11, 13, 10, 12, 14, 11, 10, 13),
     driver_e = c(16, 18, 15, 17, 19, 16, 14, 17)
   )
-  prev_rows <- do.call(rbind, lapply(names(prev_positions), function(drv) {
-    data.frame(
-      driver_id = drv,
-      round = 1:8,
-      position = prev_positions[[drv]],
-      finished = TRUE,
-      driver_failure = 0,
-      constructor_failure = 0,
-      constructor_failure_race = 0,
-      season = 2024,
-      stringsAsFactors = FALSE
-    )
-  }))
+  prev_rows <- do.call(
+    rbind,
+    lapply(names(prev_positions), function(drv) {
+      data.frame(
+        driver_id = drv,
+        round = 1:8,
+        position = prev_positions[[drv]],
+        finished = TRUE,
+        driver_failure = 0,
+        constructor_failure = 0,
+        constructor_failure_race = 0,
+        season = 2024,
+        stringsAsFactors = FALSE
+      )
+    })
+  )
   tibble::as_tibble(rbind(rows, prev_rows))
 }
 
@@ -112,7 +119,6 @@ make_historical_data <- function() {
 # ---- Points Systems ---------------------------------------------------------
 
 test_that("gp_points_system returns correct F1 GP points", {
-
   pts <- gp_points_system()
   expect_equal(pts[["1"]], 25)
   expect_equal(pts[["2"]], 18)
@@ -156,7 +162,7 @@ test_that("simulate_race_positions returns valid positions", {
   positions <- simulate_race_positions(
     avg_positions = c(3, 5, 8, 12, 15),
     position_sds = c(2, 3, 3, 4, 5),
-    dnf_rates = c(0, 0, 0, 0, 0),  # No DNFs for deterministic test
+    dnf_rates = c(0, 0, 0, 0, 0), # No DNFs for deterministic test
     n_drivers = 5
   )
 
@@ -172,7 +178,7 @@ test_that("simulate_race_positions handles DNFs", {
   positions <- simulate_race_positions(
     avg_positions = c(3, 5, 8),
     position_sds = c(2, 3, 3),
-    dnf_rates = c(1, 1, 1),  # 100% DNF
+    dnf_rates = c(1, 1, 1), # 100% DNF
     n_drivers = 3
   )
 
@@ -228,10 +234,18 @@ test_that("simulate_championship_odds returns correct structure", {
   )
 
   expect_s3_class(result, "tbl_df")
-  expect_true(all(c(
-    "driver_id", "current_points", "win_probability",
-    "avg_final_points", "avg_final_position", "in_contention", "season"
-  ) %in% names(result)))
+  expect_true(all(
+    c(
+      "driver_id",
+      "current_points",
+      "win_probability",
+      "avg_final_points",
+      "avg_final_position",
+      "in_contention",
+      "season"
+    ) %in%
+      names(result)
+  ))
   expect_equal(nrow(result), 5)
   expect_equal(result$season[1], 2025)
 })
@@ -266,7 +280,6 @@ test_that("simulate_championship_odds handles no remaining races", {
     race_name = character(0),
     date = as.Date(character(0)),
     has_sprint = logical(0)
-
   )
 
   result <- simulate_championship_odds(
@@ -458,8 +471,13 @@ test_that("simulate_championship_odds works end-to-end with example historical d
 
   # All expected columns present
   expected_cols <- c(
-    "driver_id", "current_points", "win_probability",
-    "avg_final_points", "avg_final_position", "in_contention", "season"
+    "driver_id",
+    "current_points",
+    "win_probability",
+    "avg_final_points",
+    "avg_final_position",
+    "in_contention",
+    "season"
   )
   expect_true(all(expected_cols %in% names(result)))
 
@@ -489,7 +507,9 @@ test_that("simulate_championship_odds works end-to-end with example historical d
   if (nrow(non_contenders) > 0) {
     expect_true(all(non_contenders$win_probability == 0))
     # Non-contenders are still simulated so avg_final_points >= current_points
-    expect_true(all(non_contenders$avg_final_points >= non_contenders$current_points))
+    expect_true(all(
+      non_contenders$avg_final_points >= non_contenders$current_points
+    ))
     # Non-contenders get real avg_final_position values
     expect_true(all(!is.na(non_contenders$avg_final_position)))
   }
@@ -510,7 +530,10 @@ test_that("calculate_driver_performance works with example historical data", {
 
   # Required columns
   expected_cols <- c(
-    "driver_id","avg_position", "position_sd", "dnf_rate"
+    "driver_id",
+    "avg_position",
+    "position_sd",
+    "dnf_rate"
   )
   expect_true(all(expected_cols %in% names(perf)))
 
@@ -524,8 +547,7 @@ test_that("calculate_driver_performance works with example historical data", {
   expect_true(driver_d$dnf_rate > 0)
 })
 
-test_that("simulate_championship_odds avg_final_position ranks are consistent",
-{
+test_that("simulate_championship_odds avg_final_position ranks are consistent", {
   standings <- tibble::tibble(
     driver_id = paste0("driver_", letters[1:3]),
     points = c(100, 90, 80),
@@ -686,7 +708,9 @@ test_that("calculate_driver_performance handles 5+ current-season races with no 
 
   expect_s3_class(perf, "tbl_df")
   expect_setequal(perf$driver_id, c("driver_a", "driver_b"))
-  expect_true(all(c("avg_position", "position_sd", "dnf_rate") %in% names(perf)))
+  expect_true(all(
+    c("avg_position", "position_sd", "dnf_rate") %in% names(perf)
+  ))
 
   # driver_a has better positions than driver_b
   driver_a <- perf[perf$driver_id == "driver_a", ]
@@ -724,7 +748,9 @@ test_that("calculate_driver_performance respects custom weight parameters", {
 
   # Different weights produce different avg_position values
   expect_false(all(perf_default$avg_position == perf_recent_only$avg_position))
-  expect_false(all(perf_recent_only$avg_position == perf_season_only$avg_position))
+  expect_false(all(
+    perf_recent_only$avg_position == perf_season_only$avg_position
+  ))
 
   # All results have the right structure regardless of weights
   expect_s3_class(perf_recent_only, "tbl_df")
@@ -803,6 +829,8 @@ test_that("get_current_standings returns correct structure", {
   standings <- get_current_standings(2025)
 
   expect_s3_class(standings, "tbl_df")
-  expect_true(all(c("driver_id", "points", "position") %in% colnames(standings)))
+  expect_true(all(
+    c("driver_id", "points", "position") %in% colnames(standings)
+  ))
   expect_true(standings$driver_id[[1]] == "norris")
 })

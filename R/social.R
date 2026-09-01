@@ -108,11 +108,11 @@ format_race_skeet_predictions <- function(predictions) {
 
   # Top 3 for Win
   win_preds <- predictions_formatted |>
-    dplyr::arrange(dplyr::desc(.data$win_odd)) |>
+    dplyr::arrange(dplyr::desc(.data$win_prob)) |>
     dplyr::slice_head(n = 3) |>
     dplyr::mutate(
       text = glue::glue(
-        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$win_odd, 0.1)}"
+        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$win_prob, 0.1)}"
       )
     ) |>
     dplyr::pull(.data$text) |>
@@ -120,11 +120,11 @@ format_race_skeet_predictions <- function(predictions) {
 
   # Top 5 for Podium
   podium_preds <- predictions_formatted |>
-    dplyr::arrange(dplyr::desc(.data$podium_odd)) |>
+    dplyr::arrange(dplyr::desc(.data$podium_prob)) |>
     dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
-        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$podium_odd, 0.1)}"
+        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$podium_prob, 0.1)}"
       )
     ) |>
     dplyr::pull(.data$text) |>
@@ -164,7 +164,7 @@ format_race_skeet_predictions <- function(predictions) {
   )
 
   driver_list <- predictions_formatted |>
-    dplyr::arrange(.data$win_odd) |>
+    dplyr::arrange(dplyr::desc(.data$win_prob)) |>
     dplyr::pull(.data$driver_name)
 
   odds_image_alt <- paste0(
@@ -217,7 +217,7 @@ format_race_skeet_predictions <- function(predictions) {
 
 #' Format Qualifying Predictions for a Skeet
 #'
-#' @param predictions A data frame of predictions from `predict_quali_round()`
+#' @param predictions A data frame of predictions from `simulate_quali()`
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
 #' @noRd
@@ -237,17 +237,17 @@ format_quali_skeet_predictions <- function(predictions) {
 
   # Top 5 for Pole
   pole_preds <- predictions_formatted |>
-    dplyr::arrange(dplyr::desc(.data$pole_odd)) |>
+    dplyr::arrange(dplyr::desc(.data$pole_prob)) |>
     dplyr::slice_head(n = 5) |>
     dplyr::mutate(
       text = glue::glue(
-        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$pole_odd, 0.1)}"
+        "{dplyr::row_number()}. {.data$driver_name}: {scales::percent(.data$pole_prob, 0.1)}"
       )
     ) |>
     dplyr::pull(.data$text) |>
     paste(collapse = "\n")
 
-  # Top 5 likely qualifying positions (ordered by pole probability)
+  # Top 5 likely qualifying positions (ordered by likely position)
   position_preds <- predictions_formatted |>
     dplyr::arrange(.data$likely_quali_position) |>
     dplyr::filter(.data$likely_quali_position <= 5) |>
@@ -375,16 +375,16 @@ post_skeet_predictions <- function(skeets) {
 #'
 #' A wrapper function that formats qualifying predictions and posts them to Bluesky.
 #'
-#' @param predictions A data frame of predictions from `predict_quali_round()`.
+#' @param predictions A data frame of predictions from `simulate_quali()`.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_quali_round()
+#' preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
 #' post_quali_predictions(preds)
 #' }
-post_quali_predictions <- function(predictions = predict_quali_round()) {
+post_quali_predictions <- function(predictions) {
   skeet_thread <- format_quali_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_thread)
 }
@@ -394,16 +394,16 @@ post_quali_predictions <- function(predictions = predict_quali_round()) {
 #'
 #' A wrapper function that formats race predictions and posts them to Bluesky.
 #'
-#' @param predictions A data frame of predictions from `predict_round()`.
+#' @param predictions A data frame of predictions from `simulate_race()`.
 #'
 #' @return Invisibly returns the response from the Bluesky API, or NULL on failure.
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_round()
+#' preds <- simulate_race()
 #' post_race_predictions(preds)
 #' }
-post_race_predictions <- function(predictions = predict_round()) {
+post_race_predictions <- function(predictions = simulate_race()) {
   # Race predictions are shorter, so we post as a single skeet
   skeet_list <- format_race_skeet_predictions(predictions)
   post_skeet_predictions(skeets = skeet_list)
@@ -470,7 +470,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   }
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted |>
-    dplyr::select("driver_name", "win_odd", "likely_position_class") |>
+    dplyr::select("driver_name", "win_prob", "likely_position") |>
     dplyr::bind_cols(probs) |>
     dplyr::mutate(
       sort_position = sort_position
@@ -480,7 +480,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 
   # Create the gt table
   prob_table <- prob_data |>
-    dplyr::select(-"likely_position_class") |>
+    dplyr::select(-"likely_position") |>
     gt::gt() |>
     gt::tab_header(
       title = gt::md("**Race Finishing Position Probabilities**"),
@@ -488,12 +488,12 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     ) |>
     gt::tab_spanner(
       label = "Odds of Finishing at Each Position",
-      columns = -c("driver_name", "win_odd")
+      columns = -c("driver_name", "win_prob")
     ) |>
     gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
     gt::cols_label(
       driver_name = "Driver",
-      win_odd = "Chance of Winning"
+      win_prob = "Chance of Winning"
     ) |>
     gt::tab_options(
       column_labels.font.size = "small",
@@ -507,11 +507,11 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
         weight = gt::px(3),
         style = "solid"
       ),
-      locations = gt::cells_body(columns = 'win_odd')
+      locations = gt::cells_body(columns = 'win_prob')
     ) |>
     gt::tab_source_note(
       source_note = paste0(
-        "Each result model trained independently.\n",
+        "Based on Monte Carlo race simulation.\n",
         "Generated: ",
         Sys.Date(),
         " | @bot.bulsink.ca"
@@ -539,7 +539,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 
 #' Format Qualifying Probabilities as a Table
 #'
-#' This function takes the results from `predict_quali_round()` and creates a
+#' This function takes the results from `simulate_quali()` and creates a
 #' `gt` table visualizing the probability of each driver achieving each
 #' qualifying position.
 #'
@@ -549,7 +549,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #' installed. The function returns a `gt` object which can be printed or saved
 #' using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
-#' @param predictions A data frame of predictions from `predict_quali_round()`.
+#' @param predictions A data frame of predictions from `simulate_quali()`.
 #'   This must contain the `.probs` list-column with position probabilities.
 #' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
 #'   and returns a list containing the table object and the file path. If `FALSE`
@@ -559,7 +559,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_quali_round()
+#' preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
 #' format_quali_prob_table(preds)
 #' }
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
@@ -590,13 +590,13 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   probs <- as.data.frame(predictions_formatted$.probs)
   # Wrangle the probability data into a wide format for the table
   prob_data <- predictions_formatted |>
-    dplyr::select("driver_name", "pole_odd", "likely_quali_position_class") |>
+    dplyr::select("driver_name", "pole_prob", "likely_quali_position") |>
     dplyr::bind_cols(probs) |>
-    dplyr::arrange(.data$likely_quali_position_class, -.data$`1`)
+    dplyr::arrange(.data$likely_quali_position, -.data$`1`)
 
   # Create the gt table
   prob_table <- prob_data |>
-    dplyr::select(-"likely_quali_position_class") |>
+    dplyr::select(-"likely_quali_position") |>
     gt::gt() |>
     gt::tab_header(
       title = gt::md("**Qualifying Position Probabilities**"),
@@ -604,10 +604,10 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     ) |>
     gt::tab_spanner(
       label = "Odds of Qualifying at Each Position",
-      columns = -c("driver_name", "pole_odd")
+      columns = -c("driver_name", "pole_prob")
     ) |>
     gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
-    gt::cols_label(driver_name = "Driver", pole_odd = "Pole Odds") |>
+    gt::cols_label(driver_name = "Driver", pole_prob = "Pole Prob") |>
     gt::tab_options(
       column_labels.font.size = "small",
       table.font.size = "small",
@@ -615,14 +615,14 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     ) |>
     gt::tab_source_note(
       source_note = paste0(
-        "Results from two separate models: odds of pole and likely finishing position.\n",
+        "Qualifying position probabilities from Monte Carlo simulation.\n",
         "Generated: ",
         Sys.Date(),
         " | @bot.bulsink.ca"
       )
     ) |>
     gt::data_color(
-      'pole_odd', # Check this works instead of columns = -driver_name
+      'pole_prob',
       direction = 'column',
       palette = "viridis"
     ) |>
@@ -633,13 +633,13 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
         weight = gt::px(3),
         style = "solid"
       ),
-      locations = gt::cells_body(columns = 'pole_odd')
+      locations = gt::cells_body(columns = 'pole_prob')
     )
 
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -c('driver_name', 'pole_odd'), # Check this works instead of columns = -driver_name
+      columns = -c('driver_name', 'pole_prob'),
       rows = i,
       direction = 'row',
       palette = "viridis"
@@ -706,8 +706,14 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
   race_name <- get_race_name(current_season, current_round)
 
   prob_data <- predictions_formatted |>
-    dplyr::select("driver_name", "win_odd", "podium_odd", "t10_odd") |>
-    dplyr::arrange(-.data$win_odd)
+    dplyr::select(
+      "driver_name",
+      "win_prob",
+      "podium_prob",
+      "top10_prob",
+      "expected_points"
+    ) |>
+    dplyr::arrange(dplyr::desc(.data$win_prob))
 
   # Create the gt table
   prob_table <- prob_data |>
@@ -716,12 +722,17 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
       title = gt::md("**Race Results Odds**"),
       subtitle = race_name
     ) |>
-    gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
+    gt::fmt_percent(
+      columns = c("win_prob", "podium_prob", "top10_prob"),
+      decimals = 1
+    ) |>
+    gt::fmt_number(columns = "expected_points", decimals = 2) |>
     gt::cols_label(
       driver_name = "Driver",
-      win_odd = "Win Odds",
-      podium_odd = "Podium Odds",
-      t10_odd = "Top 10 Odds"
+      win_prob = "Win Odds",
+      podium_prob = "Podium Odds",
+      top10_prob = "Top 10 Odds",
+      expected_points = "Expected Pts"
     ) |>
     gt::tab_options(
       column_labels.font.size = "small",
@@ -732,17 +743,22 @@ format_results_odds_table <- function(predictions, save_image = FALSE) {
       source_note = paste0("Generated: ", Sys.Date(), " | @bot.bulsink.ca")
     ) |>
     gt::data_color(
-      columns = "win_odd",
+      columns = "win_prob",
       direction = 'column',
       palette = "viridis"
     ) |>
     gt::data_color(
-      columns = "podium_odd",
+      columns = "podium_prob",
       direction = 'column',
       palette = "viridis"
     ) |>
     gt::data_color(
-      columns = "t10_odd",
+      columns = "top10_prob",
+      direction = 'column',
+      palette = "viridis"
+    ) |>
+    gt::data_color(
+      columns = "expected_points",
       direction = 'column',
       palette = "viridis"
     )
