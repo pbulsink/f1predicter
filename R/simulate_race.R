@@ -10,7 +10,7 @@
 #' simulation. Pass a modified copy to `simulate_race()` to tune behaviour
 #' without touching source code.
 #'
-#' @return A named list of numeric parameters:
+#' @return A named list of simulation parameters (numeric and logical):
 #'   \describe{
 #'     \item{n_simulations}{Number of Monte Carlo simulations (default 10000).}
 #'     \item{circuit_sd_scale}{Logical flag. When `TRUE` (the default), each

@@ -220,8 +220,6 @@ test_that("simulate_quali() returns correct structure with mock model (#noissue)
   result <- simulate_quali(
     new_data = new_data,
     historical_data = tibble::tibble(),
-    season = 2025L,
-    round = 1L,
     quali_models = fake_model,
     n_simulations = 100L
   )
@@ -252,8 +250,6 @@ test_that("simulate_quali() errors when quali_pos model is missing (#noissue)", 
     simulate_quali(
       new_data,
       tibble::tibble(),
-      season = 2025L,
-      round = 1L,
       quali_models = list(other_model = structure(list(), class = "workflow"))
     ),
     "quali_pos"
@@ -295,8 +291,6 @@ test_that("simulate_quali() practice weight blends mean position (#noissue)", {
   res_no_prac <- simulate_quali(
     new_data,
     tibble::tibble(),
-    2025L,
-    1L,
     quali_models = fake_model,
     n_simulations = 200L,
     params = params_no_practice
@@ -306,8 +300,6 @@ test_that("simulate_quali() practice weight blends mean position (#noissue)", {
   res_with_prac <- simulate_quali(
     new_data,
     tibble::tibble(),
-    2025L,
-    1L,
     quali_models = fake_model,
     n_simulations = 200L,
     params = params_with_practice
@@ -348,16 +340,12 @@ test_that("simulate_quali() produces reproducible results within same day (#nois
   res1 <- simulate_quali(
     new_data,
     tibble::tibble(),
-    2025L,
-    1L,
     quali_models = fake_model,
     n_simulations = 200L
   )
   res2 <- simulate_quali(
     new_data,
     tibble::tibble(),
-    2025L,
-    1L,
     quali_models = fake_model,
     n_simulations = 200L
   )

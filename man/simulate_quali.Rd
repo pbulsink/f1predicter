@@ -5,10 +5,8 @@
 \title{Monte Carlo Qualifying Simulation}
 \usage{
 simulate_quali(
-  new_data,
+  new_data = NULL,
   historical_data,
-  season,
-  round,
   quali_models = NULL,
   engine = "ensemble",
   weather = NULL,
@@ -18,14 +16,12 @@ simulate_quali(
 }
 \arguments{
 \item{new_data}{A tibble returned by [generate_new_data()] for the round to
-be simulated.}
+be simulated. Season and round are read from `new_data$season[1]` and
+`new_data$round[1]`. Pass `NULL` to load the next upcoming round via
+[generate_next_race_data()].}
 
 \item{historical_data}{A tibble of processed historical results from
 [clean_data()], used to derive empirical per-driver qualifying SDs.}
-
-\item{season}{(`integer(1)`) Season year.}
-
-\item{round}{(`integer(1)`) Round number.}
 
 \item{quali_models}{A named list of fitted model objects as returned by
 `model_quali_early()` or `model_quali_late()`. Must contain a `quali_pos`
@@ -68,7 +64,7 @@ Weather is resolved via [.resolve_weather()]. If `weather` is `NULL`
 \examples{
 \dontrun{
 nd <- generate_new_data(historical_data, season = 2025, round = 1)
-result <- simulate_quali(nd, historical_data, season = 2025, round = 1)
+result <- simulate_quali(nd, historical_data)
 }
 }
 \seealso{

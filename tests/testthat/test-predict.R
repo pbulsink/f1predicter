@@ -499,8 +499,6 @@ test_that("simulate_quali() errors on invalid string timing (#noissue)", {
     simulate_quali(
       tibble::tibble(season = 2025L, round = 1L),
       historical_data = tibble::tibble(),
-      season = 2025L,
-      round = 1L,
       quali_models = "bad_timing"
     ),
     "must be one of"
