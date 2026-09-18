@@ -860,7 +860,6 @@ train_binary_result_model <- function(
     model_name,
     c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
   )
-  tictoc::toc()
 
   return(final_fit)
 }
@@ -1207,7 +1206,6 @@ train_results_models <- function(
 
     position_best <- position_res |>
       tune::select_best(metric = "rmse")
-    tictoc::toc(log = T)
 
     position_final_wflow <- position_wflow |>
       tune::finalize_workflow(position_best)
