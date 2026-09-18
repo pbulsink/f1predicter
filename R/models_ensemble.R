@@ -575,7 +575,7 @@ train_ordinal_ensemble <- function(
 #'   available for tuning. Valid options depend on `model`:
 #'   \itemize{
 #'     \item If `model = 'quali'`: `"early"` or `"late"`.
-#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after-quali"`.
+#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after_quali"`.
 #'   }
 #'
 #' @return A named list. Each name corresponds to a specific prediction task
@@ -584,6 +584,14 @@ train_ordinal_ensemble <- function(
 #'   'ranger') and values are the corresponding optimal hyperparameters.
 #' @noRd
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
+  model <- rlang::arg_match(model, c("quali", "results"))
+  valid_timings <- if (model == 'quali') {
+    c("early", "late")
+  } else {
+    c("early", "late", "after_quali")
+  }
+  timing <- rlang::arg_match(timing, valid_timings)
+
   # Default ordinal classification hyperparameters, shared across all scenarios.
   # polr has no tunable hyperparameters; an empty tibble triggers no-op finalization.
   # ordinalNet: elastic net (penalty = L2 strength, mixture = L1/L2 blend).
@@ -731,7 +739,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
           ordinal_class_hyperparameters = ordinal_defaults
         )
       )
-    } else if (timing == 'after-quali') {
+    } else if (timing == 'after_quali') {
       return(
         list(
           win_hyperparameters = list(
@@ -775,7 +783,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
       )
     } else {
       cli::cli_abort(
-        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after-quali}."
+        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after_quali}."
       )
     }
   } else {

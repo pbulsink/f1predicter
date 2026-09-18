@@ -94,12 +94,18 @@ test_that("prepare_and_split_data() converts character to factor", {
   expect_true(is.numeric(result$train_data$num_col))
 })
 
+test_that("get_hyperparameters() errors on an invalid timing", {
+  expect_error(get_hyperparameters("results", "after-quali"))
+  expect_error(get_hyperparameters("quali", "after_quali"))
+  expect_error(get_hyperparameters("results", "bogus"))
+})
+
 test_that("get_hyperparameters() includes ordinal_class_hyperparameters for all scenarios", {
   for (model in c("quali", "results")) {
     timings <- if (model == "quali") {
       c("early", "late")
     } else {
-      c("early", "late", "after-quali")
+      c("early", "late", "after_quali")
     }
     for (timing in timings) {
       hp <- get_hyperparameters(model, timing)
