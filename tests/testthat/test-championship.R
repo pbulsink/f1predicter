@@ -250,6 +250,57 @@ test_that("simulate_championship_odds returns correct structure", {
   expect_equal(result$season[1], 2025)
 })
 
+test_that("simulate_championship_odds seed argument produces reproducible results", {
+  standings <- make_standings()
+  remaining <- make_remaining_schedule()
+
+  local_mocked_bindings(
+    calculate_driver_performance = function(season, historical_data) {
+      make_performance()
+    }
+  )
+
+  result1 <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 200L,
+    seed = 5391
+  )
+  result2 <- simulate_championship_odds(
+    season = 2025,
+    standings = standings,
+    remaining = remaining,
+    n_simulations = 200L,
+    seed = 5391
+  )
+
+  expect_equal(result1$win_probability, result2$win_probability)
+  expect_equal(result1$avg_final_points, result2$avg_final_points)
+})
+
+test_that("simulate_championship_odds errors on an invalid seed", {
+  standings <- make_standings()
+  remaining <- make_remaining_schedule()
+
+  local_mocked_bindings(
+    calculate_driver_performance = function(season, historical_data) {
+      make_performance()
+    }
+  )
+
+  expect_error(
+    simulate_championship_odds(
+      season = 2025,
+      standings = standings,
+      remaining = remaining,
+      n_simulations = 10L,
+      seed = "not-a-seed"
+    ),
+    class = "rlang_error"
+  )
+})
+
 test_that("simulate_championship_odds probabilities sum to 1 (or less)", {
   standings <- make_standings()
   remaining <- make_remaining_schedule()
@@ -716,7 +767,12 @@ test_that("calculate_driver_performance handles 5+ current-season races with no 
   driver_a <- perf[perf$driver_id == "driver_a", ]
   driver_b <- perf[perf$driver_id == "driver_b", ]
   expect_true(driver_a$avg_position < driver_b$avg_position)
-  expect_equal(driver_a$dnf_rate, 0)
+  # With no previous-season data, the prev-season anchor falls back to the
+  # default (dnf_rate = 0.1), so the blended dnf_rate is
+  # weight_recent * 0 + weight_season * 0 + weight_prev_season * 0.1 = 0.01
+  # (defaults: 0.5 / 0.4 / 0.1). This reflects that the blend weights are
+  # applied even without prior-season data, rather than being silently ignored.
+  expect_equal(driver_a$dnf_rate, 0.01)
 })
 
 test_that("calculate_driver_performance respects custom weight parameters", {
@@ -756,6 +812,21 @@ test_that("calculate_driver_performance respects custom weight parameters", {
   expect_s3_class(perf_recent_only, "tbl_df")
   expect_s3_class(perf_season_only, "tbl_df")
   expect_setequal(perf_recent_only$driver_id, perf_default$driver_id)
+})
+
+test_that("calculate_driver_performance errors when weights don't sum to 1", {
+  historical_data <- make_historical_data()
+
+  expect_error(
+    calculate_driver_performance(
+      season = 2025,
+      historical_data = historical_data,
+      weight_recent = 0.5,
+      weight_season = 0.5,
+      weight_prev_season = 0.5
+    ),
+    "sum to 1"
+  )
 })
 
 test_that("calculate_driver_performance custom n_recent_races parameter", {
