@@ -1,5 +1,6 @@
 # f1predicter 0.1.0.9000
 
+* `generate_new_data()` now records which round-specific data (qualifying, practice) was genuinely resolved via a `model_timing` attribute, and `predict_round()`/`predict_quali_round()` use it to auto-detect model timing instead of a column-presence heuristic that always resolved to `after_quali` (@pbulsink, #27).
 * `seed_cache_from_release()` now downloads and validates `f1predicter.sqlite` release assets, and `publish_cache_snapshot()` now uploads validated snapshots via `{piggyback}` for annual cache seeding (@pbulsink, #14).
 * `get_weekend_data()`, `get_season_data()`, `load_all_data()`, and `clean_data()` now use a single `f1predicter.sqlite` cache with legacy RDS/CSV migration support, and only persist event data after the day following the scheduled race date (@pbulsink, #9).
 * `clean_data()` gains a `params` argument (a named list of processing priors and defaults) and a `cache_processed` argument that saves/reloads the cleaned data frame to `"processed_data.rds"` in the cache directory to avoid expensive reprocessing (#8).
