@@ -317,7 +317,10 @@ generate_new_data <- function(
     quali <- NULL
   }
 
-  if (!is.null(laps) && nrow(laps) > 0) {
+  practice_found <- !is.null(laps) && nrow(laps) > 0
+  quali_found <- !is.null(quali) && nrow(quali) > 0
+
+  if (practice_found) {
     cli::cli_inform(
       "Found lap data for {season} round {round}. Calculating practice stats."
     )
@@ -367,7 +370,7 @@ generate_new_data <- function(
     new_data$practice_best_gap <- 1
   }
 
-  if (!is.null(quali) && nrow(quali) > 0) {
+  if (quali_found) {
     cli::cli_inform("Found qualifying data for {season} round {round}.")
     quali$round <- round
     quali$season <- season
@@ -455,6 +458,18 @@ generate_new_data <- function(
         penalties[[p]]
       )
     }
+  }
+
+  # Record which round-specific data sources were actually resolved (as
+  # opposed to filled with placeholder defaults) so that callers such as
+  # predict_round() and predict_quali_round() can auto-detect the correct
+  # model timing without relying on column presence, which is invariant.
+  attr(new_data, "model_timing") <- if (quali_found) {
+    "after_quali"
+  } else if (practice_found) {
+    "late"
+  } else {
+    "early"
   }
 
   return(new_data)
@@ -608,6 +623,39 @@ apply_grid_penalty <- function(
     dplyr::left_join(new_grid_df, by = "driver_id")
 
   return(race_data)
+}
+
+#' Resolve the model timing to auto-detect from generated prediction data
+#'
+#' @description
+#' Reads the `model_timing` attribute attached by `generate_new_data()`,
+#' which records which round-specific data sources (qualifying, practice)
+#' were actually resolved rather than filled with placeholder defaults.
+#'
+#' @param new_data A data frame, typically produced by `generate_new_data()`.
+#' @param valid_timings A character vector of timings the caller supports.
+#'   When the detected timing isn't in this set, it is coerced to the
+#'   closest earlier supported timing (e.g. `"after_quali"` collapses to
+#'   `"late"` for callers that only distinguish `"early"`/`"late"`).
+#' @returns (`character(1)`) One of `valid_timings`.
+#' @keywords internal
+.resolve_model_timing <- function(new_data, valid_timings) {
+  detected <- attr(new_data, "model_timing")
+  if (is.null(detected)) {
+    cli::cli_warn(
+      "Could not determine model timing from {.arg new_data} (missing {.val model_timing} attribute, typically set by {.fn generate_new_data}). Defaulting to {.val early}."
+    )
+    detected <- "early"
+  }
+  if (detected %in% valid_timings) {
+    return(detected)
+  }
+  # Collapse to the most specific supported timing: prefer "late" over
+  # "early" when the caller doesn't support "after_quali".
+  if (detected == "after_quali" && "late" %in% valid_timings) {
+    return("late")
+  }
+  "early"
 }
 
 #' Predict Pole Position
@@ -840,12 +888,13 @@ predict_quali_round <- function(
       }
       model_timing <- quali_models
     } else {
-      # is.null(quali_models), so auto-detect
-      model_timing <- if (any(grepl("practice", names(new_data)))) {
-        "late"
-      } else {
-        "early"
-      }
+      # is.null(quali_models), so auto-detect from the timing recorded by
+      # generate_new_data(). Quali models only distinguish "early" vs "late"
+      # (pre- vs post-practice), so "after_quali" collapses to "late".
+      model_timing <- .resolve_model_timing(
+        new_data,
+        valid_timings = c("early", "late")
+      )
     }
     cli::cli_inform(
       "Loading '{model_timing}' qualifying models for engine {.val {engine}} from disk."
@@ -1146,14 +1195,12 @@ predict_round <- function(
       }
       model_timing <- results_models
     } else {
-      # is.null(results_models), so auto-detect
-      model_timing <- if (any(grepl("q_.*_perc", names(new_data)))) {
-        "after_quali"
-      } else if (any(grepl("practice", names(new_data)))) {
-        "late"
-      } else {
-        "early"
-      }
+      # is.null(results_models), so auto-detect from the timing recorded by
+      # generate_new_data().
+      model_timing <- .resolve_model_timing(
+        new_data,
+        valid_timings = c("early", "late", "after_quali")
+      )
     }
     cli::cli_inform(
       "Loading '{model_timing}' results models for engine {.val {engine}} from disk."
