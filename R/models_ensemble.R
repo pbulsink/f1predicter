@@ -179,7 +179,7 @@ train_stacked_model <- function(
     )
     tictoc::toc()
 
-    return(res)
+    candidate_resamples[[engine]] <- res
   }
 
   # Name the list of results for easier identification in the stack

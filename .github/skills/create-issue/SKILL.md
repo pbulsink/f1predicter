@@ -7,28 +7,22 @@ compatibility: Requires the `gh` CLI and an authenticated GitHub session.
 
 # Create a GitHub issue
 
-Use `gh api graphql` with the `createIssue` mutation to create issues. This sets the issue type in a single step. Write the body to a temp file first, then pass it via `$(cat ...)`.
+Create issues with `gh issue create`, conveying the issue's category with a **label**.
 
 If `gh` is not authenticated, stop and ask the user to authenticate before continuing.
 
-## Looking up IDs
+> **Why labels rather than GitHub issue types?** Issue types are an organization-only feature — they are configured under *Organization → Settings → Planning → Issue types*, and there is no equivalent for repositories owned by a personal account. `pbulsink/f1predicter` is owned by the user `pbulsink` (verified 2026-09-17: `repositoryOwner.__typename` is `"User"`, and `/orgs/pbulsink/issue-types` returns `404`), so `issueTypes` will always be `null` for this repo and the GraphQL `createIssue` mutation's non-nullable `issueTypeId` cannot be supplied. Labels are the supported route here. If the repo is ever transferred to an organization, this skill should be revisited.
 
-The hardcoded IDs below are correct for this repo as of 2026-04-09 00:44:32 UTC. If they ever change, or if you're working in a fork, re-run these queries to get fresh values:
+## Category labels
 
-```bash
-# Repository node ID
-gh api graphql -f query='{ repository(owner: "pbulsink", name: "f1predicter") { id } }'
+Map the issue's category onto one of the repository's labels. Check what currently exists with `gh label list --limit 40`; as of 2026-09-17 the relevant ones are:
 
-# Available issue type IDs
-gh api graphql -f query='{ repository(owner: "pbulsink", name: "f1predicter") { issueTypes(first: 20) { nodes { id name description } } } }'
-```
-
-## Issue type
-
-Choose the type that best fits the issue:
-
-| Type | ID | Use for |
+| Category | Label | Conventional prefix |
 |---|---|---|
+| Bug | `bug` | `fix:` |
+| Feature | `enhancement` | `feat:` |
+| Documentation | `documentation` | `docs:` |
+| Task | `enhancement`, or omit the label | `chore:` |
 
 ## Issue title
 
@@ -41,7 +35,7 @@ Titles use conventional commit prefixes:
 
 ## Issue body structure
 
-Which sections to include depends on the issue type:
+Which sections to include depends on the issue's category:
 
 | Section | Feature | Bug | Documentation | Task |
 |---|---|---|---|---|
@@ -101,17 +95,27 @@ Only include when there are specific reference implementations, external URLs, o
 
 ## Creating the issue
 
-Use the `repoId` and the `typeId` for the chosen issue type from the table above.
+Write the body to a temp file first, then pass it with `--body-file`. Note that the `write` tool may refuse paths outside the workspace — if so, write the temp file with a shell heredoc:
 
 ```bash
-gh api graphql \
-  -f query='mutation($repoId:ID!, $title:String!, $body:String!, $typeId:ID!) {
-    createIssue(input:{repositoryId:$repoId, title:$title, body:$body, issueTypeId:$typeId}) {
-      issue { url }
-    }
-  }' \
-  -f repoId="R_kgDOJsuANw" \
-  -f title="feat: my_function()" \
-  -f body="$(cat /tmp/issue_body.md)" \
-  -f typeId="{typeId}"
+cat > /tmp/issue_body.md <<'ISSUEEOF'
+## Summary
+
+> As a package developer, in order to ..., I would like to ...
+ISSUEEOF
 ```
+
+Then create the issue:
+
+```bash
+gh issue create \
+  --title "fix: short description" \
+  --label "bug" \
+  --body-file /tmp/issue_body.md
+```
+
+`gh issue create` prints the new issue's URL on success.
+
+To file several issues in one pass, write each body to its own temp file and loop, using `set -e` so a failure partway through stops the run rather than silently skipping issues.
+
+Cross-references between issues (`#26`) can only be written once the referenced issue exists. When filing a batch with dependencies, create the referenced issues first, then substitute the real numbers into the remaining bodies before creating those.
