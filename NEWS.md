@@ -1,5 +1,7 @@
 # f1predicter 0.1.0.9000
 
+* `model_quali_*()` and `model_results_*()` now build the ordinal models' stacked meta-features from out-of-fold predictions via explicit cross-fitting, instead of predicting the already-fitted pole/win/position ensembles onto the rows they were trained on; the previously reported ordinal RPS, linear-weighted kappa and accuracy were optimistically biased and models should be retrained before those metrics are trusted (@pbulsink, #32).
+
 * `model_quali_early()`, `model_quali_late()`, `model_results_early()`, `model_results_late()` and `model_results_after_quali()` now hold out the same `round_id` groups for every model in a training run, so the metrics reported side by side are computed on the same races, and gain a `seed` argument for reproducible runs (@pbulsink, #33).
 
 * `train_stacked_model()` now trains and blends all candidate engines instead of returning after the first one (@pbulsink, #26).
