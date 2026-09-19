@@ -578,7 +578,6 @@ summarise_simulations <- function(
 #' @param historical_data A tibble of historical results from [clean_data()],
 #'   used to compute empirical SDs via [calculate_driver_performance()].
 #' @param season (`integer(1)`) Season year.
-#' @param round (`integer(1)`) Round number.
 #' @param weather (`character(1)`) One of `"dry"` or `"wet"`.
 #' @param params A named list from [simulation_params()].
 #' @returns A tibble with columns `driver_id`, `position_sd`.
@@ -587,7 +586,6 @@ summarise_simulations <- function(
   new_data,
   historical_data,
   season,
-  round,
   weather = "dry",
   params = simulation_params()
 ) {
@@ -865,7 +863,6 @@ simulate_quali <- function(
     new_data = new_data,
     historical_data = historical_data,
     season = season,
-    round = round,
     weather = weather,
     params = params
   )

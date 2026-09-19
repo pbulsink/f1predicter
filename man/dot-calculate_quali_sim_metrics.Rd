@@ -8,7 +8,6 @@
   new_data,
   historical_data,
   season,
-  round,
   weather = "dry",
   params = simulation_params()
 )
@@ -20,8 +19,6 @@
 used to compute empirical SDs via [calculate_driver_performance()].}
 
 \item{season}{(`integer(1)`) Season year.}
-
-\item{round}{(`integer(1)`) Round number.}
 
 \item{weather}{(`character(1)`) One of `"dry"` or `"wet"`.}
 

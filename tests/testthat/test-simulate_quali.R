@@ -32,8 +32,7 @@ test_that(".calculate_quali_sim_metrics() returns a tibble with correct columns 
   result <- f1predicter:::.calculate_quali_sim_metrics(
     new_data = new_data,
     historical_data = hist_data,
-    season = 2025L,
-    round = 1L
+    season = 2025L
   )
 
   expect_s3_class(result, "tbl_df")
@@ -54,7 +53,6 @@ test_that(".calculate_quali_sim_metrics() uses fallback SD when no historical da
     new_data = new_data,
     historical_data = tibble::tibble(),
     season = 2025L,
-    round = 1L,
     params = params
   )
 
@@ -80,14 +78,12 @@ test_that(".calculate_quali_sim_metrics() scales SD by driver_avg_qgap (#noissue
   res_low <- f1predicter:::.calculate_quali_sim_metrics(
     new_data_low,
     tibble::tibble(),
-    2025L,
-    1L
+    2025L
   )
   res_high <- f1predicter:::.calculate_quali_sim_metrics(
     new_data_high,
     tibble::tibble(),
-    2025L,
-    1L
+    2025L
   )
 
   expect_gt(res_high$position_sd, res_low$position_sd)
@@ -105,7 +101,6 @@ test_that(".calculate_quali_sim_metrics() applies wet-weather SD multiplier (#no
     new_data,
     tibble::tibble(),
     2025L,
-    1L,
     weather = "dry",
     params = params
   )
@@ -113,7 +108,6 @@ test_that(".calculate_quali_sim_metrics() applies wet-weather SD multiplier (#no
     new_data,
     tibble::tibble(),
     2025L,
-    1L,
     weather = "wet",
     params = params
   )
