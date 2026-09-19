@@ -653,26 +653,66 @@ train_quali_models <- function(
 
   if (engine == "ensemble") {
     cli::cli_inform(
-      "Adding ensemble predictions as features for the ordinal model."
+      "Adding out-of-fold ensemble predictions as features for the ordinal model."
     )
 
-    # Predict pole probability and quali position using the trained ensembles;
-    # these predictions become additional features for the ordinal model
-    pole_ensemble_preds <- stats::predict(
-      pole_final_fit,
-      new_data = pos_class_data,
-      type = "prob"
-    )
-    pos_ensemble_preds <- stats::predict(
-      position_final_fit,
-      new_data = pos_class_data,
-      type = "numeric"
-    )
+    # Meta-features must be out-of-fold: predicting the pole/position ensembles
+    # onto the rows they were fitted on would give those rows near-oracle
+    # values, and the ordinal model would learn to lean on a feature that is
+    # systematically worse-behaved at prediction time (#32).
+    pole_refit <- function(fold_train) {
+      suppressMessages(train_stacked_model(
+        outcome_var = "pole",
+        model_name = "Quali Pole (cross-fit)",
+        train_data = fold_train,
+        data_split = NULL,
+        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+        predictor_vars = pole_predictor_vars,
+        hyperparams = all_hyperparams$pole_hyperparameters,
+        model_mode = "classification",
+        save_model = FALSE,
+        quiet = TRUE
+      ))
+    }
+    pos_refit <- function(fold_train) {
+      suppressMessages(train_stacked_model(
+        outcome_var = "quali_position",
+        model_name = "Quali Position (cross-fit)",
+        train_data = fold_train,
+        data_split = NULL,
+        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+        predictor_vars = pos_predictor_vars,
+        hyperparams = all_hyperparams$position_hyperparameters,
+        model_mode = "regression",
+        save_model = FALSE,
+        quiet = TRUE
+      ))
+    }
+
+    meta_key <- c("round_id", "driver_id")
 
     pos_class_data <- pos_class_data |>
       dplyr::mutate(
-        ensemble_pole_pred = pole_ensemble_preds$.pred_1,
-        ensemble_pos_pred = pos_ensemble_preds$.pred
+        ensemble_pole_pred = oof_meta_predictions(
+          fitted_model = pole_final_fit,
+          refit_fn = pole_refit,
+          data_folds = data_folds_pole,
+          new_data = pos_class_data,
+          row_key = meta_key,
+          predict_fn = function(model, data) {
+            stats::predict(model, new_data = data, type = "prob")$.pred_1
+          }
+        ),
+        ensemble_pos_pred = oof_meta_predictions(
+          fitted_model = position_final_fit,
+          refit_fn = pos_refit,
+          data_folds = pos_splits$data_folds,
+          new_data = pos_class_data,
+          row_key = meta_key,
+          predict_fn = function(model, data) {
+            stats::predict(model, new_data = data, type = "numeric")$.pred
+          }
+        )
       )
 
     predictor_vars_class <- c(
@@ -1348,26 +1388,66 @@ train_results_models <- function(
 
   if (engine == "ensemble") {
     cli::cli_inform(
-      "Adding ensemble predictions as features for the ordinal model."
+      "Adding out-of-fold ensemble predictions as features for the ordinal model."
     )
 
-    # Predict win probability and finishing position using the trained ensembles;
-    # these predictions become additional features for the ordinal model
-    win_ensemble_preds <- stats::predict(
-      win_final,
-      new_data = pos_class_data,
-      type = "prob"
-    )
-    pos_ensemble_preds <- stats::predict(
-      position_final_fit,
-      new_data = pos_class_data,
-      type = "numeric"
-    )
+    # Meta-features must be out-of-fold: predicting the win/position ensembles
+    # onto the rows they were fitted on would give those rows near-oracle
+    # values, and the ordinal model would learn to lean on a feature that is
+    # systematically worse-behaved at prediction time (#32).
+    win_refit <- function(fold_train) {
+      suppressMessages(train_stacked_model(
+        outcome_var = "win",
+        model_name = "Win (cross-fit)",
+        train_data = fold_train,
+        data_split = NULL,
+        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+        predictor_vars = predictor_vars,
+        hyperparams = all_hyperparams$win_hyperparameters,
+        model_mode = "classification",
+        save_model = FALSE,
+        quiet = TRUE
+      ))
+    }
+    pos_refit <- function(fold_train) {
+      suppressMessages(train_stacked_model(
+        outcome_var = "position",
+        model_name = "Position (cross-fit)",
+        train_data = fold_train,
+        data_split = NULL,
+        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+        predictor_vars = predictor_vars,
+        hyperparams = all_hyperparams$position_hyperparameters,
+        model_mode = "regression",
+        save_model = FALSE,
+        quiet = TRUE
+      ))
+    }
+
+    meta_key <- c("round_id", "driver_id")
 
     pos_class_data <- pos_class_data |>
       dplyr::mutate(
-        ensemble_win_pred = win_ensemble_preds$.pred_1,
-        ensemble_pos_pred = pos_ensemble_preds$.pred
+        ensemble_win_pred = oof_meta_predictions(
+          fitted_model = win_final,
+          refit_fn = win_refit,
+          data_folds = data_folds,
+          new_data = pos_class_data,
+          row_key = meta_key,
+          predict_fn = function(model, data) {
+            stats::predict(model, new_data = data, type = "prob")$.pred_1
+          }
+        ),
+        ensemble_pos_pred = oof_meta_predictions(
+          fitted_model = position_final_fit,
+          refit_fn = pos_refit,
+          data_folds = pos_splits$data_folds,
+          new_data = pos_class_data,
+          row_key = meta_key,
+          predict_fn = function(model, data) {
+            stats::predict(model, new_data = data, type = "numeric")$.pred
+          }
+        )
       )
 
     predictor_vars_class <- c(
