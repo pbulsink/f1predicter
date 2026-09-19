@@ -21,7 +21,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #'
 #' @description
 #' Returns the cumulative weighted mean of `x`, with weights equal to
-#' `log(1:length(x))`. `NA` values are replaced by `na.val` before computing.
+#' `log1p(seq_along(x))` (i.e. `log(2), log(3), ...`). `NA` values are
+#' replaced by `na.val` before computing.
 #'
 #' @param x A numeric vector.
 #' @param na.val Replacement value for `NA`s.
@@ -29,7 +30,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #' @noRd
 cumwmean <- function(x, na.val = 0) {
   x[is.na(x)] <- na.val
-  return(cumsum(x * log(1:length(x))) / cumsum(log(1:length(x))))
+  weights <- log1p(seq_along(x))
+  return(cumsum(x * weights) / cumsum(weights))
 }
 
 #' Cube Root
