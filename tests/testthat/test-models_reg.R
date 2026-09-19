@@ -94,12 +94,18 @@ test_that("prepare_and_split_data() converts character to factor", {
   expect_true(is.numeric(result$train_data$num_col))
 })
 
+test_that("get_hyperparameters() errors on an invalid timing", {
+  expect_error(get_hyperparameters("results", "after-quali"))
+  expect_error(get_hyperparameters("quali", "after_quali"))
+  expect_error(get_hyperparameters("results", "bogus"))
+})
+
 test_that("get_hyperparameters() includes ordinal_class_hyperparameters for all scenarios", {
   for (model in c("quali", "results")) {
     timings <- if (model == "quali") {
       c("early", "late")
     } else {
-      c("early", "late", "after-quali")
+      c("early", "late", "after_quali")
     }
     for (timing in timings) {
       hp <- get_hyperparameters(model, timing)
@@ -478,4 +484,148 @@ test_that("butcher_model_list() keeps original objects when butchering fails", {
     "Could not butcher model"
   )
   expect_identical(result$test_model, original)
+})
+
+test_that("select_test_groups() returns a deterministic subset of groups under a seed (#33)", {
+  test_data <- data.frame(
+    round_id = rep(1:10, each = 3),
+    value = seq_len(30)
+  )
+
+  set.seed(4821)
+  first <- select_test_groups(test_data, prop = 4 / 5, group = "round_id")
+  set.seed(4821)
+  second <- select_test_groups(test_data, prop = 4 / 5, group = "round_id")
+
+  expect_identical(first, second)
+  expect_length(first, 2L)
+  expect_in(first, as.character(1:10))
+})
+
+test_that("prepare_and_split_data() holds out the supplied groups (#33)", {
+  test_data <- data.frame(
+    round_id = rep(1:10, each = 3),
+    driver_id = rep(c("a", "b", "c"), 10),
+    position = seq_len(30)
+  )
+
+  result <- prepare_and_split_data(
+    test_data,
+    group = "round_id",
+    test_groups = c("3", "7")
+  )
+
+  expect_setequal(as.character(result$test_data$round_id), c("3", "7"))
+  expect_setequal(
+    as.character(result$train_data$round_id),
+    as.character(setdiff(1:10, c(3, 7)))
+  )
+})
+
+test_that("prepare_and_split_data() shares held-out groups across differently filtered data (#33)", {
+  test_data <- data.frame(
+    round_id = rep(1:10, each = 3),
+    driver_id = rep(c("a", "b", "c"), 10),
+    position = seq_len(30)
+  )
+  test_groups <- c("2", "9")
+
+  full <- prepare_and_split_data(
+    test_data,
+    group = "round_id",
+    test_groups = test_groups
+  )
+  filtered <- prepare_and_split_data(
+    test_data[test_data$driver_id != "c", ],
+    group = "round_id",
+    test_groups = test_groups
+  )
+
+  expect_setequal(as.character(full$test_data$round_id), test_groups)
+  expect_setequal(as.character(filtered$test_data$round_id), test_groups)
+  expect_false(any(
+    as.character(filtered$train_data$round_id) %in% test_groups
+  ))
+})
+
+test_that("prepare_and_split_data() errors when held-out groups leave a side empty (#33)", {
+  test_data <- data.frame(
+    round_id = rep(1:3, each = 2),
+    position = seq_len(6)
+  )
+
+  expect_error(
+    prepare_and_split_data(
+      test_data,
+      group = "round_id",
+      test_groups = c("1", "2", "3")
+    ),
+    "leaves the training or testing set empty"
+  )
+  expect_error(
+    prepare_and_split_data(
+      test_data,
+      group = "round_id",
+      test_groups = "nonexistent"
+    ),
+    "leaves the training or testing set empty"
+  )
+})
+
+test_that("train_quali_models() validates the seed argument (#33)", {
+  expect_error(
+    train_quali_models(
+      data = tibble::tibble(season = 2024L, quali_position = 1L),
+      engine = "ranger",
+      seed = c(1, 2)
+    ),
+    "must be a single numeric value"
+  )
+})
+
+test_that("train_results_models() validates the seed argument (#33)", {
+  expect_error(
+    train_results_models(
+      data = tibble::tibble(
+        season = 2024L,
+        position = 1,
+        finished = 1,
+        round_id = "2024-1"
+      ),
+      scenario = "early",
+      engine = "ranger",
+      seed = "abc"
+    ),
+    "must be a single numeric value"
+  )
+})
+
+test_that("model_*() wrappers pass seed through to the training helpers (#33)", {
+  seen <- list()
+  local_mocked_bindings(
+    train_quali_models = function(data, use_practice_data, engine, seed) {
+      seen$quali <<- seed
+      list()
+    },
+    train_results_models = function(data, scenario, engine, seed) {
+      seen$results <<- seed
+      list()
+    },
+    .package = "f1predicter"
+  )
+
+  model_quali_early(data = NULL, seed = 11, save_model = FALSE)
+  expect_identical(seen$quali, 11)
+
+  model_quali_late(data = NULL, seed = 22, save_model = FALSE)
+  expect_identical(seen$quali, 22)
+
+  model_results_early(data = NULL, seed = 33, save_model = FALSE)
+  expect_identical(seen$results, 33)
+
+  model_results_late(data = NULL, seed = 44, save_model = FALSE)
+  expect_identical(seen$results, 44)
+
+  model_results_after_quali(data = NULL, seed = 55, save_model = FALSE)
+  expect_identical(seen$results, 55)
 })

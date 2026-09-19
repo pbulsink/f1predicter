@@ -71,6 +71,11 @@ NULL
 #' # # Make predictions
 #' # predictions <- stats::predict(quali_pos_ensemble, new_data = my_test_data)
 #' }
+#' @param model_mode Either `"regression"` or `"classification"`.
+#' @param save_model Whether to butcher and save the fitted ensemble.
+#' @param quiet If `TRUE`, suppress the progress messages and the ensemble
+#'   weight plot. Used when the model is refitted many times (for example
+#'   during cross-fitting) and the per-fit narration would be noise.
 train_stacked_model <- function(
   outcome_var,
   model_name,
@@ -80,7 +85,8 @@ train_stacked_model <- function(
   predictor_vars,
   hyperparams,
   model_mode = "regression",
-  save_model = TRUE
+  save_model = TRUE,
+  quiet = FALSE
 ) {
   # Ensure stacks is installed
   if (missing(hyperparams)) {
@@ -179,7 +185,7 @@ train_stacked_model <- function(
     )
     tictoc::toc()
 
-    return(res)
+    candidate_resamples[[engine]] <- res
   }
 
   # Name the list of results for easier identification in the stack
@@ -216,7 +222,9 @@ train_stacked_model <- function(
   tictoc::toc()
 
   cli::cli_inform("Ensemble weights:")
-  print(stacks::autoplot(blended_ensemble, type = "weights"))
+  if (!quiet) {
+    print(stacks::autoplot(blended_ensemble, type = "weights"))
+  }
 
   # Fit the final ensemble
   cli::cli_inform("Fitting final ensemble members on all training data...")
@@ -575,7 +583,7 @@ train_ordinal_ensemble <- function(
 #'   available for tuning. Valid options depend on `model`:
 #'   \itemize{
 #'     \item If `model = 'quali'`: `"early"` or `"late"`.
-#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after-quali"`.
+#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after_quali"`.
 #'   }
 #'
 #' @return A named list. Each name corresponds to a specific prediction task
@@ -584,6 +592,14 @@ train_ordinal_ensemble <- function(
 #'   'ranger') and values are the corresponding optimal hyperparameters.
 #' @noRd
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
+  model <- rlang::arg_match(model, c("quali", "results"))
+  valid_timings <- if (model == 'quali') {
+    c("early", "late")
+  } else {
+    c("early", "late", "after_quali")
+  }
+  timing <- rlang::arg_match(timing, valid_timings)
+
   # Default ordinal classification hyperparameters, shared across all scenarios.
   # polr has no tunable hyperparameters; an empty tibble triggers no-op finalization.
   # ordinalNet: elastic net (penalty = L2 strength, mixture = L1/L2 blend).
@@ -731,7 +747,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
           ordinal_class_hyperparameters = ordinal_defaults
         )
       )
-    } else if (timing == 'after-quali') {
+    } else if (timing == 'after_quali') {
       return(
         list(
           win_hyperparameters = list(
@@ -775,7 +791,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
       )
     } else {
       cli::cli_abort(
-        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after-quali}."
+        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after_quali}."
       )
     }
   } else {
@@ -783,4 +799,93 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
       "Error in f1predicter:::get_hyperparameters: {.param model} must be {.val quali} or {.val results}."
     )
   }
+}
+
+#' Generate Out-of-Fold Meta-Feature Predictions
+#'
+#' @description
+#' Produces meta-feature predictions for a stacked (two-stage) model without
+#' leaking the outcome of the rows being predicted.
+#'
+#' @details
+#' A meta-feature is the prediction of a first-stage model used as a predictor
+#' in a second-stage model. Predicting the first-stage model onto the rows it
+#' was fitted on gives those rows near-oracle values, so the second-stage model
+#' learns to lean on a feature that will be systematically worse-behaved at
+#' prediction time. This is the failure mode stacking exists to prevent.
+#'
+#' Rows are therefore filled in two ways:
+#'
+#' * Rows belonging to `data_folds` (the first-stage training rows) are
+#'   predicted by explicit cross-fitting: for each fold, `refit_fn()` is called
+#'   on the other folds and used to predict the held-out fold. Every such row is
+#'   predicted by a model that never saw it.
+#' * Rows outside `data_folds` (the shared held-out test rows, which the
+#'   first-stage model was never fitted on) are predicted directly by
+#'   `fitted_model`, which is already out-of-sample for them.
+#'
+#' Rows are matched between `new_data` and the fold data by `row_key`, so
+#' `new_data` may be filtered differently from the first-stage training frame.
+#'
+#' @param fitted_model The first-stage model fitted on all training data. Used
+#'   for rows outside `data_folds`.
+#' @param refit_fn A function of one argument (a training data frame) returning
+#'   a fitted model. Called once per fold.
+#' @param data_folds An `rsample` `rset` of the first-stage training rows.
+#' @param new_data The data frame to generate meta-features for.
+#' @param row_key A character vector of column names uniquely identifying a row
+#'   in both `new_data` and the fold data.
+#' @param predict_fn A function of `(model, data)` returning a numeric vector of
+#'   predictions.
+#' @return A numeric vector of predictions, one per row of `new_data`.
+#' @noRd
+oof_meta_predictions <- function(
+  fitted_model,
+  refit_fn,
+  data_folds,
+  new_data,
+  row_key,
+  predict_fn
+) {
+  missing_key <- setdiff(row_key, names(new_data))
+  if (length(missing_key) > 0) {
+    cli::cli_abort(
+      "{.arg row_key} column{?s} {.val {missing_key}} {?is/are} missing from {.arg new_data}."
+    )
+  }
+
+  make_key <- function(data) {
+    do.call(
+      paste,
+      c(lapply(row_key, function(col) as.character(data[[col]])), sep = "\r")
+    )
+  }
+
+  new_keys <- make_key(new_data)
+  preds <- rep(NA_real_, nrow(new_data))
+
+  for (i in seq_len(nrow(data_folds))) {
+    split <- data_folds$splits[[i]]
+    fold_fit <- refit_fn(rsample::analysis(split))
+    holdout <- rsample::assessment(split)
+
+    # Rows of new_data that sit in this assessment fold get predictions from a
+    # model fitted without them.
+    target <- which(new_keys %in% make_key(holdout) & is.na(preds))
+    if (length(target) > 0) {
+      preds[target] <- predict_fn(fold_fit, new_data[target, , drop = FALSE])
+    }
+  }
+
+  # Remaining rows were never part of the first-stage training data (they are
+  # the shared held-out test rows), so the full fit is already out-of-sample.
+  remaining <- which(is.na(preds))
+  if (length(remaining) > 0) {
+    preds[remaining] <- predict_fn(
+      fitted_model,
+      new_data[remaining, , drop = FALSE]
+    )
+  }
+
+  preds
 }

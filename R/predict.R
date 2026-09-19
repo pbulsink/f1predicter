@@ -4,7 +4,7 @@
 #' Creates a feature set for a specific upcoming race for a given set of drivers.
 #' This function calculates various driver, constructor, and circuit-specific
 #' features based on historical data. It's designed to generate the input data
-#' required by the prediction functions (e.g., `predict_winner()`).
+#' required by the prediction functions (e.g., `.predict_winner()`).
 #'
 #' @details
 #' The function takes a season, round, and a list of drivers to generate a
@@ -317,7 +317,10 @@ generate_new_data <- function(
     quali <- NULL
   }
 
-  if (!is.null(laps) && nrow(laps) > 0) {
+  practice_found <- !is.null(laps) && nrow(laps) > 0
+  quali_found <- !is.null(quali) && nrow(quali) > 0
+
+  if (practice_found) {
     cli::cli_inform(
       "Found lap data for {season} round {round}. Calculating practice stats."
     )
@@ -367,7 +370,7 @@ generate_new_data <- function(
     new_data$practice_best_gap <- 1
   }
 
-  if (!is.null(quali) && nrow(quali) > 0) {
+  if (quali_found) {
     cli::cli_inform("Found qualifying data for {season} round {round}.")
     quali$round <- round
     quali$season <- season
@@ -378,6 +381,14 @@ generate_new_data <- function(
       ) |>
       dplyr::select(-"driver_avg_qgap")
 
+    required_quali_cols <- c("quali_position", "qgap")
+    missing_quali_cols <- setdiff(required_quali_cols, names(quali_results))
+    if (length(missing_quali_cols) > 0) {
+      cli::cli_abort(
+        "{.arg quali_results} is missing required column{?s}: {.field {missing_quali_cols}}."
+      )
+    }
+
     # If quali_position already exists, remove it before joining
     if ("quali_position" %in% names(new_data)) {
       new_data$quali_position <- NULL
@@ -386,7 +397,11 @@ generate_new_data <- function(
       new_data$grid <- NULL
     }
     new_data <- new_data |>
-      dplyr::left_join(quali_results) |>
+      dplyr::left_join(
+        quali_results,
+        by = c("driver_id", "season", "round"),
+        relationship = "one-to-one"
+      ) |>
       dplyr::mutate(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
@@ -455,6 +470,18 @@ generate_new_data <- function(
         penalties[[p]]
       )
     }
+  }
+
+  # Record which round-specific data sources were actually resolved (as
+  # opposed to filled with placeholder defaults) so that callers such as
+  # simulate_race() and simulate_quali() can auto-detect the correct
+  # model timing without relying on column presence, which is invariant.
+  attr(new_data, "model_timing") <- if (quali_found) {
+    "after_quali"
+  } else if (practice_found) {
+    "late"
+  } else {
+    "early"
   }
 
   return(new_data)
@@ -608,6 +635,39 @@ apply_grid_penalty <- function(
     dplyr::left_join(new_grid_df, by = "driver_id")
 
   return(race_data)
+}
+
+#' Resolve the model timing to auto-detect from generated prediction data
+#'
+#' @description
+#' Reads the `model_timing` attribute attached by `generate_new_data()`,
+#' which records which round-specific data sources (qualifying, practice)
+#' were actually resolved rather than filled with placeholder defaults.
+#'
+#' @param new_data A data frame, typically produced by `generate_new_data()`.
+#' @param valid_timings A character vector of timings the caller supports.
+#'   When the detected timing isn't in this set, it is coerced to the
+#'   closest earlier supported timing (e.g. `"after_quali"` collapses to
+#'   `"late"` for callers that only distinguish `"early"`/`"late"`).
+#' @returns (`character(1)`) One of `valid_timings`.
+#' @keywords internal
+.resolve_model_timing <- function(new_data, valid_timings) {
+  detected <- attr(new_data, "model_timing")
+  if (is.null(detected)) {
+    cli::cli_warn(
+      "Could not determine model timing from {.arg new_data} (missing {.val model_timing} attribute, typically set by {.fn generate_new_data}). Defaulting to {.val early}."
+    )
+    detected <- "early"
+  }
+  if (detected %in% valid_timings) {
+    return(detected)
+  }
+  # Collapse to the most specific supported timing: prefer "late" over
+  # "early" when the caller doesn't support "after_quali".
+  if (detected == "after_quali" && "late" %in% valid_timings) {
+    return("late")
+  }
+  "early"
 }
 
 #' Predict Qualifying Position (Internal)

@@ -298,7 +298,10 @@ calculate_driver_performance <- function(
           "dnf_rate",
         )
     }
-    current_season <- driver_metrics
+    # Note: `current_season` (the full-current-season anchor computed above,
+    # or NULL pre-season) is intentionally left untouched here. Overwriting it
+    # with the recent-form blend `driver_metrics` would double-count the
+    # recent-form component in the season-anchor weight below.
   } else {
     # n_recent_races+ races completed: use current season only
     driver_metrics <- current_metrics
@@ -315,7 +318,15 @@ calculate_driver_performance <- function(
         prev_season_dnf = "dnf_rate"
       )
   } else {
-    NULL
+    # No previous-season data (e.g. a driver's/series' debut season): fall
+    # back to an empty tibble so the join below is a no-op and the
+    # replace_na() defaults anchor the prev-season component instead.
+    tibble::tibble(
+      driver_id = character(0),
+      prev_season_avg = numeric(0),
+      prev_season_sd = numeric(0),
+      prev_season_dnf = numeric(0)
+    )
   }
 
   # Determine current season avg for the season anchor component
@@ -328,36 +339,47 @@ calculate_driver_performance <- function(
         curr_season_dnf = "dnf_rate"
       )
   } else {
-    NULL
+    tibble::tibble(
+      driver_id = character(0),
+      curr_season_avg = numeric(0),
+      curr_season_sd = numeric(0),
+      curr_season_dnf = numeric(0)
+    )
   }
 
-  if (!is.null(prev_season_avg)) {
-    driver_metrics <- driver_metrics |>
-      dplyr::left_join(prev_season_avg, by = "driver_id") |>
-      dplyr::left_join(curr_season_avg, by = "driver_id") |>
-      tidyr::replace_na(list(
-        prev_season_avg = 15,
-        prev_season_sd = 5,
-        prev_season_dnf = 0.1,
-        curr_season_avg = 15,
-        curr_season_sd = 5,
-        curr_season_dnf = 0.1
-      )) |>
-      dplyr::mutate(
-        avg_position = weight_recent *
-          .data$avg_position +
-          weight_season * .data$curr_season_avg +
-          weight_prev_season * .data$prev_season_avg,
-        position_sd = weight_recent *
-          .data$position_sd +
-          weight_season * .data$curr_season_sd +
-          weight_prev_season * .data$prev_season_sd,
-        dnf_rate = weight_recent *
-          .data$dnf_rate +
-          weight_season * .data$curr_season_dnf +
-          weight_prev_season * .data$prev_season_dnf
-      )
+  # Validate that the three blend weights sum to 1 (within floating-point tolerance)
+  weight_sum <- weight_recent + weight_season + weight_prev_season
+  if (abs(weight_sum - 1) > 1e-6) {
+    cli::cli_abort(
+      "{.arg weight_recent}, {.arg weight_season}, and {.arg weight_prev_season} must sum to 1 (got {weight_sum}) in {.fn calculate_driver_performance}."
+    )
   }
+
+  driver_metrics <- driver_metrics |>
+    dplyr::left_join(prev_season_avg, by = "driver_id") |>
+    dplyr::left_join(curr_season_avg, by = "driver_id") |>
+    tidyr::replace_na(list(
+      prev_season_avg = 15,
+      prev_season_sd = 5,
+      prev_season_dnf = 0.1,
+      curr_season_avg = 15,
+      curr_season_sd = 5,
+      curr_season_dnf = 0.1
+    )) |>
+    dplyr::mutate(
+      avg_position = weight_recent *
+        .data$avg_position +
+        weight_season * .data$curr_season_avg +
+        weight_prev_season * .data$prev_season_avg,
+      position_sd = weight_recent *
+        .data$position_sd +
+        weight_season * .data$curr_season_sd +
+        weight_prev_season * .data$prev_season_sd,
+      dnf_rate = weight_recent *
+        .data$dnf_rate +
+        weight_season * .data$curr_season_dnf +
+        weight_prev_season * .data$prev_season_dnf
+    )
 
   driver_metrics |>
     dplyr::select(
@@ -427,7 +449,7 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
         grid_size - .data$avg_position
       ),
       position_sd = pmax(
-        .data$position_sd * (1 + 0.65 * exp(-pmax(dist_to_tail, 0) / 3)),
+        .data$position_sd * (1 + 0.65 * exp(-pmax(.data$dist_to_tail, 0) / 3)),
         1.5
       )
     ) |>
@@ -475,6 +497,10 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
 #' @param n_simulations Integer number of Monte Carlo simulations to run.
 #'   Defaults to 10000.
 #' @param historical_data Historical race data. If `NULL`, uses `clean_data()`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   before running the simulations so the results (win probabilities, average
+#'   final points/position) are reproducible across calls. If `NULL` (the
+#'   default), no seed is set and results vary run to run.
 #' @param ... Additional parameters to be passed to calculate_driver_performance(), such as
 #'   weights for the performance metrics. See `calculate_driver_performance()` for details.
 #'
@@ -492,6 +518,8 @@ calculate_season_metrics <- function(data, n_recent = 5L) {
 #' @examples
 #' \dontrun{
 #' odds <- simulate_championship_odds(season = 2025, n_simulations = 1000)
+#' # Reproducible run:
+#' odds <- simulate_championship_odds(season = 2025, n_simulations = 1000, seed = 1234)
 #' }
 simulate_championship_odds <- function(
   season = as.numeric(f1dataR::get_current_season()),
@@ -499,6 +527,7 @@ simulate_championship_odds <- function(
   remaining = NULL,
   n_simulations = 10000L,
   historical_data = NULL,
+  seed = NULL,
   ...
 ) {
   # --- Input Validation ---
@@ -514,6 +543,15 @@ simulate_championship_odds <- function(
     )
   }
   n_simulations <- as.integer(n_simulations)
+
+  if (!is.null(seed)) {
+    if (!is.numeric(seed) || length(seed) != 1) {
+      cli::cli_abort(
+        "{.arg seed} must be a single numeric value or {.code NULL} in {.fn simulate_championship_odds}."
+      )
+    }
+    set.seed(as.integer(seed))
+  }
 
   # --- Load Data ---
   if (is.null(standings)) {
@@ -738,10 +776,20 @@ simulate_race_positions <- function(
 #' @param odds A tibble from `simulate_championship_odds()`.
 #' @param n_simulations Integer number of simulations that were run (for display).
 #'   Defaults to 10000.
+#' @param weight_recent,weight_season,weight_prev_season Numeric blend weights
+#'   actually used for the performance blend (see `calculate_driver_performance()`),
+#'   so the posted methodology text matches the weights used to produce `odds`.
+#'   Default to `calculate_driver_performance()`'s defaults (0.5 / 0.4 / 0.1).
 #'
 #' @return A list of lists suitable for `post_skeet_predictions()`.
 #' @noRd
-format_championship_skeet <- function(odds, n_simulations = 10000L) {
+format_championship_skeet <- function(
+  odds,
+  n_simulations = 10000L,
+  weight_recent = 0.5,
+  weight_season = 0.4,
+  weight_prev_season = 0.1
+) {
   current_season <- odds$season[1]
 
   odds_formatted <- odds |>
@@ -785,7 +833,7 @@ format_championship_skeet <- function(odds, n_simulations = 10000L) {
   skeet2_body <- glue::glue(
     "\\U0001F4CA Simulation details:",
     "Based on {scales::comma(n_simulations)} Monte Carlo simulations",
-    "Performance: 65% recent (last 5) / 30% season / 5% prev season",
+    "Performance: {scales::percent(weight_recent, 1)} recent (last 5) / {scales::percent(weight_season, 1)} season / {scales::percent(weight_prev_season, 1)} prev season",
     "Accounts for DNFs and sprint races",
     "",
     "Leader {leader$driver_name} avg projected total: {round(leader$avg_final_points, 1)} pts",

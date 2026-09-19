@@ -1138,8 +1138,8 @@ combine_and_finalize_features <- function(
 #'   compatibility.
 #' @return A single, cleaned data frame with one row per driver-event. Sprint
 #'   events are included with `is_sprint = TRUE` and use
-#'   `round_id = "{season}_{round}_sprint"`; race events use
-#'   `is_sprint = FALSE` and `round_id = "{season}_{round}"`.
+#'   `round_id = "\{season\}_\{round\}_sprint"`; race events use
+#'   `is_sprint = FALSE` and `round_id = "\{season\}_\{round\}"`.
 #' @importFrom rlang .data
 #' @export
 clean_data <- function(

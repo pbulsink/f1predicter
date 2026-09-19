@@ -26,7 +26,7 @@ Invisibly returns the upload result from `piggyback::pb_upload()`.
 }
 \description{
 Validates the local SQLite cache and uploads it as a release asset using
-`{piggyback}`.
+`\{piggyback\}`.
 }
 \examples{
 \dontrun{

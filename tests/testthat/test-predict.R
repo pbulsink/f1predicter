@@ -504,3 +504,147 @@ test_that("simulate_quali() errors on invalid string timing (#noissue)", {
     "must be one of"
   )
 })
+
+# ---- Model timing auto-detection (#27) --------------------------------------
+
+test_that("generate_new_data() tags model_timing 'early' when no live quali/practice data is used (#27)", {
+  historical_data <- cleaned_data
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE
+  )
+
+  expect_identical(attr(result, "model_timing"), "early")
+})
+
+test_that("generate_new_data() tags model_timing 'late' when practice data is found but no quali (#27)", {
+  historical_data <- cleaned_data
+  drivers <- historical_data[
+    historical_data$round_id == utils::tail(historical_data$round_id, 1),
+    c("driver_id", "constructor_id")
+  ]
+
+  local_mocked_bindings(
+    get_laps = function(...) {
+      tibble::tibble(driver_id = drivers$driver_id[1:2], lap_time = c(90, 91))
+    },
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    add_drivers_to_laps = function(laps, season) laps,
+    process_lap_times = function(laps) laps,
+    summarize_practice_laps = function(laps) {
+      tibble::tibble(
+        driver_id = drivers$driver_id[1:2],
+        season = 2025,
+        round = 1,
+        practice_avg_rank = c(1, 2),
+        practice_best_rank = c(1, 2),
+        practice_optimal_rank = c(1, 2),
+        practice_avg_gap = c(0, 0.5),
+        practice_best_gap = c(0, 0.4)
+      )
+    },
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    load_quali = function(...) NULL,
+    .package = "f1dataR"
+  )
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    drivers = drivers,
+    historical_data = historical_data,
+    use_live_data = TRUE
+  )
+
+  expect_identical(attr(result, "model_timing"), "late")
+})
+
+test_that("generate_new_data() tags model_timing 'after_quali' when quali data is found (#27)", {
+  historical_data <- cleaned_data
+  drivers <- historical_data[
+    historical_data$round_id == utils::tail(historical_data$round_id, 1),
+    c("driver_id", "constructor_id")
+  ]
+
+  local_mocked_bindings(
+    get_laps = function(...) NULL,
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    load_quali = function(...) {
+      tibble::tibble(driver_id = drivers$driver_id[1:2], q1 = c(90, 91))
+    },
+    .package = "f1dataR"
+  )
+  local_mocked_bindings(
+    process_quali_times = function(quali) {
+      tibble::tibble(
+        driver_id = drivers$driver_id[1:2],
+        season = 2025,
+        round = 1,
+        driver_avg_qgap = c(0, 0.2),
+        qgap = c(0, 0.2),
+        q_min_perc = c(1, 1.01),
+        q_avg_perc = c(1, 1.01)
+      )
+    },
+    .package = "f1predicter"
+  )
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    drivers = drivers,
+    historical_data = historical_data,
+    use_live_data = TRUE
+  )
+
+  expect_identical(attr(result, "model_timing"), "after_quali")
+})
+
+test_that(".resolve_model_timing() reads the model_timing attribute set by generate_new_data() (#27)", {
+  nd_early <- structure(tibble::tibble(x = 1), model_timing = "early")
+  nd_late <- structure(tibble::tibble(x = 1), model_timing = "late")
+  nd_after_quali <- structure(
+    tibble::tibble(x = 1),
+    model_timing = "after_quali"
+  )
+
+  expect_identical(
+    .resolve_model_timing(nd_early, c("early", "late", "after_quali")),
+    "early"
+  )
+  expect_identical(
+    .resolve_model_timing(nd_late, c("early", "late", "after_quali")),
+    "late"
+  )
+  expect_identical(
+    .resolve_model_timing(nd_after_quali, c("early", "late", "after_quali")),
+    "after_quali"
+  )
+  # Quali models don't support "after_quali"; it should collapse to "late"
+  expect_identical(
+    .resolve_model_timing(nd_after_quali, c("early", "late")),
+    "late"
+  )
+})
+
+test_that(".resolve_model_timing() warns and defaults to 'early' when the attribute is absent (#27)", {
+  nd_no_attr <- tibble::tibble(x = 1)
+
+  expect_warning(
+    result <- .resolve_model_timing(
+      nd_no_attr,
+      c("early", "late", "after_quali")
+    ),
+    "model_timing"
+  )
+  expect_identical(result, "early")
+})

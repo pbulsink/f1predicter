@@ -21,7 +21,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #'
 #' @description
 #' Returns the cumulative weighted mean of `x`, with weights equal to
-#' `log(1:length(x))`. `NA` values are replaced by `na.val` before computing.
+#' `log1p(seq_along(x))` (i.e. `log(2), log(3), ...`). `NA` values are
+#' replaced by `na.val` before computing.
 #'
 #' @param x A numeric vector.
 #' @param na.val Replacement value for `NA`s.
@@ -29,7 +30,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #' @noRd
 cumwmean <- function(x, na.val = 0) {
   x[is.na(x)] <- na.val
-  return(cumsum(x * log(1:length(x))) / cumsum(log(1:length(x))))
+  weights <- log1p(seq_along(x))
+  return(cumsum(x * weights) / cumsum(weights))
 }
 
 #' Cube Root
@@ -207,4 +209,21 @@ normalize_vector <- function(x) {
   } else {
     return(x / total)
   }
+}
+
+#' Validate an Optional Seed Argument
+#'
+#' @param seed The value supplied by the user; `NULL` means "do not seed".
+#' @param call The calling environment, used for the error message.
+#' @return Invisibly `NULL`. Called for its side effect of aborting on an
+#'   invalid seed.
+#' @noRd
+check_seed <- function(seed, call = rlang::caller_env()) {
+  if (!is.null(seed) && (!is.numeric(seed) || length(seed) != 1)) {
+    cli::cli_abort(
+      "{.arg seed} must be a single numeric value or {.code NULL}.",
+      call = call
+    )
+  }
+  invisible(NULL)
 }

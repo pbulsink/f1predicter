@@ -597,9 +597,8 @@ summarise_simulations <- function(
   # --- Empirical SD from historical qualifying positions ---
   perf <- tryCatch(
     calculate_driver_performance(
-      historical_data,
       season = season,
-      round = round
+      historical_data = historical_data
     ),
     error = \(e) NULL
   )
