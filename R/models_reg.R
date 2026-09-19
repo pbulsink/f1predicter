@@ -860,7 +860,6 @@ train_binary_result_model <- function(
     model_name,
     c("mn_log_loss" = "log loss", "accuracy" = "accuracy", "roc_auc" = "auc")
   )
-  tictoc::toc()
 
   return(final_fit)
 }
@@ -957,11 +956,13 @@ train_results_models <- function(
   outcome_cols <- c("win", "podium", "t10", "position")
   id_cols <- c("season", "round", "round_id", "driver_id", "constructor_id")
 
+  scenario <- rlang::arg_match(scenario, c("early", "late", "after_quali"))
+
   results_cols <- switch(
     scenario,
     "early" = c(base_cols, outcome_cols),
     "late" = c(base_cols, practice_cols, outcome_cols),
-    "after-quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
+    "after_quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
   )
 
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
@@ -1207,7 +1208,6 @@ train_results_models <- function(
 
     position_best <- position_res |>
       tune::select_best(metric = "rmse")
-    tictoc::toc(log = T)
 
     position_final_wflow <- position_wflow |>
       tune::finalize_workflow(position_best)
@@ -1398,7 +1398,7 @@ model_results_after_quali <- function(
 ) {
   models <- train_results_models(
     data,
-    scenario = "after-quali",
+    scenario = "after_quali",
     engine = engine
   )
   if (save_model) {
