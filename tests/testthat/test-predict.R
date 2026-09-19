@@ -231,18 +231,6 @@ test_that("ensemble prediction helpers error clearly when stacks is unavailable 
     "must be installed to predict with an ensemble model"
   )
   expect_error(
-    f1predicter:::.predict_winner(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
-    f1predicter:::.predict_podium(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
-    f1predicter:::.predict_t10(new_data, fake_stack),
-    "must be installed to predict with an ensemble model"
-  )
-  expect_error(
     f1predicter:::.predict_position(new_data, fake_stack),
     "must be installed to predict with an ensemble model"
   )
@@ -399,73 +387,6 @@ test_that(".predict_quali_pos() returns correct structure with cached ensemble (
 })
 
 # ---- Cached model: individual results predict_* functions -------------------
-
-test_that(".predict_winner() returns win_odd between 0 and 1 with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "early"),
-    "Cached results early models not found"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("results", "early", "ensemble")
-
-  result <- f1predicter:::.predict_winner(new_data, models$win)
-
-  expect_s3_class(result, "tbl_df")
-  expect_named(result, c("driver_id", "round", "season", "win_odd"))
-  expect_equal(nrow(result), nrow(new_data))
-  expect_true(all(result$win_odd >= 0 & result$win_odd <= 1))
-})
-
-test_that(".predict_podium() returns podium_odd between 0 and 1 with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "early"),
-    "Cached results early models not found"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("results", "early", "ensemble")
-
-  result <- f1predicter:::.predict_podium(new_data, models$podium)
-
-  expect_s3_class(result, "tbl_df")
-  expect_named(result, c("driver_id", "round", "season", "podium_odd"))
-  expect_true(all(result$podium_odd >= 0 & result$podium_odd <= 1))
-})
-
-test_that(".predict_t10() returns t10_odd between 0 and 1 with cached ensemble (#noissue)", {
-  skip_if(
-    !.has_ensemble_models("results", "early"),
-    "Cached results early models not found"
-  )
-  withr::local_options(list(f1predicter.models = .models_dir))
-
-  new_data <- generate_new_data(
-    season = 2025,
-    round = 1,
-    historical_data = cleaned_data,
-    use_live_data = FALSE
-  )
-  models <- load_models("results", "early", "ensemble")
-
-  result <- f1predicter:::.predict_t10(new_data, models$t10)
-
-  expect_s3_class(result, "tbl_df")
-  expect_named(result, c("driver_id", "round", "season", "t10_odd"))
-  expect_true(all(result$t10_odd >= 0 & result$t10_odd <= 1))
-})
 
 test_that(".predict_position() returns numeric position with cached ensemble (#noissue)", {
   skip_if(

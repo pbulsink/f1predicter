@@ -264,10 +264,9 @@ simulate_race <- function(
     )
   }
 
-  required_models <- c("win", "podium", "t10", "position")
-  if (!all(required_models %in% names(results_models))) {
+  if (!"position" %in% names(results_models)) {
     cli::cli_abort(
-      "The {.arg results_models} list must contain: {.val {required_models}}"
+      "The {.arg results_models} list must contain a {.val position} model."
     )
   }
 
