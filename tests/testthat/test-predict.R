@@ -792,12 +792,15 @@ test_that("predict_quali_round() errors on invalid string timing (#noissue)", {
   )
 })
 
-test_that("predict_round() auto-detects after_quali timing from q percentage columns (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026),
-    q_min_perc = c(1.01, 1.02)
+test_that("predict_round() auto-detects after_quali timing from the model_timing attribute (#27)", {
+  new_data <- structure(
+    tibble::tibble(
+      driver_id = c("driver_a", "driver_b"),
+      round = c(1L, 1L),
+      season = c(2026, 2026),
+      q_min_perc = c(1.01, 1.02)
+    ),
+    model_timing = "after_quali"
   )
   loaded_timing <- NULL
   mock_models <- list(
@@ -858,12 +861,15 @@ test_that("predict_round() auto-detects after_quali timing from q percentage col
   expect_equal(nrow(result), nrow(new_data))
 })
 
-test_that("predict_round() auto-detects late timing from practice columns (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026),
-    practice_best_rank = c(3, 7)
+test_that("predict_round() auto-detects late timing from the model_timing attribute (#27)", {
+  new_data <- structure(
+    tibble::tibble(
+      driver_id = c("driver_a", "driver_b"),
+      round = c(1L, 1L),
+      season = c(2026, 2026),
+      practice_best_rank = c(3, 7)
+    ),
+    model_timing = "late"
   )
   loaded_timing <- NULL
   mock_models <- list(
@@ -924,11 +930,14 @@ test_that("predict_round() auto-detects late timing from practice columns (#nois
   expect_equal(nrow(result), nrow(new_data))
 })
 
-test_that("predict_round() auto-detects early timing when no late indicators exist (#noissue)", {
-  new_data <- tibble::tibble(
-    driver_id = c("driver_a", "driver_b"),
-    round = c(1L, 1L),
-    season = c(2026, 2026)
+test_that("predict_round() auto-detects early timing from the model_timing attribute (#27)", {
+  new_data <- structure(
+    tibble::tibble(
+      driver_id = c("driver_a", "driver_b"),
+      round = c(1L, 1L),
+      season = c(2026, 2026)
+    ),
+    model_timing = "early"
   )
   loaded_timing <- NULL
   mock_models <- list(
@@ -1189,4 +1198,268 @@ test_that("predict_round() leaves new_data unchanged for non-ensemble class mode
 
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), nrow(new_data))
+})
+
+# ---- Model timing auto-detection (#27) --------------------------------------
+
+test_that("generate_new_data() tags model_timing 'early' when no live quali/practice data is used (#27)", {
+  historical_data <- cleaned_data
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    historical_data = historical_data,
+    use_live_data = FALSE
+  )
+
+  expect_identical(attr(result, "model_timing"), "early")
+})
+
+test_that("generate_new_data() tags model_timing 'late' when practice data is found but no quali (#27)", {
+  historical_data <- cleaned_data
+  drivers <- historical_data[
+    historical_data$round_id == utils::tail(historical_data$round_id, 1),
+    c("driver_id", "constructor_id")
+  ]
+
+  local_mocked_bindings(
+    get_laps = function(...) {
+      tibble::tibble(driver_id = drivers$driver_id[1:2], lap_time = c(90, 91))
+    },
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    add_drivers_to_laps = function(laps, season) laps,
+    process_lap_times = function(laps) laps,
+    summarize_practice_laps = function(laps) {
+      tibble::tibble(
+        driver_id = drivers$driver_id[1:2],
+        season = 2025,
+        round = 1,
+        practice_avg_rank = c(1, 2),
+        practice_best_rank = c(1, 2),
+        practice_optimal_rank = c(1, 2),
+        practice_avg_gap = c(0, 0.5),
+        practice_best_gap = c(0, 0.4)
+      )
+    },
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    load_quali = function(...) NULL,
+    .package = "f1dataR"
+  )
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    drivers = drivers,
+    historical_data = historical_data,
+    use_live_data = TRUE
+  )
+
+  expect_identical(attr(result, "model_timing"), "late")
+})
+
+test_that("generate_new_data() tags model_timing 'after_quali' when quali data is found (#27)", {
+  historical_data <- cleaned_data
+  drivers <- historical_data[
+    historical_data$round_id == utils::tail(historical_data$round_id, 1),
+    c("driver_id", "constructor_id")
+  ]
+
+  local_mocked_bindings(
+    get_laps = function(...) NULL,
+    .package = "f1predicter"
+  )
+  local_mocked_bindings(
+    load_quali = function(...) {
+      tibble::tibble(driver_id = drivers$driver_id[1:2], q1 = c(90, 91))
+    },
+    .package = "f1dataR"
+  )
+  local_mocked_bindings(
+    process_quali_times = function(quali) {
+      tibble::tibble(
+        driver_id = drivers$driver_id[1:2],
+        driver_avg_qgap = c(0, 0.2),
+        qgap = c(0, 0.2),
+        q_min_perc = c(1, 1.01),
+        q_avg_perc = c(1, 1.01)
+      )
+    },
+    .package = "f1predicter"
+  )
+
+  result <- generate_new_data(
+    season = 2025,
+    round = 1,
+    drivers = drivers,
+    historical_data = historical_data,
+    use_live_data = TRUE
+  )
+
+  expect_identical(attr(result, "model_timing"), "after_quali")
+})
+
+test_that(".resolve_model_timing() reads the model_timing attribute set by generate_new_data() (#27)", {
+  nd_early <- structure(tibble::tibble(x = 1), model_timing = "early")
+  nd_late <- structure(tibble::tibble(x = 1), model_timing = "late")
+  nd_after_quali <- structure(
+    tibble::tibble(x = 1),
+    model_timing = "after_quali"
+  )
+
+  expect_identical(
+    .resolve_model_timing(nd_early, c("early", "late", "after_quali")),
+    "early"
+  )
+  expect_identical(
+    .resolve_model_timing(nd_late, c("early", "late", "after_quali")),
+    "late"
+  )
+  expect_identical(
+    .resolve_model_timing(nd_after_quali, c("early", "late", "after_quali")),
+    "after_quali"
+  )
+  # Quali models don't support "after_quali"; it should collapse to "late"
+  expect_identical(
+    .resolve_model_timing(nd_after_quali, c("early", "late")),
+    "late"
+  )
+})
+
+test_that(".resolve_model_timing() warns and defaults to 'early' when the attribute is absent (#27)", {
+  nd_no_attr <- tibble::tibble(x = 1)
+
+  expect_warning(
+    result <- .resolve_model_timing(
+      nd_no_attr,
+      c("early", "late", "after_quali")
+    ),
+    "model_timing"
+  )
+  expect_identical(result, "early")
+})
+
+test_that("predict_round() auto-detection loads 'early' models for data with no live quali/practice info (#27)", {
+  new_data <- structure(
+    tibble::tibble(driver_id = "driver_a", round = 1L, season = 2024L),
+    model_timing = "early"
+  )
+
+  local_mocked_bindings(
+    load_models = function(model_type, model_timing, engine) {
+      expect_identical(model_timing, "early")
+      list(
+        win = "win_model",
+        podium = "podium_model",
+        t10 = "t10_model",
+        position = "position_model",
+        position_class = "position_class_model"
+      )
+    },
+    predict_winner = function(new_data, win_model) {
+      new_data |> dplyr::mutate(win_odd = 0.5)
+    },
+    predict_podium = function(new_data, podium_model) {
+      new_data |> dplyr::mutate(podium_odd = 0.5)
+    },
+    predict_t10 = function(new_data, t10_model) {
+      new_data |> dplyr::mutate(t10_odd = 0.5)
+    },
+    predict_position = function(new_data, position_model) {
+      new_data |> dplyr::mutate(likely_position = 5)
+    },
+    predict_position_class = function(new_data, position_class_model) {
+      new_data |>
+        dplyr::mutate(likely_position_class = 5, .probs = I(list(diag(2))))
+    },
+    .package = "f1predicter"
+  )
+
+  result <- predict_round(new_data, results_models = NULL, engine = "ranger")
+
+  expect_s3_class(result, "tbl_df")
+})
+
+test_that("predict_round() auto-detection loads 'after_quali' models when quali data was resolved (#27)", {
+  new_data <- structure(
+    tibble::tibble(driver_id = "driver_a", round = 1L, season = 2024L),
+    model_timing = "after_quali"
+  )
+
+  local_mocked_bindings(
+    load_models = function(model_type, model_timing, engine) {
+      expect_identical(model_timing, "after_quali")
+      list(
+        win = "win_model",
+        podium = "podium_model",
+        t10 = "t10_model",
+        position = "position_model",
+        position_class = "position_class_model"
+      )
+    },
+    predict_winner = function(new_data, win_model) {
+      new_data |> dplyr::mutate(win_odd = 0.5)
+    },
+    predict_podium = function(new_data, podium_model) {
+      new_data |> dplyr::mutate(podium_odd = 0.5)
+    },
+    predict_t10 = function(new_data, t10_model) {
+      new_data |> dplyr::mutate(t10_odd = 0.5)
+    },
+    predict_position = function(new_data, position_model) {
+      new_data |> dplyr::mutate(likely_position = 5)
+    },
+    predict_position_class = function(new_data, position_class_model) {
+      new_data |>
+        dplyr::mutate(likely_position_class = 5, .probs = I(list(diag(2))))
+    },
+    .package = "f1predicter"
+  )
+
+  result <- predict_round(new_data, results_models = NULL, engine = "ranger")
+
+  expect_s3_class(result, "tbl_df")
+})
+
+test_that("predict_quali_round() auto-detection collapses 'after_quali' timing to 'late' (#27)", {
+  new_data <- structure(
+    tibble::tibble(driver_id = "driver_a", round = 1L, season = 2024L),
+    model_timing = "after_quali"
+  )
+
+  local_mocked_bindings(
+    load_models = function(model_type, model_timing, engine) {
+      expect_identical(model_timing, "late")
+      list(
+        quali_pole = "quali_pole_model",
+        quali_pos = "quali_pos_model",
+        quali_pos_class = "quali_pos_class_model"
+      )
+    },
+    predict_quali_pole = function(new_data, quali_pole_model) {
+      new_data |> dplyr::mutate(pole_odd = 0.5)
+    },
+    predict_quali_pos = function(new_data, quali_pos_model) {
+      new_data |> dplyr::mutate(likely_quali_position = 5)
+    },
+    predict_quali_pos_class = function(new_data, quali_pos_class_model) {
+      new_data |>
+        dplyr::mutate(
+          likely_quali_position_class = 5,
+          .probs = I(list(diag(2)))
+        )
+    },
+    .package = "f1predicter"
+  )
+
+  result <- predict_quali_round(
+    new_data,
+    quali_models = NULL,
+    engine = "ranger"
+  )
+
+  expect_s3_class(result, "tbl_df")
 })
