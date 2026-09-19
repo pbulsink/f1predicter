@@ -1282,6 +1282,8 @@ test_that("generate_new_data() tags model_timing 'after_quali' when quali data i
     process_quali_times = function(quali) {
       tibble::tibble(
         driver_id = drivers$driver_id[1:2],
+        season = 2025,
+        round = 1,
         driver_avg_qgap = c(0, 0.2),
         qgap = c(0, 0.2),
         q_min_perc = c(1, 1.01),

@@ -381,6 +381,14 @@ generate_new_data <- function(
       ) |>
       dplyr::select(-"driver_avg_qgap")
 
+    required_quali_cols <- c("quali_position", "qgap")
+    missing_quali_cols <- setdiff(required_quali_cols, names(quali_results))
+    if (length(missing_quali_cols) > 0) {
+      cli::cli_abort(
+        "{.arg quali_results} is missing required column{?s}: {.field {missing_quali_cols}}."
+      )
+    }
+
     # If quali_position already exists, remove it before joining
     if ("quali_position" %in% names(new_data)) {
       new_data$quali_position <- NULL
@@ -389,7 +397,11 @@ generate_new_data <- function(
       new_data$grid <- NULL
     }
     new_data <- new_data |>
-      dplyr::left_join(quali_results) |>
+      dplyr::left_join(
+        quali_results,
+        by = c("driver_id", "season", "round"),
+        relationship = "one-to-one"
+      ) |>
       dplyr::mutate(
         grid = .data$quali_position,
         driver_avg_qgap = 0.8 * .data$driver_avg_qgap + 0.2 * .data$qgap
