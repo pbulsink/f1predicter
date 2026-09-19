@@ -1,5 +1,7 @@
 # f1predicter 0.1.0.9000
 
+* `model_quali_early()`, `model_quali_late()`, `model_results_early()`, `model_results_late()` and `model_results_after_quali()` now hold out the same `round_id` groups for every model in a training run, so the metrics reported side by side are computed on the same races, and gain a `seed` argument for reproducible runs (@pbulsink, #33).
+
 * `train_stacked_model()` now trains and blends all candidate engines instead of returning after the first one (@pbulsink, #26).
 * `generate_new_data()` now records which round-specific data (qualifying, practice) was genuinely resolved via a `model_timing` attribute, and `predict_round()`/`predict_quali_round()` use it to auto-detect model timing instead of a column-presence heuristic that always resolved to `after_quali` (@pbulsink, #27).
 * `simulate_championship_odds()` gains a `seed` argument for reproducible Monte Carlo simulations, and `calculate_driver_performance()` no longer double-counts recent-season form when blending with the previous season during the early-season window; the 3-way recent/season/prev-season blend is now applied even when there is no previous-season data (falling back to the same defaults previously used only when prior data existed), and `weight_recent`/`weight_season`/`weight_prev_season` are validated to sum to 1. `format_championship_skeet()`'s posted methodology text now reflects the weights actually passed in rather than a hardcoded percentage (@pbulsink, #34).
