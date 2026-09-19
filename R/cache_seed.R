@@ -46,7 +46,7 @@
 #'
 #' @description
 #' Downloads a prebuilt SQLite cache snapshot from a GitHub release asset using
-#' `{piggyback}`, validates it, and stores it as `f1predicter.sqlite` in the
+#' `\{piggyback\}`, validates it, and stores it as `f1predicter.sqlite` in the
 #' configured cache directory.
 #'
 #' @param tag GitHub release tag containing the snapshot asset. Defaults to
@@ -117,7 +117,7 @@ seed_cache_from_release <- function(
 #'
 #' @description
 #' Validates the local SQLite cache and uploads it as a release asset using
-#' `{piggyback}`.
+#' `\{piggyback\}`.
 #'
 #' @param tag GitHub release tag to publish to.
 #' @param repo Repository in `"owner/repo"` format.

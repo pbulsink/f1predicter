@@ -16,3 +16,4 @@
 ^run_predictions.R$
 ^test.csv$
 ^\.lintr$
+^\.kilo$
