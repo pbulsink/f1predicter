@@ -957,11 +957,13 @@ train_results_models <- function(
   outcome_cols <- c("win", "podium", "t10", "position")
   id_cols <- c("season", "round", "round_id", "driver_id", "constructor_id")
 
+  scenario <- rlang::arg_match(scenario, c("early", "late", "after_quali"))
+
   results_cols <- switch(
     scenario,
     "early" = c(base_cols, outcome_cols),
     "late" = c(base_cols, practice_cols, outcome_cols),
-    "after-quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
+    "after_quali" = c(base_cols, practice_cols, quali_perf_cols, outcome_cols)
   )
 
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
@@ -1398,7 +1400,7 @@ model_results_after_quali <- function(
 ) {
   models <- train_results_models(
     data,
-    scenario = "after-quali",
+    scenario = "after_quali",
     engine = engine
   )
   if (save_model) {
