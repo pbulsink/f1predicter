@@ -210,3 +210,20 @@ normalize_vector <- function(x) {
     return(x / total)
   }
 }
+
+#' Validate an Optional Seed Argument
+#'
+#' @param seed The value supplied by the user; `NULL` means "do not seed".
+#' @param call The calling environment, used for the error message.
+#' @return Invisibly `NULL`. Called for its side effect of aborting on an
+#'   invalid seed.
+#' @noRd
+check_seed <- function(seed, call = rlang::caller_env()) {
+  if (!is.null(seed) && (!is.numeric(seed) || length(seed) != 1)) {
+    cli::cli_abort(
+      "{.arg seed} must be a single numeric value or {.code NULL}.",
+      call = call
+    )
+  }
+  invisible(NULL)
+}

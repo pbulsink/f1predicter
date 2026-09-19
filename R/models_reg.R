@@ -17,6 +17,11 @@
 #'   all columns in `data` are used.
 #' @param prop The proportion of data to be in the training set.
 #' @param group The variable to group by for the split.
+#' @param test_groups An optional character vector of `group` values to hold
+#'   out as the testing set. Supplying the same `test_groups` to several calls
+#'   keeps the held-out groups aligned across models even when each model
+#'   filters the data differently. If `NULL`, a fresh random group split is
+#'   drawn.
 #' @return A list containing the data split object, training data,
 #'   testing data, and cross-validation folds.
 #' @noRd
@@ -24,7 +29,8 @@ prepare_and_split_data <- function(
   data,
   columns = NULL,
   prop = 4 / 5,
-  group = "round_id"
+  group = "round_id",
+  test_groups = NULL
 ) {
   if (!is.null(columns)) {
     processed_data <- dplyr::select(data, dplyr::all_of(c(columns, group)))
@@ -34,11 +40,27 @@ prepare_and_split_data <- function(
   processed_data <- processed_data |>
     dplyr::mutate_if(is.character, as.factor)
 
-  data_split <- rsample::group_initial_split(
-    processed_data,
-    prop = prop,
-    group = group
-  )
+  if (is.null(test_groups) || length(test_groups) == 0) {
+    data_split <- rsample::group_initial_split(
+      processed_data,
+      prop = prop,
+      group = group
+    )
+  } else {
+    in_test <- as.character(processed_data[[group]]) %in%
+      as.character(test_groups)
+    if (all(in_test) || !any(in_test)) {
+      cli::cli_abort(
+        "The supplied {.arg test_groups} leaves the training or testing set empty."
+      )
+    }
+    # `make_splits()` takes row indices, so the shared group hold-out is
+    # translated into positions within this model's own filtered frame.
+    data_split <- rsample::make_splits(
+      x = list(analysis = which(!in_test), assessment = which(in_test)),
+      data = processed_data
+    )
+  }
   train_data <- rsample::training(data_split)
 
   list(
@@ -47,6 +69,29 @@ prepare_and_split_data <- function(
     test_data = rsample::testing(data_split),
     data_folds = rsample::group_vfold_cv(data = train_data, group = group)
   )
+}
+
+#' Select Shared Held-Out Groups for a Training Run
+#'
+#' Draws the `group` values that will form the testing set for every model in
+#' a training run. Sharing the held-out groups makes the reported metrics of
+#' the different models mutually comparable, while still allowing each model
+#' to apply its own row filtering on top of the shared hold-out.
+#'
+#' @param data The input data frame.
+#' @param prop The proportion of groups to be in the training set.
+#' @param group The variable to group by for the split.
+#' @return A character vector of `group` values to hold out. Returns
+#'   `character(0)` when the data has fewer than two groups, in which case no
+#'   shared hold-out can be formed.
+#' @noRd
+select_test_groups <- function(data, prop = 4 / 5, group = "round_id") {
+  groups <- unique(as.character(data[[group]]))
+  if (length(groups) < 2L) {
+    return(character(0))
+  }
+  n_train <- max(1L, min(length(groups) - 1L, floor(length(groups) * prop)))
+  sample(groups, size = length(groups) - n_train)
 }
 
 #' Report Model Performance Metrics
@@ -132,13 +177,18 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #'   it uses data available before practice sessions ("early" model).
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created. If `NULL` (the
+#'   default), no seed is set.
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 #' @noRd
 train_quali_models <- function(
   data,
   use_practice_data = FALSE,
-  engine = "ranger"
+  engine = "ranger",
+  seed = NULL
 ) {
+  check_seed(seed)
   valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
   if (!engine %in% valid_engines) {
     cli::cli_abort(
@@ -173,6 +223,15 @@ train_quali_models <- function(
   model_timing <- ifelse(use_practice_data, "late", "early")
   data <- data[data$season >= 2018, ]
   p_mod_data <- data # Used later for position model
+
+  # A single set of held-out groups is shared by every model in this run so
+  # their reported metrics are computed on the same races and are therefore
+  # mutually comparable. Each model still applies its own row filtering on
+  # top of the shared hold-out.
+  if (!is.null(seed)) {
+    set.seed(as.integer(seed))
+  }
+  test_groups <- select_test_groups(data)
 
   # ---- Pole Model Setup ----
   data$pole <- factor(ifelse(data$quali_position == 1, 1, 0), levels = c(1, 0))
@@ -214,7 +273,11 @@ train_quali_models <- function(
     base_pole_cols
   }
 
-  pole_splits <- prepare_and_split_data(data, columns = pole_cols)
+  pole_splits <- prepare_and_split_data(
+    data,
+    columns = pole_cols,
+    test_groups = test_groups
+  )
   train_data_pole <- pole_splits$train_data
   data_folds_pole <- pole_splits$data_folds
   data_split_pole <- pole_splits$data_split
@@ -267,7 +330,7 @@ train_quali_models <- function(
       dplyr::filter(!is.na(.data$quali_position)) |>
       dplyr::select(dplyr::all_of(pos_cols))
 
-    pos_splits <- prepare_and_split_data(pos_data)
+    pos_splits <- prepare_and_split_data(pos_data, test_groups = test_groups)
     pos_predictor_vars <- setdiff(pos_cols, c("quali_position", id_cols))
 
     position_final_fit <- train_stacked_model(
@@ -435,7 +498,7 @@ train_quali_models <- function(
       dplyr::filter(!is.na(.data$quali_position)) |> # Ensure we have a quali result
       dplyr::select(dplyr::all_of(pos_cols))
 
-    pos_splits <- prepare_and_split_data(pos_data)
+    pos_splits <- prepare_and_split_data(pos_data, test_groups = test_groups)
     train_data_pos <- pos_splits$train_data
     data_folds_pos <- pos_splits$data_folds
     data_split_pos <- pos_splits$data_split
@@ -619,7 +682,10 @@ train_quali_models <- function(
     )
   }
 
-  pos_class_splits <- prepare_and_split_data(pos_class_data)
+  pos_class_splits <- prepare_and_split_data(
+    pos_class_data,
+    test_groups = test_groups
+  )
   train_data_pos_class <- pos_class_splits$train_data
   data_folds_pos_class <- pos_class_splits$data_folds
   data_split_pos_class <- pos_class_splits$data_split
@@ -718,6 +784,9 @@ train_quali_models <- function(
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created, making the run
+#'   reproducible. If `NULL` (the default), no seed is set.
 #' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
 #' @examples
@@ -727,9 +796,15 @@ train_quali_models <- function(
 model_quali_early <- function(
   data = clean_data(),
   engine = "ranger",
-  save_model = TRUE
+  save_model = TRUE,
+  seed = NULL
 ) {
-  models <- train_quali_models(data, use_practice_data = FALSE, engine = engine)
+  models <- train_quali_models(
+    data,
+    use_practice_data = FALSE,
+    engine = engine,
+    seed = seed
+  )
   if (save_model) {
     tryCatch(
       save_models(model_list = models, model_timing = "early"),
@@ -757,6 +832,9 @@ model_quali_early <- function(
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created, making the run
+#'   reproducible. If `NULL` (the default), no seed is set.
 #' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
 #' @examples
@@ -766,9 +844,15 @@ model_quali_early <- function(
 model_quali_late <- function(
   data = clean_data(),
   engine = "ranger",
-  save_model = TRUE
+  save_model = TRUE,
+  seed = NULL
 ) {
-  models <- train_quali_models(data, use_practice_data = TRUE, engine = engine)
+  models <- train_quali_models(
+    data,
+    use_practice_data = TRUE,
+    engine = engine,
+    seed = seed
+  )
   if (save_model) {
     tryCatch(
       save_models(model_list = models, model_timing = "late"),
@@ -875,13 +959,18 @@ train_binary_result_model <- function(
 #'   "early" (pre-practice), "late" (post-practice), or "after_quali".
 #' @param engine A character string specifying the model engine. One of `"ranger"`
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"`, or `"ensemble"`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created. If `NULL` (the
+#'   default), no seed is set.
 #' @return A list containing five fitted `workflow` objects.
 #' @noRd
 train_results_models <- function(
   data = clean_data(),
   scenario,
-  engine = "ranger"
+  engine = "ranger",
+  seed = NULL
 ) {
+  check_seed(seed)
   cli::cli_h1("Training Race Results Models")
   cli::cli_inform("Scenario: {.val {scenario}}, Engine: {.val {engine}}")
 
@@ -968,7 +1057,18 @@ train_results_models <- function(
   pos_cols <- setdiff(results_cols, c("win", "podium", "t10"))
 
   # ---- Data Splits ----
-  splits <- prepare_and_split_data(data, columns = results_cols)
+  # One set of held-out groups is shared by all models in this run so their
+  # reported metrics are computed on the same races.
+  if (!is.null(seed)) {
+    set.seed(as.integer(seed))
+  }
+  test_groups <- select_test_groups(data)
+
+  splits <- prepare_and_split_data(
+    data,
+    columns = results_cols,
+    test_groups = test_groups
+  )
   train_data <- splits$train_data
   data_split <- splits$data_split
   data_folds <- splits$data_folds
@@ -1148,7 +1248,7 @@ train_results_models <- function(
   pos_data <- data |>
     dplyr::select(dplyr::all_of(pos_cols))
 
-  pos_splits <- prepare_and_split_data(pos_data)
+  pos_splits <- prepare_and_split_data(pos_data, test_groups = test_groups)
   train_data <- pos_splits$train_data
   data_split <- pos_splits$data_split
   data_folds <- pos_splits$data_folds
@@ -1277,7 +1377,10 @@ train_results_models <- function(
     )
   }
 
-  pos_class_splits <- prepare_and_split_data(pos_class_data)
+  pos_class_splits <- prepare_and_split_data(
+    pos_class_data,
+    test_groups = test_groups
+  )
   train_data_pos_class <- pos_class_splits$train_data
   data_folds_pos_class <- pos_class_splits$data_folds
   data_split_pos_class <- pos_class_splits$data_split
@@ -1384,6 +1487,9 @@ train_results_models <- function(
 #'   (default), `"glmnet"`, `"nnet"`, `"kernlab"`, `"kknn"` or `"ensemble"`.
 #' @param save_model A logical value. If `TRUE` (default), the trained models
 #'   are automatically saved to the path specified in `options('f1predicter.models')`.
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created, making the run
+#'   reproducible. If `NULL` (the default), no seed is set.
 #' @return A list containing fitted `workflow` objects for `win`, `podium`,
 #'   `t10`, and `position`.
 #' @export
@@ -1394,12 +1500,14 @@ train_results_models <- function(
 model_results_after_quali <- function(
   data = clean_data(),
   engine = "ranger",
-  save_model = TRUE
+  save_model = TRUE,
+  seed = NULL
 ) {
   models <- train_results_models(
     data,
     scenario = "after_quali",
-    engine = engine
+    engine = engine,
+    seed = seed
   )
   if (save_model) {
     tryCatch(
@@ -1427,6 +1535,9 @@ model_results_after_quali <- function(
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created, making the run
+#'   reproducible. If `NULL` (the default), no seed is set.
 #' @export
 #' @examples
 #' \dontrun{
@@ -1435,9 +1546,15 @@ model_results_after_quali <- function(
 model_results_late <- function(
   data = clean_data(),
   engine = "ranger",
-  save_model = TRUE
+  save_model = TRUE,
+  seed = NULL
 ) {
-  models <- train_results_models(data, scenario = "late", engine = engine)
+  models <- train_results_models(
+    data,
+    scenario = "late",
+    engine = engine,
+    seed = seed
+  )
   if (save_model) {
     tryCatch(
       save_models(model_list = models, model_timing = "late"),
@@ -1464,6 +1581,9 @@ model_results_late <- function(
 #'   are automatically butchered and saved to the path specified in
 #'   `options('f1predicter.models')`.
 #' @inherit model_results_after_quali return
+#' @param seed Optional single integer. If provided, `set.seed(seed)` is called
+#'   once before the shared train/test split is created, making the run
+#'   reproducible. If `NULL` (the default), no seed is set.
 #' @export
 #' @examples
 #' \dontrun{
@@ -1472,9 +1592,15 @@ model_results_late <- function(
 model_results_early <- function(
   data = clean_data(),
   engine = "ranger",
-  save_model = TRUE
+  save_model = TRUE,
+  seed = NULL
 ) {
-  models <- train_results_models(data, scenario = "early", engine = engine)
+  models <- train_results_models(
+    data,
+    scenario = "early",
+    engine = engine,
+    seed = seed
+  )
   if (save_model) {
     tryCatch(
       save_models(model_list = models, model_timing = "early"),
