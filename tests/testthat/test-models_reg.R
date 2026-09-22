@@ -603,11 +603,23 @@ test_that("train_results_models() validates the seed argument (#33)", {
 test_that("model_*() wrappers pass seed through to the training helpers (#33)", {
   seen <- list()
   local_mocked_bindings(
-    train_quali_models = function(data, use_practice_data, engine, seed) {
+    train_quali_models = function(
+      data,
+      use_practice_data,
+      engine,
+      seed,
+      train_ordinal = FALSE
+    ) {
       seen$quali <<- seed
       list()
     },
-    train_results_models = function(data, scenario, engine, seed) {
+    train_results_models = function(
+      data,
+      scenario,
+      engine,
+      seed,
+      train_ordinal = FALSE
+    ) {
       seen$results <<- seed
       list()
     },

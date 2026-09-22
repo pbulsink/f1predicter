@@ -488,7 +488,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
     ) |>
     gt::tab_spanner(
       label = "Odds of Finishing at Each Position",
-      columns = -c("driver_name", "win_prob")
+      columns = -c("driver_name", "win_prob")  # ry: ignore[RY020]
     ) |>
     gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
     gt::cols_label(
@@ -521,7 +521,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -c('driver_name'), # Check this works instead of columns = -driver_name
+      columns = -c('driver_name'), # ry: ignore[RY020]  # Check this works instead of columns = -driver_name
       rows = i,
       direction = 'row',
       palette = "viridis"
@@ -604,7 +604,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
     ) |>
     gt::tab_spanner(
       label = "Odds of Qualifying at Each Position",
-      columns = -c("driver_name", "pole_prob")
+      columns = -c("driver_name", "pole_prob")  # ry: ignore[RY020]
     ) |>
     gt::fmt_percent(columns = -dplyr::all_of("driver_name"), decimals = 1) |>
     gt::cols_label(driver_name = "Driver", pole_prob = "Pole Prob") |>
@@ -639,7 +639,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   for (i in seq_len(nrow(prob_data))) {
     prob_table <- gt::data_color(
       prob_table,
-      columns = -c('driver_name', 'pole_prob'),
+      columns = -c('driver_name', 'pole_prob'),  # ry: ignore[RY020]
       rows = i,
       direction = 'row',
       palette = "viridis"

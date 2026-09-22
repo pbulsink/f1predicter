@@ -1,5 +1,6 @@
 # f1predicter 0.1.0.9000
 
+* `model_quali_early()`, `model_quali_late()`, `model_results_early()`, `model_results_late()`, `model_results_after_quali()`, `train_quali_models()`, and `train_results_models()` now skip training the ordinal classification sub-model (`quali_pos_class`/`position_class`) by default, opt in via the new `train_ordinal` argument; this sub-model is not consumed by any prediction path, and for the `"ensemble"` engine its `ordinalForest` candidate could demand very large amounts of memory (@pbulsink, #noissue).
 * `simulate_quali()` replaces `predict_quali_round()` as the qualifying session prediction controller: it runs 10,000 Monte Carlo simulations, producing `pole_prob`, `top3_prob`, `top10_prob`, `likely_quali_position`, and a full qualifying-position probability matrix. Per-driver SDs are derived empirically from historical qualifying positions, scaled by average qualifying gap (`driver_avg_qgap`) and optionally blended with practice ranks. Weather and seed handling match `simulate_race()` (#noissue).
 * `summarise_quali_simulations()` is exported for users who wish to collapse a custom qualifying simulation matrix into the standard output schema (#noissue).
 * `format_quali_prob_table()`, `format_quali_skeet_predictions()`, and `post_quali_predictions()` now consume `simulate_quali()` output (#noissue).

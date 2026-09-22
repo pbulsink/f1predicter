@@ -108,6 +108,10 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
+  # Reset environment to base to avoid capturing large objects from the
+  # calling frame, which significantly inflates model size on disk.
+  rlang::f_env(formula) <- rlang::base_env()
+
   base_recipe <- recipes::recipe(formula, data = train_data) |>
     recipes::step_dummy(recipes::all_nominal_predictors()) |>
     recipes::step_zv(recipes::all_predictors()) |>
