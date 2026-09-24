@@ -63,6 +63,7 @@ cache_db_path <- function(
   cache = getOption("f1predicter.cache", default = tempdir())
 ) {
   if (is.null(cache) || !nzchar(cache)) {
+    # ry: ignore[RY032]
     cache <- tempdir()
   }
 

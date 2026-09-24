@@ -180,13 +180,21 @@ report_model_metrics <- function(last_fit_object, model_name, metrics) {
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created. If `NULL` (the
 #'   default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains the ordinal
+#'   classification sub-model (`quali_pos_class`). Defaults to `FALSE` because,
+#'   for the `"ensemble"` engine, this uses the `ordinalForest` candidate,
+#'   whose internal score-set search (`ordinalForest::ordfor()`'s `nsets`) can
+#'   demand very large amounts of memory. This sub-model is not currently used
+#'   by any prediction path in the package (`simulate_race()`/`predict.R` only
+#'   consume `quali_pos`), so it is opt-in.
 #' @return A list containing two fitted `workflow` objects: `quali_pole` and `quali_pos`.
 #' @noRd
 train_quali_models <- function(
   data,
   use_practice_data = FALSE,
   engine = "ranger",
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   check_seed(seed)
   valid_engines <- c("ranger", "glmnet", "nnet", "kernlab", "kknn", "ensemble")
@@ -217,7 +225,28 @@ train_quali_models <- function(
   )
 
   if (requireNamespace("future", quietly = TRUE)) {
-    future::plan("multisession")
+    # Cap workers to limit peak memory (each worker gets its own copy of
+    # exported data/objects), and restore sequential execution on exit so
+    # workers don't persist for the rest of the session.
+    n_workers <- max(1, min(4, future::availableCores() - 1))
+    # tune_grid()/fit_resamples() can export a large amount of data/args to
+    # each worker (e.g. group_vfold_cv splits and call arguments), and the
+    # required size varies a lot by scenario/engine (observed from under 2
+    # GiB up past 5 GiB). future.globals.maxSize is a transfer-size guardrail,
+    # not a memory limiter -- actual peak memory is already bounded by the
+    # worker cap above and the rm()/gc() cleanup in the candidate loop, so
+    # disable the guardrail for the duration of training rather than picking
+    # an arbitrary cap that a bigger scenario can still exceed.
+    old_max_size <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = Inf)
+    future::plan("multisession", workers = n_workers)
+    on.exit(
+      {
+        future::plan("sequential")
+        options(future.globals.maxSize = old_max_size)
+      },
+      add = TRUE
+    )
   }
 
   model_timing <- ifelse(use_practice_data, "late", "early")
@@ -637,173 +666,184 @@ train_quali_models <- function(
   # Optimised on Ranked Probability Score (yardstick >= 1.4.0): it rewards
   # calibrated probability distributions and penalises predictions that are
   # far from the true rank.
-  cli::cli_rule("Training Qualifying Position Model (Ordinal)")
+  #
+  # Skipped by default (see `train_ordinal` docs): not consumed by any
+  # prediction path, and the "ensemble" engine's ordinalForest candidate can
+  # demand very large amounts of memory.
+  pos_class_final_fit <- NULL
+  if (train_ordinal) {
+    cli::cli_rule("Training Qualifying Position Model (Ordinal)")
 
-  # Use the same data as the regression model, but with an ordered factor outcome
-  pos_class_data <- pos_data |>
-    dplyr::arrange(.data$quali_position) |>
-    dplyr::mutate(
-      quali_position = factor(.data$quali_position, ordered = TRUE)
-    ) |>
-    dplyr::arrange(.data$season, .data$round, .data$quali_position)
-
-  predictor_vars_class <- pos_cols[
-    !(pos_cols %in% c("quali_position", id_cols))
-  ]
-
-  if (engine == "ensemble") {
-    cli::cli_inform(
-      "Adding out-of-fold ensemble predictions as features for the ordinal model."
-    )
-
-    # Meta-features must be out-of-fold: predicting the pole/position ensembles
-    # onto the rows they were fitted on would give those rows near-oracle
-    # values, and the ordinal model would learn to lean on a feature that is
-    # systematically worse-behaved at prediction time (#32).
-    pole_refit <- function(fold_train) {
-      suppressMessages(train_stacked_model(
-        outcome_var = "pole",
-        model_name = "Quali Pole (cross-fit)",
-        train_data = fold_train,
-        data_split = NULL,
-        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
-        predictor_vars = pole_predictor_vars,
-        hyperparams = all_hyperparams$pole_hyperparameters,
-        model_mode = "classification",
-        save_model = FALSE,
-        quiet = TRUE
-      ))
-    }
-    pos_refit <- function(fold_train) {
-      suppressMessages(train_stacked_model(
-        outcome_var = "quali_position",
-        model_name = "Quali Position (cross-fit)",
-        train_data = fold_train,
-        data_split = NULL,
-        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
-        predictor_vars = pos_predictor_vars,
-        hyperparams = all_hyperparams$position_hyperparameters,
-        model_mode = "regression",
-        save_model = FALSE,
-        quiet = TRUE
-      ))
-    }
-
-    meta_key <- c("round_id", "driver_id")
-
-    pos_class_data <- pos_class_data |>
+    # Use the same data as the regression model, but with an ordered factor
+    # outcome. Positions are capped (e.g. 15, 16, 17, "18+") so that races
+    # with low finishing/entrant counts don't need to be discarded and don't
+    # introduce sparse, rarely-observed high-numbered levels (#see cap_ordinal_position()).
+    pos_class_data <- pos_data |>
+      dplyr::arrange(.data$quali_position) |>
       dplyr::mutate(
-        ensemble_pole_pred = oof_meta_predictions(
-          fitted_model = pole_final_fit,
-          refit_fn = pole_refit,
-          data_folds = data_folds_pole,
-          new_data = pos_class_data,
-          row_key = meta_key,
-          predict_fn = function(model, data) {
-            stats::predict(model, new_data = data, type = "prob")$.pred_1
-          }
+        quali_position = cap_ordinal_position(.data$quali_position)
+      ) |>
+      dplyr::arrange(.data$season, .data$round, .data$quali_position)
+
+    predictor_vars_class <- pos_cols[
+      !(pos_cols %in% c("quali_position", id_cols))
+    ]
+
+    if (engine == "ensemble") {
+      cli::cli_inform(
+        "Adding out-of-fold ensemble predictions as features for the ordinal model."
+      )
+
+      # Meta-features must be out-of-fold: predicting the pole/position ensembles
+      # onto the rows they were fitted on would give those rows near-oracle
+      # values, and the ordinal model would learn to lean on a feature that is
+      # systematically worse-behaved at prediction time (#32).
+      pole_refit <- function(fold_train) {
+        suppressMessages(train_stacked_model(
+          outcome_var = "pole",
+          model_name = "Quali Pole (cross-fit)",
+          train_data = fold_train,
+          data_split = NULL,
+          data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+          predictor_vars = pole_predictor_vars,
+          hyperparams = all_hyperparams$pole_hyperparameters,
+          model_mode = "classification",
+          save_model = FALSE,
+          quiet = TRUE
+        ))
+      }
+      pos_refit <- function(fold_train) {
+        suppressMessages(train_stacked_model(
+          outcome_var = "quali_position",
+          model_name = "Quali Position (cross-fit)",
+          train_data = fold_train,
+          data_split = NULL,
+          data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+          predictor_vars = pos_predictor_vars,
+          hyperparams = all_hyperparams$position_hyperparameters,
+          model_mode = "regression",
+          save_model = FALSE,
+          quiet = TRUE
+        ))
+      }
+
+      meta_key <- c("round_id", "driver_id")
+
+      pos_class_data <- pos_class_data |>
+        dplyr::mutate(
+          ensemble_pole_pred = oof_meta_predictions(
+            fitted_model = pole_final_fit,
+            refit_fn = pole_refit,
+            data_folds = data_folds_pole,
+            new_data = pos_class_data,
+            row_key = meta_key,
+            predict_fn = function(model, data) {
+              stats::predict(model, new_data = data, type = "prob")$.pred_1
+            }
+          ),
+          ensemble_pos_pred = oof_meta_predictions(
+            fitted_model = position_final_fit,
+            refit_fn = pos_refit,
+            data_folds = pos_splits$data_folds,
+            new_data = pos_class_data,
+            row_key = meta_key,
+            predict_fn = function(model, data) {
+              stats::predict(model, new_data = data, type = "numeric")$.pred
+            }
+          )
+        )
+
+      predictor_vars_class <- c(
+        predictor_vars_class,
+        "ensemble_pole_pred",
+        "ensemble_pos_pred"
+      )
+    }
+
+    pos_class_splits <- prepare_and_split_data(
+      pos_class_data,
+      test_groups = test_groups
+    )
+    train_data_pos_class <- pos_class_splits$train_data
+    data_folds_pos_class <- pos_class_splits$data_folds
+    data_split_pos_class <- pos_class_splits$data_split
+
+    if (engine == "ensemble") {
+      pos_class_final_fit <- train_ordinal_ensemble(
+        outcome_var = "quali_position",
+        model_name = paste(
+          "Quali Position Class",
+          tools::toTitleCase(model_timing)
         ),
-        ensemble_pos_pred = oof_meta_predictions(
-          fitted_model = position_final_fit,
-          refit_fn = pos_refit,
-          data_folds = pos_splits$data_folds,
-          new_data = pos_class_data,
-          row_key = meta_key,
-          predict_fn = function(model, data) {
-            stats::predict(model, new_data = data, type = "numeric")$.pred
-          }
+        train_data = train_data_pos_class,
+        data_split = data_split_pos_class,
+        data_folds = data_folds_pos_class,
+        predictor_vars = predictor_vars_class,
+        hyperparams = all_hyperparams$ordinal_class_hyperparameters,
+        save_model = FALSE
+      )
+    } else {
+      # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
+      # workflow. polr is the proportional-odds ordered logistic regression model
+      # and is equivalent to the previous direct MASS::polr approach, but now
+      # properly wrapped in a tidymodels workflow for consistent interfaces.
+      formula_class <- stats::reformulate(
+        predictor_vars_class,
+        response = "quali_position"
+      )
+      # Reset environment to base to prevent capturing large objects
+      rlang::f_env(formula_class) <- rlang::base_env()
+
+      pos_class_recipe <- recipes::recipe(
+        formula_class,
+        data = train_data_pos_class
+      ) |>
+        recipes::step_dummy(recipes::all_nominal_predictors()) |>
+        recipes::step_zv(recipes::all_predictors()) |>
+        recipes::step_normalize(recipes::all_predictors())
+
+      ordinal_spec <- parsnip::ordinal_reg() |>
+        parsnip::set_mode("classification") |>
+        parsnip::set_engine("polr")
+
+      ordinal_wflow <- workflows::workflow() |>
+        workflows::add_model(ordinal_spec) |>
+        workflows::add_recipe(pos_class_recipe)
+
+      kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+      class(kap_linear) <- c("class_metric", "metric", "function")
+      attr(kap_linear, "direction") <- "maximize"
+
+      metrics_ordinal <- yardstick::metric_set(
+        yardstick::ranked_prob_score,
+        kap_linear,
+        yardstick::accuracy
+      )
+
+      tictoc::tic("Trained Qualifying Position Ordinal Model (polr)")
+      pos_class_final_fit <- ordinal_wflow |>
+        tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
+      tictoc::toc()
+
+      report_model_metrics(
+        pos_class_final_fit,
+        "Quali Position Ordinal Model (polr)",
+        c(
+          "ranked_prob_score" = "RPS",
+          "kap" = "kappa",
+          "accuracy" = "accuracy"
         )
       )
-
-    predictor_vars_class <- c(
-      predictor_vars_class,
-      "ensemble_pole_pred",
-      "ensemble_pos_pred"
-    )
-  }
-
-  pos_class_splits <- prepare_and_split_data(
-    pos_class_data,
-    test_groups = test_groups
-  )
-  train_data_pos_class <- pos_class_splits$train_data
-  data_folds_pos_class <- pos_class_splits$data_folds
-  data_split_pos_class <- pos_class_splits$data_split
-
-  if (engine == "ensemble") {
-    pos_class_final_fit <- train_ordinal_ensemble(
-      outcome_var = "quali_position",
-      model_name = paste(
-        "Quali Position Class",
-        tools::toTitleCase(model_timing)
-      ),
-      train_data = train_data_pos_class,
-      data_split = data_split_pos_class,
-      data_folds = data_folds_pos_class,
-      predictor_vars = predictor_vars_class,
-      hyperparams = all_hyperparams$ordinal_class_hyperparameters,
-      save_model = FALSE
-    )
-  } else {
-    # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
-    # workflow. polr is the proportional-odds ordered logistic regression model
-    # and is equivalent to the previous direct MASS::polr approach, but now
-    # properly wrapped in a tidymodels workflow for consistent interfaces.
-    formula_class <- stats::reformulate(
-      predictor_vars_class,
-      response = "quali_position"
-    )
-    # Reset environment to base to prevent capturing large objects
-    rlang::f_env(formula_class) <- rlang::base_env()
-
-    pos_class_recipe <- recipes::recipe(
-      formula_class,
-      data = train_data_pos_class
-    ) |>
-      recipes::step_dummy(recipes::all_nominal_predictors()) |>
-      recipes::step_zv(recipes::all_predictors()) |>
-      recipes::step_normalize(recipes::all_predictors())
-
-    ordinal_spec <- parsnip::ordinal_reg() |>
-      parsnip::set_mode("classification") |>
-      parsnip::set_engine("polr")
-
-    ordinal_wflow <- workflows::workflow() |>
-      workflows::add_model(ordinal_spec) |>
-      workflows::add_recipe(pos_class_recipe)
-
-    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
-    class(kap_linear) <- c("class_metric", "metric", "function")
-    attr(kap_linear, "direction") <- "maximize"
-
-    metrics_ordinal <- yardstick::metric_set(
-      yardstick::ranked_prob_score,
-      kap_linear,
-      yardstick::accuracy
-    )
-
-    tictoc::tic("Trained Qualifying Position Ordinal Model (polr)")
-    pos_class_final_fit <- ordinal_wflow |>
-      tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
-    tictoc::toc()
-
-    report_model_metrics(
-      pos_class_final_fit,
-      "Quali Position Ordinal Model (polr)",
-      c(
-        "ranked_prob_score" = "RPS",
-        "kap" = "kappa",
-        "accuracy" = "accuracy"
-      )
-    )
+    }
   }
 
   # ---- Return ----
-  return(list(
+  models <- list(
     "quali_pole" = pole_final_fit,
     "quali_pos" = position_final_fit,
     "quali_pos_class" = pos_class_final_fit
-  ))
+  )
+  return(purrr::compact(models))
 }
 
 
@@ -827,6 +867,11 @@ train_quali_models <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created, making the run
 #'   reproducible. If `NULL` (the default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains and saves the
+#'   ordinal classification sub-model (`quali_pos_class`). Defaults to `FALSE`:
+#'   this sub-model is not consumed by any prediction path, and for the
+#'   `"ensemble"` engine it can demand very large amounts of memory (see
+#'   `train_quali_models()`).
 #' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
 #' @examples
@@ -837,13 +882,15 @@ model_quali_early <- function(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   models <- train_quali_models(
     data,
     use_practice_data = FALSE,
     engine = engine,
-    seed = seed
+    seed = seed,
+    train_ordinal = train_ordinal
   )
   if (save_model) {
     tryCatch(
@@ -875,6 +922,11 @@ model_quali_early <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created, making the run
 #'   reproducible. If `NULL` (the default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains and saves the
+#'   ordinal classification sub-model (`quali_pos_class`). Defaults to `FALSE`:
+#'   this sub-model is not consumed by any prediction path, and for the
+#'   `"ensemble"` engine it can demand very large amounts of memory (see
+#'   `train_quali_models()`).
 #' @return A list containing fitted `workflow` objects: `quali_pole`, `quali_pos`, and `quali_pos_class`.
 #' @export
 #' @examples
@@ -885,13 +937,15 @@ model_quali_late <- function(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   models <- train_quali_models(
     data,
     use_practice_data = TRUE,
     engine = engine,
-    seed = seed
+    seed = seed,
+    train_ordinal = train_ordinal
   )
   if (save_model) {
     tryCatch(
@@ -1002,13 +1056,21 @@ train_binary_result_model <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created. If `NULL` (the
 #'   default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains the ordinal
+#'   classification sub-model (`position_class`). Defaults to `FALSE` because,
+#'   for the `"ensemble"` engine, this uses the `ordinalForest` candidate,
+#'   whose internal score-set search (`ordinalForest::ordfor()`'s `nsets`) can
+#'   demand very large amounts of memory. This sub-model is not currently used
+#'   by any prediction path in the package (`simulate_race()`/`predict.R` only
+#'   consume `position`), so it is opt-in.
 #' @return A list containing five fitted `workflow` objects.
 #' @noRd
 train_results_models <- function(
   data = clean_data(),
   scenario,
   engine = "ranger",
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   check_seed(seed)
   cli::cli_h1("Training Race Results Models")
@@ -1038,7 +1100,28 @@ train_results_models <- function(
   }
 
   if (requireNamespace("future", quietly = TRUE)) {
-    future::plan("multisession")
+    # Cap workers to limit peak memory (each worker gets its own copy of
+    # exported data/objects), and restore sequential execution on exit so
+    # workers don't persist for the rest of the session.
+    n_workers <- max(1, min(4, future::availableCores() - 1))
+    # tune_grid()/fit_resamples() can export a large amount of data/args to
+    # each worker (e.g. group_vfold_cv splits and call arguments), and the
+    # required size varies a lot by scenario/engine (observed from under 2
+    # GiB up past 5 GiB). future.globals.maxSize is a transfer-size guardrail,
+    # not a memory limiter -- actual peak memory is already bounded by the
+    # worker cap above and the rm()/gc() cleanup in the candidate loop, so
+    # disable the guardrail for the duration of training rather than picking
+    # an arbitrary cap that a bigger scenario can still exceed.
+    old_max_size <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = Inf)
+    future::plan("multisession", workers = n_workers)
+    on.exit(
+      {
+        future::plan("sequential")
+        options(future.globals.maxSize = old_max_size)
+      },
+      add = TRUE
+    )
   }
   # ---- Common Data Prep ----
   data <- data[data$season >= 2018, ]
@@ -1378,165 +1461,175 @@ train_results_models <- function(
   # Optimised on Ranked Probability Score (yardstick >= 1.4.0): it rewards
   # calibrated probability distributions and penalises predictions that are
   # far from the true rank.
-  cli::cli_rule("Training Position Model (Ordinal)")
+  #
+  # Skipped by default (see `train_ordinal` docs): not consumed by any
+  # prediction path, and the "ensemble" engine's ordinalForest candidate can
+  # demand very large amounts of memory.
+  position_class_final_fit <- NULL
+  if (train_ordinal) {
+    cli::cli_rule("Training Position Model (Ordinal)")
 
-  pos_class_data <- data |>
-    dplyr::select(dplyr::all_of(pos_cols)) |>
-    dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+    pos_class_data <- data |>
+      dplyr::select(dplyr::all_of(pos_cols)) |>
+      # Cap positions (e.g. 15, 16, 17, "18+") so races with low finishing
+      # counts don't need to be discarded and don't introduce sparse,
+      # rarely-observed high-numbered levels.
+      dplyr::mutate(position = cap_ordinal_position(.data$position))
 
-  predictor_vars_class <- pos_predictor_vars
+    predictor_vars_class <- pos_predictor_vars
 
-  if (engine == "ensemble") {
-    cli::cli_inform(
-      "Adding out-of-fold ensemble predictions as features for the ordinal model."
+    if (engine == "ensemble") {
+      cli::cli_inform(
+        "Adding out-of-fold ensemble predictions as features for the ordinal model."
+      )
+
+      # Meta-features must be out-of-fold: predicting the win/position ensembles
+      # onto the rows they were fitted on would give those rows near-oracle
+      # values, and the ordinal model would learn to lean on a feature that is
+      # systematically worse-behaved at prediction time (#32).
+      win_refit <- function(fold_train) {
+        suppressMessages(train_stacked_model(
+          outcome_var = "win",
+          model_name = "Win (cross-fit)",
+          train_data = fold_train,
+          data_split = NULL,
+          data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+          predictor_vars = predictor_vars,
+          hyperparams = all_hyperparams$win_hyperparameters,
+          model_mode = "classification",
+          save_model = FALSE,
+          quiet = TRUE
+        ))
+      }
+      pos_refit <- function(fold_train) {
+        suppressMessages(train_stacked_model(
+          outcome_var = "position",
+          model_name = "Position (cross-fit)",
+          train_data = fold_train,
+          data_split = NULL,
+          data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
+          predictor_vars = predictor_vars,
+          hyperparams = all_hyperparams$position_hyperparameters,
+          model_mode = "regression",
+          save_model = FALSE,
+          quiet = TRUE
+        ))
+      }
+
+      meta_key <- c("round_id", "driver_id")
+
+      pos_class_data <- pos_class_data |>
+        dplyr::mutate(
+          ensemble_win_pred = oof_meta_predictions(
+            fitted_model = win_final,
+            refit_fn = win_refit,
+            data_folds = data_folds,
+            new_data = pos_class_data,
+            row_key = meta_key,
+            predict_fn = function(model, data) {
+              stats::predict(model, new_data = data, type = "prob")$.pred_1
+            }
+          ),
+          ensemble_pos_pred = oof_meta_predictions(
+            fitted_model = position_final_fit,
+            refit_fn = pos_refit,
+            data_folds = pos_splits$data_folds,
+            new_data = pos_class_data,
+            row_key = meta_key,
+            predict_fn = function(model, data) {
+              stats::predict(model, new_data = data, type = "numeric")$.pred
+            }
+          )
+        )
+
+      predictor_vars_class <- c(
+        predictor_vars_class,
+        "ensemble_win_pred",
+        "ensemble_pos_pred"
+      )
+    }
+
+    pos_class_splits <- prepare_and_split_data(
+      pos_class_data,
+      test_groups = test_groups
     )
+    train_data_pos_class <- pos_class_splits$train_data
+    data_folds_pos_class <- pos_class_splits$data_folds
+    data_split_pos_class <- pos_class_splits$data_split
 
-    # Meta-features must be out-of-fold: predicting the win/position ensembles
-    # onto the rows they were fitted on would give those rows near-oracle
-    # values, and the ordinal model would learn to lean on a feature that is
-    # systematically worse-behaved at prediction time (#32).
-    win_refit <- function(fold_train) {
-      suppressMessages(train_stacked_model(
-        outcome_var = "win",
-        model_name = "Win (cross-fit)",
-        train_data = fold_train,
-        data_split = NULL,
-        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
-        predictor_vars = predictor_vars,
-        hyperparams = all_hyperparams$win_hyperparameters,
-        model_mode = "classification",
-        save_model = FALSE,
-        quiet = TRUE
-      ))
-    }
-    pos_refit <- function(fold_train) {
-      suppressMessages(train_stacked_model(
+    if (engine == "ensemble") {
+      position_class_final_fit <- train_ordinal_ensemble(
         outcome_var = "position",
-        model_name = "Position (cross-fit)",
-        train_data = fold_train,
-        data_split = NULL,
-        data_folds = rsample::group_vfold_cv(fold_train, group = "round_id"),
-        predictor_vars = predictor_vars,
-        hyperparams = all_hyperparams$position_hyperparameters,
-        model_mode = "regression",
-        save_model = FALSE,
-        quiet = TRUE
-      ))
-    }
+        model_name = paste("Position Class", tools::toTitleCase(scenario)),
+        train_data = train_data_pos_class,
+        data_split = data_split_pos_class,
+        data_folds = data_folds_pos_class,
+        predictor_vars = predictor_vars_class,
+        hyperparams = all_hyperparams$ordinal_class_hyperparameters,
+        save_model = FALSE
+      )
+    } else {
+      # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
+      # workflow. polr is the proportional-odds ordered logistic regression model
+      # and is equivalent to the previous direct MASS::polr approach, but now
+      # properly wrapped in a tidymodels workflow for consistent interfaces.
+      formula_class <- stats::reformulate(
+        predictor_vars_class,
+        response = "position"
+      )
+      # Reset environment to base to prevent capturing large objects
+      rlang::f_env(formula_class) <- rlang::base_env()
 
-    meta_key <- c("round_id", "driver_id")
+      pos_class_recipe <- recipes::recipe(
+        formula_class,
+        data = train_data_pos_class
+      ) |>
+        recipes::step_dummy(recipes::all_nominal_predictors()) |>
+        recipes::step_zv(recipes::all_predictors()) |>
+        recipes::step_normalize(recipes::all_predictors())
 
-    pos_class_data <- pos_class_data |>
-      dplyr::mutate(
-        ensemble_win_pred = oof_meta_predictions(
-          fitted_model = win_final,
-          refit_fn = win_refit,
-          data_folds = data_folds,
-          new_data = pos_class_data,
-          row_key = meta_key,
-          predict_fn = function(model, data) {
-            stats::predict(model, new_data = data, type = "prob")$.pred_1
-          }
-        ),
-        ensemble_pos_pred = oof_meta_predictions(
-          fitted_model = position_final_fit,
-          refit_fn = pos_refit,
-          data_folds = pos_splits$data_folds,
-          new_data = pos_class_data,
-          row_key = meta_key,
-          predict_fn = function(model, data) {
-            stats::predict(model, new_data = data, type = "numeric")$.pred
-          }
+      ordinal_spec <- parsnip::ordinal_reg() |>
+        parsnip::set_mode("classification") |>
+        parsnip::set_engine("polr")
+
+      ordinal_wflow <- workflows::workflow() |>
+        workflows::add_model(ordinal_spec) |>
+        workflows::add_recipe(pos_class_recipe)
+
+      kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
+      class(kap_linear) <- c("class_metric", "metric", "function")
+      attr(kap_linear, "direction") <- "maximize"
+
+      metrics_ordinal <- yardstick::metric_set(
+        yardstick::ranked_prob_score,
+        kap_linear,
+        yardstick::accuracy
+      )
+
+      tictoc::tic("Trained Position Ordinal Model (polr)")
+      position_class_final_fit <- ordinal_wflow |>
+        tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
+      tictoc::toc()
+
+      report_model_metrics(
+        position_class_final_fit,
+        "Position Ordinal Model (polr)",
+        c(
+          "ranked_prob_score" = "RPS",
+          "kap" = "kappa",
+          "accuracy" = "accuracy"
         )
       )
-
-    predictor_vars_class <- c(
-      predictor_vars_class,
-      "ensemble_win_pred",
-      "ensemble_pos_pred"
-    )
+    }
   }
 
-  pos_class_splits <- prepare_and_split_data(
-    pos_class_data,
-    test_groups = test_groups
-  )
-  train_data_pos_class <- pos_class_splits$train_data
-  data_folds_pos_class <- pos_class_splits$data_folds
-  data_split_pos_class <- pos_class_splits$data_split
-
-  if (engine == "ensemble") {
-    position_class_final_fit <- train_ordinal_ensemble(
-      outcome_var = "position",
-      model_name = paste("Position Class", tools::toTitleCase(scenario)),
-      train_data = train_data_pos_class,
-      data_split = data_split_pos_class,
-      data_folds = data_folds_pos_class,
-      predictor_vars = predictor_vars_class,
-      hyperparams = all_hyperparams$ordinal_class_hyperparameters,
-      save_model = FALSE
-    )
-  } else {
-    # For non-ensemble engines, use a single ordinal_reg("polr") tidymodels
-    # workflow. polr is the proportional-odds ordered logistic regression model
-    # and is equivalent to the previous direct MASS::polr approach, but now
-    # properly wrapped in a tidymodels workflow for consistent interfaces.
-    formula_class <- stats::reformulate(
-      predictor_vars_class,
-      response = "position"
-    )
-    # Reset environment to base to prevent capturing large objects
-    rlang::f_env(formula_class) <- rlang::base_env()
-
-    pos_class_recipe <- recipes::recipe(
-      formula_class,
-      data = train_data_pos_class
-    ) |>
-      recipes::step_dummy(recipes::all_nominal_predictors()) |>
-      recipes::step_zv(recipes::all_predictors()) |>
-      recipes::step_normalize(recipes::all_predictors())
-
-    ordinal_spec <- parsnip::ordinal_reg() |>
-      parsnip::set_mode("classification") |>
-      parsnip::set_engine("polr")
-
-    ordinal_wflow <- workflows::workflow() |>
-      workflows::add_model(ordinal_spec) |>
-      workflows::add_recipe(pos_class_recipe)
-
-    kap_linear <- purrr::partial(yardstick::kap, weighting = "linear")
-    class(kap_linear) <- c("class_metric", "metric", "function")
-    attr(kap_linear, "direction") <- "maximize"
-
-    metrics_ordinal <- yardstick::metric_set(
-      yardstick::ranked_prob_score,
-      kap_linear,
-      yardstick::accuracy
-    )
-
-    tictoc::tic("Trained Position Ordinal Model (polr)")
-    position_class_final_fit <- ordinal_wflow |>
-      tune::last_fit(data_split_pos_class, metrics = metrics_ordinal)
-    tictoc::toc()
-
-    report_model_metrics(
-      position_class_final_fit,
-      "Position Ordinal Model (polr)",
-      c(
-        "ranked_prob_score" = "RPS",
-        "kap" = "kappa",
-        "accuracy" = "accuracy"
-      )
-    )
-  }
-
-  return(list(
+  return(purrr::compact(list(
     "win" = win_final,
     "podium" = podium_final,
     "t10" = t10_final,
     "position" = position_final_fit,
     "position_class" = position_class_final_fit
-  ))
+  )))
 }
 
 # --------------------------- Results Models --------------------------
@@ -1570,6 +1663,11 @@ train_results_models <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created, making the run
 #'   reproducible. If `NULL` (the default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains and saves the
+#'   ordinal classification sub-model (`position_class`). Defaults to `FALSE`:
+#'   this sub-model is not consumed by any prediction path, and for the
+#'   `"ensemble"` engine it can demand very large amounts of memory (see
+#'   `train_results_models()`).
 #' @return A list containing fitted `workflow` objects for `win`, `podium`,
 #'   `t10`, and `position`.
 #' @export
@@ -1581,13 +1679,15 @@ model_results_after_quali <- function(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   models <- train_results_models(
     data,
     scenario = "after_quali",
     engine = engine,
-    seed = seed
+    seed = seed,
+    train_ordinal = train_ordinal
   )
   if (save_model) {
     tryCatch(
@@ -1618,6 +1718,11 @@ model_results_after_quali <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created, making the run
 #'   reproducible. If `NULL` (the default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains and saves the
+#'   ordinal classification sub-model (`position_class`). Defaults to `FALSE`:
+#'   this sub-model is not consumed by any prediction path, and for the
+#'   `"ensemble"` engine it can demand very large amounts of memory (see
+#'   `train_results_models()`).
 #' @export
 #' @examples
 #' \dontrun{
@@ -1627,13 +1732,15 @@ model_results_late <- function(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   models <- train_results_models(
     data,
     scenario = "late",
     engine = engine,
-    seed = seed
+    seed = seed,
+    train_ordinal = train_ordinal
   )
   if (save_model) {
     tryCatch(
@@ -1664,6 +1771,11 @@ model_results_late <- function(
 #' @param seed Optional single integer. If provided, `set.seed(seed)` is called
 #'   once before the shared train/test split is created, making the run
 #'   reproducible. If `NULL` (the default), no seed is set.
+#' @param train_ordinal A logical value. If `TRUE`, also trains and saves the
+#'   ordinal classification sub-model (`position_class`). Defaults to `FALSE`:
+#'   this sub-model is not consumed by any prediction path, and for the
+#'   `"ensemble"` engine it can demand very large amounts of memory (see
+#'   `train_results_models()`).
 #' @export
 #' @examples
 #' \dontrun{
@@ -1673,13 +1785,15 @@ model_results_early <- function(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 ) {
   models <- train_results_models(
     data,
     scenario = "early",
     engine = engine,
-    seed = seed
+    seed = seed,
+    train_ordinal = train_ordinal
   )
   if (save_model) {
     tryCatch(

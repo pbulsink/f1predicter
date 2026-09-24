@@ -4,10 +4,10 @@
 \alias{post_quali_predictions}
 \title{Post Qualifying Predictions to Bluesky}
 \usage{
-post_quali_predictions(predictions = predict_quali_round())
+post_quali_predictions(predictions)
 }
 \arguments{
-\item{predictions}{A data frame of predictions from `predict_quali_round()`.}
+\item{predictions}{A data frame of predictions from `simulate_quali()`.}
 }
 \value{
 Invisibly returns the response from the Bluesky API, or NULL on failure.
@@ -17,7 +17,7 @@ A wrapper function that formats qualifying predictions and posts them to Bluesky
 }
 \examples{
 \dontrun{
-preds <- predict_quali_round()
+preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
 post_quali_predictions(preds)
 }
 }

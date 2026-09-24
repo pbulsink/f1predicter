@@ -1,0 +1,9 @@
+{
+  "permission": {
+    "bash": {
+      "git branch *": "allow",
+      "git log *": "allow",
+      "git status *": "allow"
+    }
+  }
+}

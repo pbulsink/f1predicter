@@ -45,7 +45,7 @@ A tibble where each row corresponds to a driver for the specified
 Creates a feature set for a specific upcoming race for a given set of drivers.
 This function calculates various driver, constructor, and circuit-specific
 features based on historical data. It's designed to generate the input data
-required by the prediction functions (e.g., `predict_winner()`).
+required by the prediction functions (e.g., `.predict_winner()`).
 }
 \details{
 The function takes a season, round, and a list of drivers to generate a

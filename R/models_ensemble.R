@@ -108,6 +108,10 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
+  # Reset environment to base to avoid capturing large objects from the
+  # calling frame, which significantly inflates model size on disk.
+  rlang::f_env(formula) <- rlang::base_env()
+
   base_recipe <- recipes::recipe(formula, data = train_data) |>
     recipes::step_dummy(recipes::all_nominal_predictors()) |>
     recipes::step_zv(recipes::all_predictors()) |>
@@ -124,8 +128,12 @@ train_stacked_model <- function(
     )
   }
 
-  # Train and tune each candidate model
-  candidate_resamples <- list()
+  # Train and tune each candidate model, adding each to the stack as soon as
+  # it is fitted so we never hold more than one engine's resample results in
+  # memory at a time.
+  cli::cli_rule("Building the Ensemble")
+  cli::cli_inform("Initializing data stack...")
+  model_stack <- stacks::stacks()
   for (engine in engines) {
     cli::cli_rule("Training candidate: {.val {engine}}")
 
@@ -185,31 +193,23 @@ train_stacked_model <- function(
     )
     tictoc::toc()
 
-    candidate_resamples[[engine]] <- res
-  }
-
-  # Name the list of results for easier identification in the stack
-  names(candidate_resamples) <- engines
-
-  # Initialize the stack and add candidates
-  cli::cli_rule("Building the Ensemble")
-  cli::cli_inform("Initializing data stack...")
-  model_stack <- stacks::stacks()
-
-  for (i in seq_along(candidate_resamples)) {
-    cli::cli_inform("Adding candidate: {.val {names(candidate_resamples)[i]}}")
+    # Add this candidate immediately rather than accumulating every engine's
+    # full resample result in memory at once before stacking.
+    cli::cli_inform("Adding candidate: {.val {engine}}")
     tryCatch(
-      model_stack <- stacks::add_candidates(
-        model_stack,
-        candidate_resamples[[i]],
-        name = names(candidate_resamples)[i]
-      ),
+      model_stack <- stacks::add_candidates(model_stack, res, name = engine),
       error = function(e) {
         cli::cli_warn(
           "Model stacking error: {e}. Continuing with one less model."
         )
       }
     )
+
+    # Release the per-engine resample/workflow objects (can be large,
+    # especially with per-fold predictions retained for stacking) before
+    # moving to the next engine.
+    rm(res, final_wflow, wflow, model_spec, model_spec_tuned)
+    gc()
   }
 
   cli::cli_inform("Stack members and their resampling performance:")
@@ -220,6 +220,8 @@ train_stacked_model <- function(
   tictoc::tic("Blended predictions")
   blended_ensemble <- stacks::blend_predictions(model_stack, penalty = 0.01)
   tictoc::toc()
+  rm(model_stack)
+  gc()
 
   cli::cli_inform("Ensemble weights:")
   if (!quiet) {
@@ -231,6 +233,8 @@ train_stacked_model <- function(
   tictoc::tic("Fitted final ensemble")
   final_ensemble <- stacks::fit_members(blended_ensemble)
   tictoc::toc()
+  rm(blended_ensemble)
+  gc()
 
   cli::cli_alert_success(
     "Stacked ensemble '{model_name}' trained successfully!"
@@ -378,8 +382,14 @@ train_ordinal_ensemble <- function(
     recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
-  # Train each candidate ordinal model on the resamples
-  candidate_resamples <- purrr::map(engines, function(engine) {
+  # Train each candidate ordinal model on the resamples, adding each to the
+  # stack as soon as it is fitted so we never hold more than one engine's
+  # resample results in memory at a time (ordinalForest in particular can be
+  # memory-hungry via its internal score-set search).
+  cli::cli_rule("Building the Ordinal Ensemble")
+  cli::cli_inform("Initializing ordinal data stack...")
+  model_stack <- stacks::stacks()
+  for (engine in engines) {
     cli::cli_rule("Training ordinal candidate: {.val {engine}}")
 
     engine_params <- hyperparams[[engine]]
@@ -438,32 +448,20 @@ train_ordinal_ensemble <- function(
     )
     tictoc::toc()
 
-    return(res)
-  })
-
-  names(candidate_resamples) <- engines
-
-  # Build the stacked ensemble from the candidate resamples
-  cli::cli_rule("Building the Ordinal Ensemble")
-  cli::cli_inform("Initializing ordinal data stack...")
-  model_stack <- stacks::stacks()
-
-  for (i in seq_along(candidate_resamples)) {
-    cli::cli_inform(
-      "Adding ordinal candidate: {.val {names(candidate_resamples)[i]}}"
-    )
+    cli::cli_inform("Adding ordinal candidate: {.val {engine}}")
     tryCatch(
-      model_stack <- stacks::add_candidates(
-        model_stack,
-        candidate_resamples[[i]],
-        name = names(candidate_resamples)[i]
-      ),
+      model_stack <- stacks::add_candidates(model_stack, res, name = engine),
       error = function(e) {
         cli::cli_warn(
-          "Ordinal stacking error for {names(candidate_resamples)[i]}: {e}. Continuing."
+          "Ordinal stacking error for {engine}: {e}. Continuing."
         )
       }
     )
+
+    # Release the per-engine resample/workflow objects before moving to the
+    # next engine.
+    rm(res, final_wflow, wflow, model_spec, model_spec_tuned)
+    gc()
   }
 
   cli::cli_inform("Ordinal stack members and their resampling performance:")
@@ -473,6 +471,8 @@ train_ordinal_ensemble <- function(
   tictoc::tic("Blended ordinal predictions")
   blended_ensemble <- stacks::blend_predictions(model_stack, penalty = 0.01)
   tictoc::toc()
+  rm(model_stack)
+  gc()
 
   cli::cli_inform("Ordinal ensemble weights:")
   print(stacks::autoplot(blended_ensemble, type = "weights"))
@@ -483,6 +483,8 @@ train_ordinal_ensemble <- function(
   tictoc::tic("Fitted final ordinal ensemble")
   final_ensemble <- stacks::fit_members(blended_ensemble)
   tictoc::toc()
+  rm(blended_ensemble)
+  gc()
 
   cli::cli_alert_success(
     "Ordinal ensemble '{model_name}' trained successfully!"
@@ -875,6 +877,12 @@ oof_meta_predictions <- function(
     if (length(target) > 0) {
       preds[target] <- predict_fn(fold_fit, new_data[target, , drop = FALSE])
     }
+
+    # Each fold refits the full ensemble (all candidate engines); force
+    # cleanup before moving to the next fold rather than relying on R to
+    # reclaim it whenever it gets around to it.
+    rm(fold_fit, split, holdout, target)
+    gc()
   }
 
   # Remaining rows were never part of the first-stage training data (they are
