@@ -37,6 +37,12 @@
 #'       blending with the ML qualifying mean. Between 0 and 1 (default 0.10).}
 #'     \item{quali_wet_sd_multiplier}{Factor by which each driver's qualifying
 #'       SD is scaled when weather is `"wet"` (default 1.3).}
+#'     \item{ordinal_class_weight}{Weight given to the ordinal classification
+#'       model's expected position (`position_class`/`quali_pos_class`, when
+#'       present in the supplied/loaded model list) when blending with the
+#'       regression model's mean position. Between 0 (ignore the ordinal
+#'       model, the previous behaviour) and 1 (use only the ordinal model).
+#'       Default 0.}
 #'   }
 #' @export
 #'
@@ -64,7 +70,12 @@ simulation_params <- function() {
     quali_practice_weight = 0.10,
     # Wet-weather SD multiplier for qualifying (default 1.3, slightly less than
     # race because wet quali is shorter and pace gaps compress less than a race).
-    quali_wet_sd_multiplier = 1.3
+    quali_wet_sd_multiplier = 1.3,
+    # Weight of the ordinal classification model's expected position when
+    # blending with the regression model's mean position. 0 disables blending
+    # (matches previous behaviour, and is also the fallback when no ordinal
+    # sub-model was trained/saved for the requested models).
+    ordinal_class_weight = 0
   )
 }
 
@@ -179,7 +190,11 @@ simulation_params <- function() {
 #' @param results_models A named list of fitted model objects as returned by
 #'   `model_results_*()`, or a character string `"early"`, `"late"`, or
 #'   `"after_quali"` to load models from disk. If `NULL` (default), the
-#'   appropriate timing is inferred from `new_data` column names.
+#'   appropriate timing is inferred from `new_data` column names. When the
+#'   list also contains a `position_class` ordinal classification model (only
+#'   trained when `train_ordinal = TRUE` was passed to `model_results_*()`),
+#'   its expected position is blended into the regression mean with weight
+#'   `params$ordinal_class_weight`.
 #' @param sprint_results An optional data frame with columns `driver_id` and
 #'   `sprint_position` giving the sprint race results for the current weekend.
 #'   When provided, the ML mean for each driver is nudged toward their sprint
@@ -286,6 +301,25 @@ simulate_race <- function(
   ml_positions <- .predict_position(new_data, results_models$position)
 
   avg_positions <- ml_positions$likely_position
+
+  # --- Blend with ordinal classification model (position_class), if trained
+  # and requested. The ordinal model caps low-count finishing positions (see
+  # cap_ordinal_position()), so its expected value is a robust complement to
+  # the plain regression mean, especially for backmarkers.
+  ordinal_weight <- params$ordinal_class_weight
+  if (
+    !is.null(ordinal_weight) &&
+      ordinal_weight > 0 &&
+      "position_class" %in% names(results_models)
+  ) {
+    class_positions <- .predict_position_class(
+      new_data,
+      results_models$position_class
+    )
+    avg_positions <- (1 - ordinal_weight) *
+      avg_positions +
+      ordinal_weight * class_positions$expected_position_class
+  }
 
   # --- Sprint update ---
   if (!is.null(sprint_results)) {
@@ -764,7 +798,11 @@ summarise_quali_simulations <- function(
 #' @param quali_models A named list of fitted model objects as returned by
 #'   `model_quali_early()` or `model_quali_late()`. Must contain a `quali_pos`
 #'   element. If `NULL` (default), models are loaded from disk using
-#'   [load_models()] with timing auto-detected from `new_data`.
+#'   [load_models()] with timing auto-detected from `new_data`. When the list
+#'   also contains a `quali_pos_class` ordinal classification model (only
+#'   trained when `train_ordinal = TRUE` was passed to `model_quali_*()`), its
+#'   expected position is blended into the regression mean with weight
+#'   `params$ordinal_class_weight`.
 #' @param engine (`character(1)`) Model engine used when loading models from
 #'   disk. Defaults to `"ensemble"`.
 #' @param weather (`character(1)` or `NULL`) Session weather. One of `"dry"` or
@@ -842,6 +880,25 @@ simulate_quali <- function(
   # --- ML mean qualifying positions ---
   ml_quali <- .predict_quali_pos(new_data, quali_models$quali_pos)
   mean_pos <- ml_quali$likely_quali_position
+
+  # --- Blend with ordinal classification model (quali_pos_class), if trained
+  # and requested. The ordinal model caps low-count qualifying positions (see
+  # cap_ordinal_position()), so its expected value is a robust complement to
+  # the plain regression mean.
+  ordinal_weight <- params$ordinal_class_weight
+  if (
+    !is.null(ordinal_weight) &&
+      ordinal_weight > 0 &&
+      "quali_pos_class" %in% names(quali_models)
+  ) {
+    class_quali <- .predict_quali_pos_class(
+      new_data,
+      quali_models$quali_pos_class
+    )
+    mean_pos <- (1 - ordinal_weight) *
+      mean_pos +
+      ordinal_weight * class_quali$expected_quali_position_class
+  }
 
   # --- Blend with practice rank if available ---
   practice_col <- if ("practice_optimal_rank" %in% names(new_data)) {

@@ -225,7 +225,28 @@ train_quali_models <- function(
   )
 
   if (requireNamespace("future", quietly = TRUE)) {
-    future::plan("multisession")
+    # Cap workers to limit peak memory (each worker gets its own copy of
+    # exported data/objects), and restore sequential execution on exit so
+    # workers don't persist for the rest of the session.
+    n_workers <- max(1, min(4, future::availableCores() - 1))
+    # tune_grid()/fit_resamples() can export a large amount of data/args to
+    # each worker (e.g. group_vfold_cv splits and call arguments), and the
+    # required size varies a lot by scenario/engine (observed from under 2
+    # GiB up past 5 GiB). future.globals.maxSize is a transfer-size guardrail,
+    # not a memory limiter -- actual peak memory is already bounded by the
+    # worker cap above and the rm()/gc() cleanup in the candidate loop, so
+    # disable the guardrail for the duration of training rather than picking
+    # an arbitrary cap that a bigger scenario can still exceed.
+    old_max_size <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = Inf)
+    future::plan("multisession", workers = n_workers)
+    on.exit(
+      {
+        future::plan("sequential")
+        options(future.globals.maxSize = old_max_size)
+      },
+      add = TRUE
+    )
   }
 
   model_timing <- ifelse(use_practice_data, "late", "early")
@@ -653,11 +674,14 @@ train_quali_models <- function(
   if (train_ordinal) {
     cli::cli_rule("Training Qualifying Position Model (Ordinal)")
 
-    # Use the same data as the regression model, but with an ordered factor outcome
+    # Use the same data as the regression model, but with an ordered factor
+    # outcome. Positions are capped (e.g. 15, 16, 17, "18+") so that races
+    # with low finishing/entrant counts don't need to be discarded and don't
+    # introduce sparse, rarely-observed high-numbered levels (#see cap_ordinal_position()).
     pos_class_data <- pos_data |>
       dplyr::arrange(.data$quali_position) |>
       dplyr::mutate(
-        quali_position = factor(.data$quali_position, ordered = TRUE)
+        quali_position = cap_ordinal_position(.data$quali_position)
       ) |>
       dplyr::arrange(.data$season, .data$round, .data$quali_position)
 
@@ -1076,7 +1100,28 @@ train_results_models <- function(
   }
 
   if (requireNamespace("future", quietly = TRUE)) {
-    future::plan("multisession")
+    # Cap workers to limit peak memory (each worker gets its own copy of
+    # exported data/objects), and restore sequential execution on exit so
+    # workers don't persist for the rest of the session.
+    n_workers <- max(1, min(4, future::availableCores() - 1))
+    # tune_grid()/fit_resamples() can export a large amount of data/args to
+    # each worker (e.g. group_vfold_cv splits and call arguments), and the
+    # required size varies a lot by scenario/engine (observed from under 2
+    # GiB up past 5 GiB). future.globals.maxSize is a transfer-size guardrail,
+    # not a memory limiter -- actual peak memory is already bounded by the
+    # worker cap above and the rm()/gc() cleanup in the candidate loop, so
+    # disable the guardrail for the duration of training rather than picking
+    # an arbitrary cap that a bigger scenario can still exceed.
+    old_max_size <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = Inf)
+    future::plan("multisession", workers = n_workers)
+    on.exit(
+      {
+        future::plan("sequential")
+        options(future.globals.maxSize = old_max_size)
+      },
+      add = TRUE
+    )
   }
   # ---- Common Data Prep ----
   data <- data[data$season >= 2018, ]
@@ -1426,7 +1471,10 @@ train_results_models <- function(
 
     pos_class_data <- data |>
       dplyr::select(dplyr::all_of(pos_cols)) |>
-      dplyr::mutate(position = factor(.data$position, ordered = TRUE))
+      # Cap positions (e.g. 15, 16, 17, "18+") so races with low finishing
+      # counts don't need to be discarded and don't introduce sparse,
+      # rarely-observed high-numbered levels.
+      dplyr::mutate(position = cap_ordinal_position(.data$position))
 
     predictor_vars_class <- pos_predictor_vars
 

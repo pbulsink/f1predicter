@@ -309,6 +309,123 @@ test_that("simulate_quali() practice weight blends mean position (#noissue)", {
   )
 })
 
+test_that("simulate_quali() blends in quali_pos_class ordinal predictions when weighted (#noissue)", {
+  n_d <- 5L
+  driver_ids <- paste0("d", seq_len(n_d))
+  new_data <- tibble::tibble(
+    driver_id = driver_ids,
+    season = 2025L,
+    round = 1L
+  )
+
+  fake_model <- list(
+    quali_pos = structure(list(), class = "workflow"),
+    quali_pos_class = structure(list(), class = "workflow")
+  )
+
+  local_mocked_bindings(
+    .predict_quali_pos = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        likely_quali_position = rep(3, nrow(new_data)) # tied ML mean
+      )
+    },
+    .predict_quali_pos_class = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        expected_quali_position_class = as.numeric(seq_len(nrow(new_data)))
+      )
+    }
+  )
+
+  params_no_blend <- simulation_params()
+  params_no_blend$ordinal_class_weight <- 0
+
+  params_with_blend <- simulation_params()
+  params_with_blend$ordinal_class_weight <- 1
+
+  set.seed(99L)
+  res_no_blend <- simulate_quali(
+    new_data,
+    tibble::tibble(),
+    quali_models = fake_model,
+    n_simulations = 200L,
+    params = params_no_blend
+  )
+
+  set.seed(99L)
+  res_with_blend <- simulate_quali(
+    new_data,
+    tibble::tibble(),
+    quali_models = fake_model,
+    n_simulations = 200L,
+    params = params_with_blend
+  )
+
+  # With ordinal_class_weight = 1, the mean position comes entirely from the
+  # ordinal model's expected position rather than the tied regression mean,
+  # so drivers should no longer be interchangeable.
+  expect_false(
+    identical(
+      res_no_blend$likely_quali_position,
+      res_with_blend$likely_quali_position
+    )
+  )
+  expect_equal(
+    res_with_blend$driver_id[which.max(res_with_blend$pole_prob)],
+    driver_ids[1]
+  )
+})
+
+test_that("simulate_quali() ignores quali_pos_class when ordinal_class_weight is 0 (default) (#noissue)", {
+  n_d <- 4L
+  driver_ids <- paste0("d", seq_len(n_d))
+  new_data <- tibble::tibble(
+    driver_id = driver_ids,
+    season = 2025L,
+    round = 1L
+  )
+
+  fake_model <- list(
+    quali_pos = structure(list(), class = "workflow"),
+    quali_pos_class = structure(list(), class = "workflow")
+  )
+
+  class_called <- FALSE
+  local_mocked_bindings(
+    .predict_quali_pos = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        likely_quali_position = as.numeric(seq_len(nrow(new_data)))
+      )
+    },
+    .predict_quali_pos_class = function(new_data, model) {
+      class_called <<- TRUE
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        expected_quali_position_class = as.numeric(seq_len(nrow(new_data)))
+      )
+    }
+  )
+
+  simulate_quali(
+    new_data,
+    tibble::tibble(),
+    quali_models = fake_model,
+    n_simulations = 50L
+  )
+
+  expect_false(class_called)
+})
+
 test_that("simulate_quali() produces reproducible results within same day (#noissue)", {
   n_d <- 5L
   driver_ids <- paste0("d", seq_len(n_d))

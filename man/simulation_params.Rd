@@ -34,6 +34,12 @@ A named list of simulation parameters (numeric and logical):
       blending with the ML qualifying mean. Between 0 and 1 (default 0.10).}
     \item{quali_wet_sd_multiplier}{Factor by which each driver's qualifying
       SD is scaled when weather is `"wet"` (default 1.3).}
+    \item{ordinal_class_weight}{Weight given to the ordinal classification
+      model's expected position (`position_class`/`quali_pos_class`, when
+      present in the supplied/loaded model list) when blending with the
+      regression model's mean position. Between 0 (ignore the ordinal
+      model, the previous behaviour) and 1 (use only the ordinal model).
+      Default 0.}
   }
 }
 \description{

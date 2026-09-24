@@ -40,7 +40,8 @@ test_that("simulation_params() returns a list with expected keys (#noissue)", {
       "quali_default_position_sd",
       "quali_qgap_sd_weight",
       "quali_practice_weight",
-      "quali_wet_sd_multiplier"
+      "quali_wet_sd_multiplier",
+      "ordinal_class_weight"
     ),
     ignore.order = TRUE
   )
@@ -551,4 +552,114 @@ test_that("simulate_race() errors on invalid string timing (#noissue)", {
     simulate_race(new_data = nd, results_models = "bad_timing"),
     "must be one of"
   )
+})
+
+test_that("simulate_race() blends in position_class ordinal predictions when weighted (#noissue)", {
+  n_d <- 4L
+  nd <- make_new_data(n_drivers = n_d)
+  fake_model <- list(
+    position = structure(list(), class = "workflow"),
+    position_class = structure(list(), class = "workflow")
+  )
+
+  local_mocked_bindings(
+    .predict_position = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        likely_position = rep(2.5, nrow(new_data)) # tied ML mean
+      )
+    },
+    .predict_position_class = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        expected_position_class = as.numeric(seq_len(nrow(new_data)))
+      )
+    },
+    .calculate_race_sim_metrics = function(...) {
+      tibble::tibble(
+        driver_id = nd$driver_id,
+        position_sd = rep(0.01, n_d), # near-deterministic
+        dnf_rate = rep(0, n_d)
+      )
+    }
+  )
+
+  params_no_blend <- simulation_params()
+  params_no_blend$ordinal_class_weight <- 0
+
+  params_with_blend <- simulation_params()
+  params_with_blend$ordinal_class_weight <- 1
+
+  set.seed(777L)
+  res_no_blend <- simulate_race(
+    new_data = nd,
+    results_models = fake_model,
+    n_simulations = 100L,
+    params = params_no_blend
+  )
+
+  set.seed(777L)
+  res_with_blend <- simulate_race(
+    new_data = nd,
+    results_models = fake_model,
+    n_simulations = 100L,
+    params = params_with_blend
+  )
+
+  expect_false(
+    identical(res_no_blend$likely_position, res_with_blend$likely_position)
+  )
+  expect_equal(
+    res_with_blend$driver_id[which.max(res_with_blend$win_prob)],
+    nd$driver_id[1]
+  )
+})
+
+test_that("simulate_race() ignores position_class when ordinal_class_weight is 0 (default) (#noissue)", {
+  n_d <- 4L
+  nd <- make_new_data(n_drivers = n_d)
+  fake_model <- list(
+    position = structure(list(), class = "workflow"),
+    position_class = structure(list(), class = "workflow")
+  )
+
+  class_called <- FALSE
+  local_mocked_bindings(
+    .predict_position = function(new_data, model) {
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        likely_position = seq_len(nrow(new_data))
+      )
+    },
+    .predict_position_class = function(new_data, model) {
+      class_called <<- TRUE
+      tibble::tibble(
+        driver_id = new_data$driver_id,
+        round = new_data$round,
+        season = new_data$season,
+        expected_position_class = as.numeric(seq_len(nrow(new_data)))
+      )
+    },
+    .calculate_race_sim_metrics = function(...) {
+      tibble::tibble(
+        driver_id = nd$driver_id,
+        position_sd = rep(1, n_d),
+        dnf_rate = rep(0, n_d)
+      )
+    }
+  )
+
+  simulate_race(
+    new_data = nd,
+    results_models = fake_model,
+    n_simulations = 50L
+  )
+
+  expect_false(class_called)
 })

@@ -26,7 +26,11 @@ be simulated. Season and round are read from `new_data$season[1]` and
 \item{quali_models}{A named list of fitted model objects as returned by
 `model_quali_early()` or `model_quali_late()`. Must contain a `quali_pos`
 element. If `NULL` (default), models are loaded from disk using
-[load_models()] with timing auto-detected from `new_data`.}
+[load_models()] with timing auto-detected from `new_data`. When the list
+also contains a `quali_pos_class` ordinal classification model (only
+trained when `train_ordinal = TRUE` was passed to `model_quali_*()`), its
+expected position is blended into the regression mean with weight
+`params$ordinal_class_weight`.}
 
 \item{engine}{(`character(1)`) Model engine used when loading models from
 disk. Defaults to `"ensemble"`.}

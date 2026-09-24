@@ -10,18 +10,22 @@
 # Usage:
 #   Rscript data-raw/regenerate_ensembles.R
 
-devtools::load_all()
+#devtools::load_all()
 
 data <- clean_data()
 
 cli::cli_h1("Regenerating qualifying ensembles")
 model_quali_early(data = data, engine = "ensemble")
+gc()
 model_quali_late(data = data, engine = "ensemble")
+gc()
 
 cli::cli_h1("Regenerating results ensembles")
 model_results_early(data = data, engine = "ensemble")
+gc()
 model_results_late(data = data, engine = "ensemble")
+gc()
 model_results_after_quali(data = data, engine = "ensemble")
+gc()
 
 cli::cli_alert_success("All ensemble models regenerated and saved.")
-

@@ -23,7 +23,11 @@ simulate_race(
 \item{results_models}{A named list of fitted model objects as returned by
 `model_results_*()`, or a character string `"early"`, `"late"`, or
 `"after_quali"` to load models from disk. If `NULL` (default), the
-appropriate timing is inferred from `new_data` column names.}
+appropriate timing is inferred from `new_data` column names. When the
+list also contains a `position_class` ordinal classification model (only
+trained when `train_ordinal = TRUE` was passed to `model_results_*()`),
+its expected position is blended into the regression mean with weight
+`params$ordinal_class_weight`.}
 
 \item{sprint_results}{An optional data frame with columns `driver_id` and
 `sprint_position` giving the sprint race results for the current weekend.

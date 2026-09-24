@@ -734,3 +734,101 @@ apply_grid_penalty <- function(
     dplyr::rename("likely_position" = ".pred")
   return(preds)
 }
+
+#' Convert Ordinal Class Probabilities Into an Expected Position
+#'
+#' @description
+#' Ordinal position models (`position_class`/`quali_pos_class`) predict a
+#' probability distribution over capped position levels (e.g. `"1"`, `"2"`,
+#' ..., `"17"`, `"18+"`, produced by `cap_ordinal_position()`). This collapses
+#' that distribution into a single expected-position number by taking the
+#' probability-weighted mean of the levels, treating the top, capped level
+#' (e.g. `"18+"`) as its lower-bound numeric value (e.g. `18`). This is a
+#' conservative approximation: true positions inside the capped bucket are
+#' unresolved, so the expected value is a floor rather than an unbiased
+#' estimate for very low-finishing-count drivers.
+#'
+#' @param probs A tibble of class probability columns named `.pred_<level>`,
+#'   as returned by `stats::predict(model, new_data, type = "prob")`.
+#' @return A numeric vector of expected positions, one per row of `probs`.
+#' @keywords internal
+.expected_position_from_ordinal_probs <- function(probs) {
+  prob_cols <- probs |>
+    dplyr::select(dplyr::starts_with(".pred_"))
+
+  level_labels <- sub("^\\.pred_", "", names(prob_cols))
+  level_values <- as.numeric(sub("\\+$", "", level_labels))
+
+  as.numeric(as.matrix(prob_cols) %*% level_values)
+}
+
+#' Predict Qualifying Position (Ordinal Classification, Internal)
+#'
+#' @param new_data A data frame of new data.
+#' @param quali_pos_class_model A `workflow` or `model_stack` object trained
+#'   on a `cap_ordinal_position()`-capped `quali_position` outcome.
+#' @returns A tibble with `driver_id`, `round`, `season`, and
+#'   `expected_quali_position_class`.
+#' @keywords internal
+.predict_quali_pos_class <- function(
+  new_data,
+  quali_pos_class_model
+) {
+  probs <- if (inherits(quali_pos_class_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
+    stats::predict(quali_pos_class_model, new_data, type = "prob")
+  } else {
+    stats::predict(
+      tune::extract_workflow(quali_pos_class_model),
+      new_data,
+      type = "prob"
+    )
+  }
+
+  new_data |>
+    dplyr::select("driver_id", "round", "season") |>
+    dplyr::mutate(
+      expected_quali_position_class = .expected_position_from_ordinal_probs(
+        probs
+      )
+    )
+}
+
+#' Predict Finishing Position (Ordinal Classification, Internal)
+#'
+#' @param new_data A data frame of new data, typically from
+#'   `generate_new_data()`.
+#' @param position_class_model A `workflow` or `model_stack` object trained on
+#'   a `cap_ordinal_position()`-capped `position` outcome.
+#' @return A tibble with `driver_id`, `round`, `season`, and
+#'   `expected_position_class`.
+#' @keywords internal
+.predict_position_class <- function(
+  new_data = generate_next_race_data(),
+  position_class_model
+) {
+  probs <- if (inherits(position_class_model, "model_stack")) {
+    if (!requireNamespace("stacks", quietly = TRUE)) {
+      cli::cli_abort(
+        "Package {.pkg stacks} must be installed to predict with an ensemble model."
+      )
+    }
+    stats::predict(position_class_model, new_data, type = "prob")
+  } else {
+    stats::predict(
+      tune::extract_workflow(position_class_model),
+      new_data,
+      type = "prob"
+    )
+  }
+
+  new_data |>
+    dplyr::select("driver_id", "round", "season") |>
+    dplyr::mutate(
+      expected_position_class = .expected_position_from_ordinal_probs(probs)
+    )
+}
