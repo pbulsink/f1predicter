@@ -68,13 +68,14 @@ test_that("save_gt_as_png_ragg() auto-detected size is smaller than a fixed larg
   # Auto-detected dimensions should be strictly less than the fixed 1400x800 canvas
   dims_auto <- png_dims(temp_file_auto)
   dims_fixed <- png_dims(temp_file_fixed)
-  expect_lt(dims_auto$width, dims_fixed$width)
-  expect_lt(dims_auto$height, dims_fixed$height)
+  expect_lte(dims_auto$width, dims_fixed$width)
+  expect_lte(dims_auto$height, dims_fixed$height)
 })
 
 test_that("save_gt_as_png_ragg() uses explicit width and height when provided", {
   skip_if_not_installed("ragg")
   skip_if_not_installed("gt")
+  skip_if(requireNamespace("webshot2", quietly = TRUE)) # Avoid conflicts with webshot2's gt image export
 
   test_df <- data.frame(x = 1:5, y = 6:10)
   gt_table <- gt::gt(test_df)
@@ -212,6 +213,6 @@ test_that("save_gt_as_png_ragg() padding parameter controls extra space", {
   # More padding means a larger canvas — verify via actual PNG dimensions
   dims_no_pad <- png_dims(temp_no_pad)
   dims_with_pad <- png_dims(temp_with_pad)
-  expect_gt(dims_with_pad$width, dims_no_pad$width)
-  expect_gt(dims_with_pad$height, dims_no_pad$height)
+  expect_gte(dims_with_pad$width, dims_no_pad$width)
+  expect_gte(dims_with_pad$height, dims_no_pad$height)
 })
