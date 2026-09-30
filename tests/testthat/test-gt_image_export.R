@@ -75,7 +75,7 @@ test_that("save_gt_as_png_ragg() auto-detected size is smaller than a fixed larg
 test_that("save_gt_as_png_ragg() uses explicit width and height when provided", {
   skip_if_not_installed("ragg")
   skip_if_not_installed("gt")
-  skip_if(requireNamespace("webshot2", quietly = TRUE)) # Avoid conflicts with webshot2's gt image export
+  skip_if(rlang::is_installed("webshot2")) # Avoid conflicts with webshot2's gt image export
 
   test_df <- data.frame(x = 1:5, y = 6:10)
   gt_table <- gt::gt(test_df)
