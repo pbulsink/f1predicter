@@ -610,7 +610,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
   ordinal_defaults <- list(
     'polr' = tibble::tibble(),
     'ordinalNet' = tibble::tibble(penalty = 0.01, mixture = 0.5),
-    'ordinalForest' = tibble::tibble(mtry = 3L, min_n = 11L),
+    #'ordinalForest' = tibble::tibble(mtry = 3L, min_n = 11L), Way too slow, tune next offseason
     'rpartScore' = tibble::tibble(cost_complexity = 0.01, tree_depth = 5L)
   )
 
