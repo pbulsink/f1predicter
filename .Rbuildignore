@@ -17,3 +17,5 @@
 ^test.csv$
 ^\.lintr$
 ^\.kilo$
+^data-raw$
+^\.posit$

@@ -9,7 +9,7 @@ Description: More about what it does (maybe more than one line) Use four
 License: GPL (>= 3)
 BugReports: https://github.com/pbulsink/f1predicter/issues
 Depends: 
-    R (>= 3.5)
+    R (>= 4.1)
 Imports:
     DBI,
     RSQLite,

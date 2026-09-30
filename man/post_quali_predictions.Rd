@@ -17,7 +17,7 @@ A wrapper function that formats qualifying predictions and posts them to Bluesky
 }
 \examples{
 \dontrun{
-preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
+preds <- simulate_quali(new_data, historical_data)
 post_quali_predictions(preds)
 }
 }

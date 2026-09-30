@@ -30,7 +30,7 @@ using `save_gt_as_png_ragg()` (requires `ragg` package).
 }
 \examples{
 \dontrun{
-preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
+preds <- simulate_quali(new_data, historical_data)
 format_quali_prob_table(preds)
 }
 }

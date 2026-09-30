@@ -88,7 +88,7 @@ get_race_name <- function(season, round) {
 
 #' Format Predictions for a Skeet
 #'
-#' @param predictions A data frame of predictions from `predict_round()`
+#' @param predictions A data frame of predictions from `simulate_race()`.
 #'
 #' @return A list containing the formatted string for the skeet body and a vector of tags.
 #' @noRd
@@ -381,7 +381,7 @@ post_skeet_predictions <- function(skeets) {
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
+#' preds <- simulate_quali(new_data, historical_data)
 #' post_quali_predictions(preds)
 #' }
 post_quali_predictions <- function(predictions) {
@@ -411,7 +411,7 @@ post_race_predictions <- function(predictions = simulate_race()) {
 
 #' Format Results Probabilities as a Table
 #'
-#' This function takes the results from `predict_round()` and creates a
+#' This function takes the results from `simulate_race()` and creates a
 #' `gt` table visualizing the probability of each driver achieving each
 #' race position.
 #'
@@ -421,7 +421,7 @@ post_race_predictions <- function(predictions = simulate_race()) {
 #' installed. The function returns a `gt` object which can be printed or saved
 #' using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
-#' @param predictions A data frame of predictions from `predict_quali_round()`.
+#' @param predictions A data frame of predictions from `simulate_race()`.
 #'   This must contain the `.probs` list-column with position probabilities.
 #' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
 #'   and returns a list containing the table object and the file path. If `FALSE`
@@ -431,7 +431,7 @@ post_race_predictions <- function(predictions = simulate_race()) {
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_round()
+#' preds <- simulate_race()
 #' format_results_prob_table(preds)
 #' }
 format_results_prob_table <- function(predictions, save_image = FALSE) {
@@ -559,7 +559,7 @@ format_results_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- simulate_quali(new_data, historical_data, season = 2025, round = 1)
+#' preds <- simulate_quali(new_data, historical_data)
 #' format_quali_prob_table(preds)
 #' }
 format_quali_prob_table <- function(predictions, save_image = FALSE) {
@@ -655,19 +655,19 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
   }
 }
 
-#' Format Results Probabilities as a Table
+#' Format Results Odds as a Table
 #'
-#' This function takes the results from `predict_round()` and creates a
-#' `gt` table visualizing the probability of each driver achieving each
-#' race position.
+#' This function takes the results from `simulate_race()` and creates a
+#' `gt` table displaying the odds and expected championship points for each
+#' driver.
 #'
 #' @details
-#' The table is formatted with a color heatmap, where brighter/more colorful
-#' cells indicate a higher probability. It requires the `gt` package to be
-#' installed. The function returns a `gt` object which can be printed or saved
-#' using `save_gt_as_png_ragg()` (requires `ragg` package).
+#' The table displays win probability, podium probability, top 10 probability,
+#' expected championship points, and likely finishing position. It requires the
+#' `gt` package to be installed. The function returns a `gt` object which can
+#' be printed or saved using `save_gt_as_png_ragg()` (requires `ragg` package).
 #'
-#' @param predictions A data frame of predictions from `predict_quali_round()`.
+#' @param predictions A data frame of predictions from `simulate_race()`.
 #'   This must contain the `.probs` list-column with position probabilities.
 #' @param save_image A logical value. If `TRUE`, saves the table as a PNG file
 #'   and returns a list containing the table object and the file path. If `FALSE`
@@ -677,7 +677,7 @@ format_quali_prob_table <- function(predictions, save_image = FALSE) {
 #' @export
 #' @examples
 #' \dontrun{
-#' preds <- predict_round()
+#' preds <- simulate_race()
 #' format_results_odds_table(preds)
 #' }
 format_results_odds_table <- function(predictions, save_image = FALSE) {

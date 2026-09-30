@@ -110,31 +110,34 @@ round_num <- 14
 # This will create features based on historical performance up to the current race.
 new_race_data <- generate_new_data(
   season = season,
-  round_num = round_num
+  round = round_num,
+  historical_data = cleaned_data
 )
 ```
 
-Now, use this `new_race_data` with the trained models to get predictions. The `predict_round` function orchestrates this process, calling the appropriate prediction function for each model (e.g., `predict_winner`, `predict_podium`, `predict_position`).
+Now, use this `new_race_data` with the trained models to simulate the race weekend. The `simulate_quali` and `simulate_race` functions orchestrate Monte Carlo simulations for qualifying and race sessions, returning full position probability distributions, win/podium/top-10 probabilities, and expected championship points.
 
 ```r
-# Load the quali and results models from disk
+# Load the quali and results models from disk (or pass NULL to auto-load)
 quali_models <- load_models(model_type = "quali", model_timing = "early")
 results_models <- load_models(model_type = "results", model_timing = "early")
 
 # Make predictions for Qualifying
-quali_predictions <- predict_quali_round(
+quali_predictions <- simulate_quali(
   new_data = new_race_data,
+  historical_data = cleaned_data,
   quali_models = quali_models
 )
 
 # Make predictions for the Race
-race_predictions <- predict_round(
+race_predictions <- simulate_race(
   new_data = new_race_data,
+  historical_data = cleaned_data,
   results_models = results_models
 )
 ```
 
-The `predict_quali_round` and `predict_round` functions will return a data frame containing predictions for each driver, including their predicted finishing position, and probabilities for winning, getting a podium, or finishing in the top 10.
+The `simulate_quali` and `simulate_race` functions return a tibble containing predictions for each driver, including their likely finishing position, probabilities for pole/win, podium/top-3, or finishing in the top 10, position standard deviations, and the full `.probs` probability matrix.
 
 ### 5\. Conclusion
 

@@ -4,7 +4,7 @@
 #' Creates a feature set for a specific upcoming race for a given set of drivers.
 #' This function calculates various driver, constructor, and circuit-specific
 #' features based on historical data. It's designed to generate the input data
-#' required by the prediction functions (e.g., `.predict_winner()`).
+#' required by the prediction and simulation functions (e.g., [simulate_race()]).
 #'
 #' @details
 #' The function takes a season, round, and a list of drivers to generate a
