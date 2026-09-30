@@ -13,7 +13,8 @@ train_stacked_model(
   predictor_vars,
   hyperparams,
   model_mode = "regression",
-  save_model = TRUE
+  save_model = TRUE,
+  quiet = FALSE
 )
 }
 \arguments{
@@ -33,10 +34,13 @@ train_stacked_model(
 a tibble or list of the optimal hyperparameters for that engine. This is
 required.}
 
-\item{model_mode}{A character string, either `"regression"` or `"classification"`.}
+\item{model_mode}{Either `"regression"` or `"classification"`.}
 
-\item{save_model}{A logical value. If `TRUE` (default), the trained ensemble model
-is automatically butchered and saved to the path specified in `options('f1predicter.models')`.}
+\item{save_model}{Whether to butcher and save the fitted ensemble.}
+
+\item{quiet}{If `TRUE`, suppress the progress messages and the ensemble
+weight plot. Used when the model is refitted many times (for example
+during cross-fitting) and the per-fit narration would be noise.}
 }
 \value{
 A fitted `model_stack` object, ready for prediction.

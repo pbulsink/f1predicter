@@ -71,6 +71,11 @@ NULL
 #' # # Make predictions
 #' # predictions <- stats::predict(quali_pos_ensemble, new_data = my_test_data)
 #' }
+#' @param model_mode Either `"regression"` or `"classification"`.
+#' @param save_model Whether to butcher and save the fitted ensemble.
+#' @param quiet If `TRUE`, suppress the progress messages and the ensemble
+#'   weight plot. Used when the model is refitted many times (for example
+#'   during cross-fitting) and the per-fit narration would be noise.
 train_stacked_model <- function(
   outcome_var,
   model_name,
@@ -80,7 +85,8 @@ train_stacked_model <- function(
   predictor_vars,
   hyperparams,
   model_mode = "regression",
-  save_model = TRUE
+  save_model = TRUE,
+  quiet = FALSE
 ) {
   # Ensure stacks is installed
   if (missing(hyperparams)) {
@@ -102,6 +108,10 @@ train_stacked_model <- function(
 
   # Define the recipe once
   formula <- stats::reformulate(predictor_vars, response = outcome_var)
+  # Reset environment to base to avoid capturing large objects from the
+  # calling frame, which significantly inflates model size on disk.
+  rlang::f_env(formula) <- rlang::base_env()
+
   base_recipe <- recipes::recipe(formula, data = train_data) |>
     recipes::step_dummy(recipes::all_nominal_predictors()) |>
     recipes::step_zv(recipes::all_predictors()) |>
@@ -118,8 +128,12 @@ train_stacked_model <- function(
     )
   }
 
-  # Train and tune each candidate model
-  candidate_resamples <- list()
+  # Train and tune each candidate model, adding each to the stack as soon as
+  # it is fitted so we never hold more than one engine's resample results in
+  # memory at a time.
+  cli::cli_rule("Building the Ensemble")
+  cli::cli_inform("Initializing data stack...")
+  model_stack <- stacks::stacks()
   for (engine in engines) {
     cli::cli_rule("Training candidate: {.val {engine}}")
 
@@ -179,31 +193,23 @@ train_stacked_model <- function(
     )
     tictoc::toc()
 
-    return(res)
-  }
-
-  # Name the list of results for easier identification in the stack
-  names(candidate_resamples) <- engines
-
-  # Initialize the stack and add candidates
-  cli::cli_rule("Building the Ensemble")
-  cli::cli_inform("Initializing data stack...")
-  model_stack <- stacks::stacks()
-
-  for (i in seq_along(candidate_resamples)) {
-    cli::cli_inform("Adding candidate: {.val {names(candidate_resamples)[i]}}")
+    # Add this candidate immediately rather than accumulating every engine's
+    # full resample result in memory at once before stacking.
+    cli::cli_inform("Adding candidate: {.val {engine}}")
     tryCatch(
-      model_stack <- stacks::add_candidates(
-        model_stack,
-        candidate_resamples[[i]],
-        name = names(candidate_resamples)[i]
-      ),
+      model_stack <- stacks::add_candidates(model_stack, res, name = engine),
       error = function(e) {
         cli::cli_warn(
           "Model stacking error: {e}. Continuing with one less model."
         )
       }
     )
+
+    # Release the per-engine resample/workflow objects (can be large,
+    # especially with per-fold predictions retained for stacking) before
+    # moving to the next engine.
+    rm(res, final_wflow, wflow, model_spec, model_spec_tuned)
+    gc()
   }
 
   cli::cli_inform("Stack members and their resampling performance:")
@@ -214,15 +220,21 @@ train_stacked_model <- function(
   tictoc::tic("Blended predictions")
   blended_ensemble <- stacks::blend_predictions(model_stack, penalty = 0.01)
   tictoc::toc()
+  rm(model_stack)
+  gc()
 
   cli::cli_inform("Ensemble weights:")
-  print(stacks::autoplot(blended_ensemble, type = "weights"))
+  if (!quiet) {
+    print(stacks::autoplot(blended_ensemble, type = "weights"))
+  }
 
   # Fit the final ensemble
   cli::cli_inform("Fitting final ensemble members on all training data...")
   tictoc::tic("Fitted final ensemble")
   final_ensemble <- stacks::fit_members(blended_ensemble)
   tictoc::toc()
+  rm(blended_ensemble)
+  gc()
 
   cli::cli_alert_success(
     "Stacked ensemble '{model_name}' trained successfully!"
@@ -370,8 +382,14 @@ train_ordinal_ensemble <- function(
     recipes::step_zv(recipes::all_predictors()) |>
     recipes::step_normalize(recipes::all_predictors())
 
-  # Train each candidate ordinal model on the resamples
-  candidate_resamples <- purrr::map(engines, function(engine) {
+  # Train each candidate ordinal model on the resamples, adding each to the
+  # stack as soon as it is fitted so we never hold more than one engine's
+  # resample results in memory at a time (ordinalForest in particular can be
+  # memory-hungry via its internal score-set search).
+  cli::cli_rule("Building the Ordinal Ensemble")
+  cli::cli_inform("Initializing ordinal data stack...")
+  model_stack <- stacks::stacks()
+  for (engine in engines) {
     cli::cli_rule("Training ordinal candidate: {.val {engine}}")
 
     engine_params <- hyperparams[[engine]]
@@ -430,32 +448,20 @@ train_ordinal_ensemble <- function(
     )
     tictoc::toc()
 
-    return(res)
-  })
-
-  names(candidate_resamples) <- engines
-
-  # Build the stacked ensemble from the candidate resamples
-  cli::cli_rule("Building the Ordinal Ensemble")
-  cli::cli_inform("Initializing ordinal data stack...")
-  model_stack <- stacks::stacks()
-
-  for (i in seq_along(candidate_resamples)) {
-    cli::cli_inform(
-      "Adding ordinal candidate: {.val {names(candidate_resamples)[i]}}"
-    )
+    cli::cli_inform("Adding ordinal candidate: {.val {engine}}")
     tryCatch(
-      model_stack <- stacks::add_candidates(
-        model_stack,
-        candidate_resamples[[i]],
-        name = names(candidate_resamples)[i]
-      ),
+      model_stack <- stacks::add_candidates(model_stack, res, name = engine),
       error = function(e) {
         cli::cli_warn(
-          "Ordinal stacking error for {names(candidate_resamples)[i]}: {e}. Continuing."
+          "Ordinal stacking error for {engine}: {e}. Continuing."
         )
       }
     )
+
+    # Release the per-engine resample/workflow objects before moving to the
+    # next engine.
+    rm(res, final_wflow, wflow, model_spec, model_spec_tuned)
+    gc()
   }
 
   cli::cli_inform("Ordinal stack members and their resampling performance:")
@@ -465,6 +471,8 @@ train_ordinal_ensemble <- function(
   tictoc::tic("Blended ordinal predictions")
   blended_ensemble <- stacks::blend_predictions(model_stack, penalty = 0.01)
   tictoc::toc()
+  rm(model_stack)
+  gc()
 
   cli::cli_inform("Ordinal ensemble weights:")
   print(stacks::autoplot(blended_ensemble, type = "weights"))
@@ -475,6 +483,8 @@ train_ordinal_ensemble <- function(
   tictoc::tic("Fitted final ordinal ensemble")
   final_ensemble <- stacks::fit_members(blended_ensemble)
   tictoc::toc()
+  rm(blended_ensemble)
+  gc()
 
   cli::cli_alert_success(
     "Ordinal ensemble '{model_name}' trained successfully!"
@@ -575,7 +585,7 @@ train_ordinal_ensemble <- function(
 #'   available for tuning. Valid options depend on `model`:
 #'   \itemize{
 #'     \item If `model = 'quali'`: `"early"` or `"late"`.
-#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after-quali"`.
+#'     \item If `model = 'results'`: `"early"`, `"late"`, or `"after_quali"`.
 #'   }
 #'
 #' @return A named list. Each name corresponds to a specific prediction task
@@ -584,6 +594,14 @@ train_ordinal_ensemble <- function(
 #'   'ranger') and values are the corresponding optimal hyperparameters.
 #' @noRd
 get_hyperparameters <- function(model = 'quali', timing = 'early') {
+  model <- rlang::arg_match(model, c("quali", "results"))
+  valid_timings <- if (model == 'quali') {
+    c("early", "late")
+  } else {
+    c("early", "late", "after_quali")
+  }
+  timing <- rlang::arg_match(timing, valid_timings)
+
   # Default ordinal classification hyperparameters, shared across all scenarios.
   # polr has no tunable hyperparameters; an empty tibble triggers no-op finalization.
   # ordinalNet: elastic net (penalty = L2 strength, mixture = L1/L2 blend).
@@ -592,7 +610,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
   ordinal_defaults <- list(
     'polr' = tibble::tibble(),
     'ordinalNet' = tibble::tibble(penalty = 0.01, mixture = 0.5),
-    'ordinalForest' = tibble::tibble(mtry = 3L, min_n = 11L),
+    #'ordinalForest' = tibble::tibble(mtry = 3L, min_n = 11L), Way too slow, tune next offseason
     'rpartScore' = tibble::tibble(cost_complexity = 0.01, tree_depth = 5L)
   )
 
@@ -731,7 +749,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
           ordinal_class_hyperparameters = ordinal_defaults
         )
       )
-    } else if (timing == 'after-quali') {
+    } else if (timing == 'after_quali') {
       return(
         list(
           win_hyperparameters = list(
@@ -775,7 +793,7 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
       )
     } else {
       cli::cli_abort(
-        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after-quali}."
+        "Error in f1predicter:::get_hyperparameters: {.param timing} must be {.val early}, {.val late}, or {.val after_quali}."
       )
     }
   } else {
@@ -783,4 +801,99 @@ get_hyperparameters <- function(model = 'quali', timing = 'early') {
       "Error in f1predicter:::get_hyperparameters: {.param model} must be {.val quali} or {.val results}."
     )
   }
+}
+
+#' Generate Out-of-Fold Meta-Feature Predictions
+#'
+#' @description
+#' Produces meta-feature predictions for a stacked (two-stage) model without
+#' leaking the outcome of the rows being predicted.
+#'
+#' @details
+#' A meta-feature is the prediction of a first-stage model used as a predictor
+#' in a second-stage model. Predicting the first-stage model onto the rows it
+#' was fitted on gives those rows near-oracle values, so the second-stage model
+#' learns to lean on a feature that will be systematically worse-behaved at
+#' prediction time. This is the failure mode stacking exists to prevent.
+#'
+#' Rows are therefore filled in two ways:
+#'
+#' * Rows belonging to `data_folds` (the first-stage training rows) are
+#'   predicted by explicit cross-fitting: for each fold, `refit_fn()` is called
+#'   on the other folds and used to predict the held-out fold. Every such row is
+#'   predicted by a model that never saw it.
+#' * Rows outside `data_folds` (the shared held-out test rows, which the
+#'   first-stage model was never fitted on) are predicted directly by
+#'   `fitted_model`, which is already out-of-sample for them.
+#'
+#' Rows are matched between `new_data` and the fold data by `row_key`, so
+#' `new_data` may be filtered differently from the first-stage training frame.
+#'
+#' @param fitted_model The first-stage model fitted on all training data. Used
+#'   for rows outside `data_folds`.
+#' @param refit_fn A function of one argument (a training data frame) returning
+#'   a fitted model. Called once per fold.
+#' @param data_folds An `rsample` `rset` of the first-stage training rows.
+#' @param new_data The data frame to generate meta-features for.
+#' @param row_key A character vector of column names uniquely identifying a row
+#'   in both `new_data` and the fold data.
+#' @param predict_fn A function of `(model, data)` returning a numeric vector of
+#'   predictions.
+#' @return A numeric vector of predictions, one per row of `new_data`.
+#' @noRd
+oof_meta_predictions <- function(
+  fitted_model,
+  refit_fn,
+  data_folds,
+  new_data,
+  row_key,
+  predict_fn
+) {
+  missing_key <- setdiff(row_key, names(new_data))
+  if (length(missing_key) > 0) {
+    cli::cli_abort(
+      "{.arg row_key} column{?s} {.val {missing_key}} {?is/are} missing from {.arg new_data}."
+    )
+  }
+
+  make_key <- function(data) {
+    do.call(
+      paste,
+      c(lapply(row_key, function(col) as.character(data[[col]])), sep = "\r")
+    )
+  }
+
+  new_keys <- make_key(new_data)
+  preds <- rep(NA_real_, nrow(new_data))
+
+  for (i in seq_len(nrow(data_folds))) {
+    split <- data_folds$splits[[i]]
+    fold_fit <- refit_fn(rsample::analysis(split))
+    holdout <- rsample::assessment(split)
+
+    # Rows of new_data that sit in this assessment fold get predictions from a
+    # model fitted without them.
+    target <- which(new_keys %in% make_key(holdout) & is.na(preds))
+    if (length(target) > 0) {
+      preds[target] <- predict_fn(fold_fit, new_data[target, , drop = FALSE])
+    }
+
+    # Each fold refits the full ensemble (all candidate engines); force
+    # cleanup before moving to the next fold rather than relying on R to
+    # reclaim it whenever it gets around to it.
+    rm(fold_fit, split, holdout, target)
+    gc()
+  }
+
+  # Remaining rows were never part of the first-stage training data (they are
+  # the shared held-out test rows), so the full fit is already out-of-sample.
+  remaining <- which(is.na(preds))
+  if (length(remaining) > 0) {
+    preds[remaining] <- predict_fn(
+      fitted_model,
+      new_data[remaining, , drop = FALSE]
+    )
+  }
+
+  preds
 }

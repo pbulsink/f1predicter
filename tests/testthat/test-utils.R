@@ -41,8 +41,14 @@ test_that("cumwmean() calculates cumulative weighted mean correctly", {
   expect_type(result, "double")
   # Should have same length as input
   expect_equal(length(result), 3)
-  # First Value should be NaN
-  expect_true(is.nan(result[1]))
+  # First value should be finite, not NaN
+  expect_false(is.nan(result[1]))
+  expect_equal(result[1], 1)
+})
+
+test_that("cumwmean() returns a finite value for length-1 input", {
+  expect_equal(cumwmean(7), 7)
+  expect_false(is.nan(cumwmean(7)))
 })
 
 test_that("cumwmean() handles NA values", {

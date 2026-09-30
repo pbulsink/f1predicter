@@ -10,6 +10,7 @@ simulate_championship_odds(
   remaining = NULL,
   n_simulations = 10000L,
   historical_data = NULL,
+  seed = NULL,
   ...
 )
 }
@@ -26,6 +27,11 @@ If `NULL`, loaded automatically.}
 Defaults to 10000.}
 
 \item{historical_data}{Historical race data. If `NULL`, uses `clean_data()`.}
+
+\item{seed}{Optional single integer. If provided, `set.seed(seed)` is called
+before running the simulations so the results (win probabilities, average
+final points/position) are reproducible across calls. If `NULL` (the
+default), no seed is set and results vary run to run.}
 
 \item{...}{Additional parameters to be passed to calculate_driver_performance(), such as
 weights for the performance metrics. See `calculate_driver_performance()` for details.}
@@ -72,5 +78,7 @@ drivers from the simulation.
 \examples{
 \dontrun{
 odds <- simulate_championship_odds(season = 2025, n_simulations = 1000)
+# Reproducible run:
+odds <- simulate_championship_odds(season = 2025, n_simulations = 1000, seed = 1234)
 }
 }

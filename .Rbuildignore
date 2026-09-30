@@ -16,3 +16,6 @@
 ^run_predictions.R$
 ^test.csv$
 ^\.lintr$
+^\.kilo$
+^data-raw$
+^\.posit$

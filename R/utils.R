@@ -21,7 +21,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #'
 #' @description
 #' Returns the cumulative weighted mean of `x`, with weights equal to
-#' `log(1:length(x))`. `NA` values are replaced by `na.val` before computing.
+#' `log1p(seq_along(x))` (i.e. `log(2), log(3), ...`). `NA` values are
+#' replaced by `na.val` before computing.
 #'
 #' @param x A numeric vector.
 #' @param na.val Replacement value for `NA`s.
@@ -29,7 +30,8 @@ wmean <- function(x, ln = 20, val = 0) {
 #' @noRd
 cumwmean <- function(x, na.val = 0) {
   x[is.na(x)] <- na.val
-  return(cumsum(x * log(1:length(x))) / cumsum(log(1:length(x))))
+  weights <- log1p(seq_along(x))
+  return(cumsum(x * weights) / cumsum(weights))
 }
 
 #' Cube Root
@@ -207,4 +209,60 @@ normalize_vector <- function(x) {
   } else {
     return(x / total)
   }
+}
+
+#' Cap a Finishing/Qualifying Position for Ordinal Modeling
+#'
+#' @description
+#' Caps a numeric position vector at `cap`, collapsing all positions at or
+#' beyond `cap` into a single top category (labelled `"<cap>+"`). This keeps
+#' races with low finisher/entrant counts (e.g. sprint races, races with
+#' retirements, or historically smaller grids) from being dropped or from
+#' introducing sparse, rarely-observed high-numbered levels into the ordinal
+#' outcome. All positions are otherwise left untouched.
+#'
+#' @param x A numeric (or integer) vector of positions.
+#' @param cap A single integer giving the highest "real" position level;
+#'   positions `>= cap` are collapsed into `"<cap>+"`. Defaults to `18`.
+#' @return An ordered factor with levels `"1", "2", ..., "<cap - 1>", "<cap>+"`.
+#' @noRd
+cap_ordinal_position <- function(x, cap = 18) {
+  if (!is.numeric(x)) {
+    cli::cli_abort("{.arg x} must be a numeric vector.")
+  }
+  if (length(cap) != 1 || !is.numeric(cap) || cap < 1) {
+    cli::cli_abort("{.arg cap} must be a single positive number.")
+  }
+
+  levels_below <- as.character(seq_len(cap - 1))
+  top_label <- paste0(cap, "+")
+
+  capped <- ifelse(
+    is.na(x),
+    NA_character_,
+    ifelse(
+      x >= cap,
+      top_label,
+      as.character(x)
+    )
+  )
+
+  factor(capped, levels = c(levels_below, top_label), ordered = TRUE)
+}
+
+#' Validate an Optional Seed Argument
+#'
+#' @param seed The value supplied by the user; `NULL` means "do not seed".
+#' @param call The calling environment, used for the error message.
+#' @return Invisibly `NULL`. Called for its side effect of aborting on an
+#'   invalid seed.
+#' @noRd
+check_seed <- function(seed, call = rlang::caller_env()) {
+  if (!is.null(seed) && (!is.numeric(seed) || length(seed) != 1)) {
+    cli::cli_abort(
+      "{.arg seed} must be a single numeric value or {.code NULL}.",
+      call = call
+    )
+  }
+  invisible(NULL)
 }
