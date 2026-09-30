@@ -8,7 +8,8 @@ model_results_after_quali(
   data = clean_data(),
   engine = "ranger",
   save_model = TRUE,
-  seed = NULL
+  seed = NULL,
+  train_ordinal = FALSE
 )
 }
 \arguments{
@@ -23,6 +24,12 @@ are automatically saved to the path specified in `options('f1predicter.models')`
 \item{seed}{Optional single integer. If provided, `set.seed(seed)` is called
 once before the shared train/test split is created, making the run
 reproducible. If `NULL` (the default), no seed is set.}
+
+\item{train_ordinal}{A logical value. If `TRUE`, also trains and saves the
+ordinal classification sub-model (`position_class`). Defaults to `FALSE`:
+this sub-model is not consumed by any prediction path, and for the
+`"ensemble"` engine it can demand very large amounts of memory (see
+`train_results_models()`).}
 }
 \value{
 A list containing fitted `workflow` objects for `win`, `podium`,

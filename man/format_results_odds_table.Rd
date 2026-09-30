@@ -2,12 +2,12 @@
 % Please edit documentation in R/social.R
 \name{format_results_odds_table}
 \alias{format_results_odds_table}
-\title{Format Results Probabilities as a Table}
+\title{Format Results Odds as a Table}
 \usage{
 format_results_odds_table(predictions, save_image = FALSE)
 }
 \arguments{
-\item{predictions}{A data frame of predictions from `predict_quali_round()`.
+\item{predictions}{A data frame of predictions from `simulate_race()`.
 This must contain the `.probs` list-column with position probabilities.}
 
 \item{save_image}{A logical value. If `TRUE`, saves the table as a PNG file
@@ -18,19 +18,19 @@ and returns a list containing the table object and the file path. If `FALSE`
 A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 }
 \description{
-This function takes the results from `predict_round()` and creates a
-`gt` table visualizing the probability of each driver achieving each
-race position.
+This function takes the results from `simulate_race()` and creates a
+`gt` table displaying the odds and expected championship points for each
+driver.
 }
 \details{
-The table is formatted with a color heatmap, where brighter/more colorful
-cells indicate a higher probability. It requires the `gt` package to be
-installed. The function returns a `gt` object which can be printed or saved
-using `save_gt_as_png_ragg()` (requires `ragg` package).
+The table displays win probability, podium probability, top 10 probability,
+expected championship points, and likely finishing position. It requires the
+`gt` package to be installed. The function returns a `gt` object which can
+be printed or saved using `save_gt_as_png_ragg()` (requires `ragg` package).
 }
 \examples{
 \dontrun{
-preds <- predict_round()
+preds <- simulate_race()
 format_results_odds_table(preds)
 }
 }

@@ -7,7 +7,7 @@
 format_results_prob_table(predictions, save_image = FALSE)
 }
 \arguments{
-\item{predictions}{A data frame of predictions from `predict_quali_round()`.
+\item{predictions}{A data frame of predictions from `simulate_race()`.
 This must contain the `.probs` list-column with position probabilities.}
 
 \item{save_image}{A logical value. If `TRUE`, saves the table as a PNG file
@@ -18,7 +18,7 @@ and returns a list containing the table object and the file path. If `FALSE`
 A `gt_tbl` object, or a list containing the `gt_tbl` and a filename if `save_image = TRUE`.
 }
 \description{
-This function takes the results from `predict_round()` and creates a
+This function takes the results from `simulate_race()` and creates a
 `gt` table visualizing the probability of each driver achieving each
 race position.
 }
@@ -30,7 +30,7 @@ using `save_gt_as_png_ragg()` (requires `ragg` package).
 }
 \examples{
 \dontrun{
-preds <- predict_round()
+preds <- simulate_race()
 format_results_prob_table(preds)
 }
 }

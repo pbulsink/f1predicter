@@ -31,7 +31,7 @@ data <- clean_data()
 
 # Generate predictions for the next race
 df <- generate_new_data(season = 2026, round = 1, historical_data = data)
-preds <- predict_round(df)
+preds <- simulate_race(new_data = df, historical_data = data)
 
 # Format and save a probability table as PNG
 result <- format_results_prob_table(preds, save_image = TRUE)
