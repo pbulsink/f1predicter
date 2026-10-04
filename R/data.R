@@ -2,8 +2,6 @@
 
 # Functions to build data files
 
-# ---- Internal cache I/O helpers ----
-
 # Save a data frame to an RDS file in the cache directory.
 # Returns the data invisibly so it can be used in pipelines.
 cache_to_rds <- function(data, path) {
@@ -62,7 +60,7 @@ load_rds_or_csv <- function(rds_path, csv_path = NULL, col_classes = NULL) {
 cache_db_path <- function(
   cache = getOption("f1predicter.cache", default = tempdir())
 ) {
-  if (is.null(cache) || !nzchar(cache)) {
+  if (length(cache) != 1 || is.null(cache) || !nzchar(cache)) {
     # ry: ignore[RY032]
     cache <- tempdir()
   }
@@ -815,6 +813,7 @@ get_weekend_data <- function(season, round, force = FALSE) {
             "constructor_id",
             "lap_time",
             "lap_number",
+            "lap_start_time",
             "stint",
             "sector1time",
             "sector2time",
