@@ -908,13 +908,48 @@ test_that("get_current_standings returns correct structure", {
 
 # ---- Championship charts ----------------------------------------------------
 
+test_that(".validate_chart_season() accepts a single numeric season (#23)", {
+  expect_no_error(.validate_chart_season(2025))
+  expect_no_error(.validate_chart_season(2025L))
+})
+
+test_that(".validate_chart_season() rejects non-numeric and non-single values (#23)", {
+  expect_error(
+    .validate_chart_season("2025"),
+    "`season` must be a single numeric year value"
+  )
+  expect_error(
+    .validate_chart_season(c(2024, 2025)),
+    "`season` must be a single numeric year value"
+  )
+  expect_error(
+    .validate_chart_season(NULL),
+    "`season` must be a single numeric year value"
+  )
+})
+
+test_that(".validate_chart_season() rejects an NA season (#23)", {
+  expect_error(
+    .validate_chart_season(NA_real_),
+    "`season` must be a single numeric year value"
+  )
+})
+
+test_that(".validate_chart_season() forwards a custom call in its error (#23)", {
+  expect_error(
+    .validate_chart_season("2025", call = rlang::new_call("custom_fn")),
+    "`season` must be a single numeric year value",
+    class = "rlang_error"
+  )
+})
+
 test_that(".build_driver_championship_odds_history() filters to each completed round (#23)", {
   standings_history <- tibble::tribble(
-    ~driver_id, ~constructor_id, ~points, ~position, ~round, ~race_name, ~season,
-    "driver_a", "team_a", 25, 1, 1, "Round 1", 2025,
-    "driver_b", "team_b", 18, 2, 1, "Round 1", 2025,
-    "driver_a", "team_a", 43, 1, 2, "Round 2", 2025,
-    "driver_b", "team_b", 33, 2, 2, "Round 2", 2025
+    ~driver_id , ~constructor_id , ~points , ~position , ~round , ~race_name , ~season ,
+    "driver_a" , "team_a"        ,      25 ,         1 ,      1 , "Round 1"  ,    2025 ,
+    "driver_b" , "team_b"        ,      18 ,         2 ,      1 , "Round 1"  ,    2025 ,
+    "driver_a" , "team_a"        ,      43 ,         1 ,      2 , "Round 2"  ,    2025 ,
+    "driver_b" , "team_b"        ,      33 ,         2 ,      2 , "Round 2"  ,    2025
   )
   tracker <- rlang::env(seen_rounds = integer())
 
@@ -998,11 +1033,11 @@ test_that(".build_driver_championship_odds_history() filters to each completed r
 
 test_that(".build_championship_points_history() adds constructor labels and colours (#23)", {
   standings_history <- tibble::tribble(
-    ~constructor_id, ~points, ~position, ~round, ~race_name, ~season,
-    "team_a", 27, 1, 1, "Round 1", 2025,
-    "team_b", 18, 2, 1, "Round 1", 2025,
-    "team_a", 44, 1, 2, "Round 2", 2025,
-    "team_b", 33, 2, 2, "Round 2", 2025
+    ~constructor_id , ~points , ~position , ~round , ~race_name , ~season ,
+    "team_a"        ,      27 ,         1 ,      1 , "Round 1"  ,    2025 ,
+    "team_b"        ,      18 ,         2 ,      1 , "Round 1"  ,    2025 ,
+    "team_a"        ,      44 ,         1 ,      2 , "Round 2"  ,    2025 ,
+    "team_b"        ,      33 ,         2 ,      2 , "Round 2"  ,    2025
   )
 
   local_mocked_bindings(
@@ -1026,8 +1061,14 @@ test_that(".build_championship_points_history() adds constructor labels and colo
   expect_named(
     result,
     c(
-      "constructor_id", "points", "position", "round", "race_name",
-      "season", "label", "color"
+      "constructor_id",
+      "points",
+      "position",
+      "round",
+      "race_name",
+      "season",
+      "label",
+      "color"
     )
   )
   expect_equal(result$label[result$constructor_id == "team_a"][1], "Team A")
@@ -1036,11 +1077,11 @@ test_that(".build_championship_points_history() adds constructor labels and colo
 
 test_that(".build_championship_history_plot() returns a ggplot with latest labels (#23)", {
   chart_data <- tibble::tribble(
-    ~driver_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
-    "driver_a", 25, 1, 1, "Round 1", 2025, "AAA", "#111111",
-    "driver_b", 18, 2, 1, "Round 1", 2025, "BBB", "#222222",
-    "driver_a", 43, 1, 2, "Round 2", 2025, "AAA", "#111111",
-    "driver_b", 33, 2, 2, "Round 2", 2025, "BBB", "#222222"
+    ~driver_id , ~points , ~position , ~round , ~race_name , ~season , ~label , ~color    ,
+    "driver_a" ,      25 ,         1 ,      1 , "Round 1"  ,    2025 , "AAA"  , "#111111" ,
+    "driver_b" ,      18 ,         2 ,      1 , "Round 1"  ,    2025 , "BBB"  , "#222222" ,
+    "driver_a" ,      43 ,         1 ,      2 , "Round 2"  ,    2025 , "AAA"  , "#111111" ,
+    "driver_b" ,      33 ,         2 ,      2 , "Round 2"  ,    2025 , "BBB"  , "#222222"
   )
 
   plot <- .build_championship_history_plot(
@@ -1060,11 +1101,11 @@ test_that(".build_championship_history_plot() returns a ggplot with latest label
 
 test_that("chart_driver_championship_points() plots and returns history invisibly (#23)", {
   chart_data <- tibble::tribble(
-    ~driver_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
-    "driver_a", 25, 1, 1, "Round 1", 2025, "AAA", "#111111",
-    "driver_b", 18, 2, 1, "Round 1", 2025, "BBB", "#222222",
-    "driver_a", 43, 1, 2, "Round 2", 2025, "AAA", "#111111",
-    "driver_b", 33, 2, 2, "Round 2", 2025, "BBB", "#222222"
+    ~driver_id , ~points , ~position , ~round , ~race_name , ~season , ~label , ~color    ,
+    "driver_a" ,      25 ,         1 ,      1 , "Round 1"  ,    2025 , "AAA"  , "#111111" ,
+    "driver_b" ,      18 ,         2 ,      1 , "Round 1"  ,    2025 , "BBB"  , "#222222" ,
+    "driver_a" ,      43 ,         1 ,      2 , "Round 2"  ,    2025 , "AAA"  , "#111111" ,
+    "driver_b" ,      33 ,         2 ,      2 , "Round 2"  ,    2025 , "BBB"  , "#222222"
   )
 
   local_mocked_bindings(
@@ -1084,15 +1125,18 @@ test_that("chart_driver_championship_points() plots and returns history invisibl
 
 test_that("chart_constructor_championship_points() plots and returns history invisibly (#23)", {
   chart_data <- tibble::tribble(
-    ~constructor_id, ~points, ~position, ~round, ~race_name, ~season, ~label, ~color,
-    "team_a", 27, 1, 1, "Round 1", 2025, "Team A", "#aa0000",
-    "team_b", 18, 2, 1, "Round 1", 2025, "Team B", "#00aa00",
-    "team_a", 44, 1, 2, "Round 2", 2025, "Team A", "#aa0000",
-    "team_b", 33, 2, 2, "Round 2", 2025, "Team B", "#00aa00"
+    ~constructor_id , ~points , ~position , ~round , ~race_name , ~season , ~label   , ~color    ,
+    "team_a"        ,      27 ,         1 ,      1 , "Round 1"  ,    2025 , "Team A" , "#aa0000" ,
+    "team_b"        ,      18 ,         2 ,      1 , "Round 1"  ,    2025 , "Team B" , "#00aa00" ,
+    "team_a"        ,      44 ,         1 ,      2 , "Round 2"  ,    2025 , "Team A" , "#aa0000" ,
+    "team_b"        ,      33 ,         2 ,      2 , "Round 2"  ,    2025 , "Team B" , "#00aa00"
   )
 
   local_mocked_bindings(
-    .build_championship_points_history = function(season, type = "constructor") {
+    .build_championship_points_history = function(
+      season,
+      type = "constructor"
+    ) {
       chart_data
     }
   )

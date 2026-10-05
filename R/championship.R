@@ -106,9 +106,16 @@ get_current_standings <- function(
 
 
 .validate_chart_season <- function(season, call = rlang::caller_env()) {
-  if (!is.numeric(season) || length(season) != 1 || is.na(season)) {
+  if (!is.numeric(season) || length(season) != 1 || is.na(season) || nchar(as.character(season)) != 4) {
     cli::cli_abort(
-      "{.arg season} must be a single numeric value.",
+      "{.arg season} must be a single numeric year value.",
+      call = call
+    )
+  }
+  season <- as.integer(season)
+  if (season < 2018 || season > as.integer(f1dataR::get_current_season())) {
+    cli::cli_abort(
+      "{.arg season} must be from 2018 to the current season ({.val f1dataR::get_current_season()}).",
       call = call
     )
   }
