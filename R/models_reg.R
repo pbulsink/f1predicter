@@ -32,6 +32,8 @@ prepare_and_split_data <- function(
   group = "round_id",
   test_groups = NULL
 ) {
+  group_var <- rlang::sym(group)
+
   if (!is.null(columns)) {
     processed_data <- dplyr::select(data, dplyr::all_of(c(columns, group)))
   } else {
@@ -67,7 +69,9 @@ prepare_and_split_data <- function(
     data_split = data_split,
     train_data = train_data,
     test_data = rsample::testing(data_split),
-    data_folds = rsample::group_vfold_cv(data = train_data, group = group)
+    data_folds = rlang::inject(
+      rsample::group_vfold_cv(data = train_data, group = !!group_var)
+    )
   )
 }
 
