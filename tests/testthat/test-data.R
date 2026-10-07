@@ -125,6 +125,56 @@ test_that("get_laps_or_null() returns NULL when session data cannot be loaded (#
   expect_null(get_laps_or_null(season = 2026, round = 1, session = "FP2"))
 })
 
+test_that("add_drivers_to_laps() maps driver codes to driver_id (#46)", {
+  local_mocked_bindings(
+    load_drivers = function(season) {
+      tibble::tibble(
+        driver_id = c("driver_a", "driver_b"),
+        code = c("AAA", "BBB")
+      )
+    },
+    .package = "f1dataR"
+  )
+
+  laps <- tibble::tibble(
+    driver = c("AAA", "BBB", "ZZZ"),
+    lap_time = c(90.1, 91.2, 92.3)
+  )
+
+  result <- add_drivers_to_laps(laps, season = 2026)
+
+  expect_s3_class(result, "data.frame")
+  expect_named(result, c("driver", "lap_time", "driver_id"))
+  expect_identical(
+    result$driver_id,
+    c("driver_a", "driver_b", NA_character_)
+  )
+})
+
+test_that("add_drivers_to_laps() warns and keeps driver_id when laps lack the driver column (#46)", {
+  local_mocked_bindings(
+    load_drivers = function(season) {
+      tibble::tibble(
+        driver_id = c("driver_a", "driver_b"),
+        code = c("AAA", "BBB")
+      )
+    },
+    .package = "f1dataR"
+  )
+
+  laps <- tibble::tibble(lap_time = c(90.1, 91.2))
+
+  expect_warning(
+    result <- add_drivers_to_laps(laps, season = 2026),
+    "driver"
+  )
+
+  expect_s3_class(result, "data.frame")
+  expect_named(result, c("lap_time", "driver_id"))
+  expect_type(result$driver_id, "character")
+  expect_identical(result$driver_id, c(NA_character_, NA_character_))
+})
+
 test_that("get_grids() returns qualifying-only data when race results are unavailable (#noissue)", {
   local_mocked_bindings(
     load_results = function(...) NULL,
