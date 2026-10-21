@@ -1613,14 +1613,26 @@ janitor_data <- function() {
 #' list for a given season and performs a left join to map these codes to
 #' their corresponding `driver_id`.
 #'
-#' @param laps A data frame of lap data, as returned by `f1dataR`. It must
-#'   contain a `driver` column with the three-letter driver code.
+#' @param laps A data frame of lap data, as returned by `f1dataR`. When it
+#'   contains a `driver` column with the three-letter driver code, that code
+#'   is joined to the season's driver list to map it to a `driver_id`. When
+#'   the `driver` column is missing (e.g. because an intermittent FastF1 API
+#'   glitch returned incomplete lap data), the join is skipped and the input
+#'   is returned with an added `driver_id` column filled with `NA`, so callers
+#'   can degrade gracefully instead of the whole build aborting.
 #' @param season The numeric championship season to load driver information for.
 #'   Defaults to the current season via `f1dataR::get_current_season()`.
 #'
 #' @return The input `laps` data frame with an added `driver_id` column.
 #' @noRd
 add_drivers_to_laps <- function(laps, season = f1dataR::get_current_season()) {
+  if (!"driver" %in% colnames(laps)) {
+    cli::cli_warn(
+      "{.fn add_drivers_to_laps}: laps is missing the {.arg driver} column, so driver_id cannot be joined. Returning laps with driver_id set to NA."
+    )
+    laps$driver_id <- rep(NA_character_, nrow(laps))
+    return(laps)
+  }
   drivers <- f1dataR::load_drivers(season = season) |>
     dplyr::select("driver_id", "code")
   laps |>
